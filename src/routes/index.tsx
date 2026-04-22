@@ -68,8 +68,8 @@ function ChartsPage() {
   );
 
   const pythonCode = useMemo(
-    () => buildPythonSnippet({ symbol: symbol || "AAPL", from: fromIso, to: toIso, interval }),
-    [symbol, fromIso, toIso, interval],
+    () => buildPythonSnippet({ symbol: symbol || "AAPL", from: fromApi, to: toApi, interval }),
+    [symbol, fromApi, toApi, interval],
   );
 
   const pickRandomDay = () => {

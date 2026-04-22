@@ -86,12 +86,12 @@ function DataPage() {
     () =>
       buildPythonSnippet({
         symbol: symbol || "AAPL",
-        from: fromIso,
-        to: toIso,
+        from: fromApi,
+        to: toApi,
         interval,
         columns: ALL_COLUMNS.filter((c) => enabledCols.has(c.key as string)).map((c) => c.sql),
       }),
-    [symbol, fromIso, toIso, interval, enabledCols],
+    [symbol, fromApi, toApi, interval, enabledCols],
   );
 
   return (
