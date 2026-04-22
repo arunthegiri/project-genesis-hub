@@ -9,8 +9,20 @@ export const symbolsApi = {
     apiFetch<void>(`/api/symbols/${encodeURIComponent(symbol)}`, { method: "DELETE" }),
 };
 
-/** Normalize backend response (could be string[] or {symbol}[]) */
-export function normalizeSymbols(raw: Symbol[] | string[] | null | undefined): string[] {
+/** Normalize backend response (could be string[], {symbol}[], or wrapped {symbols:[...]}) */
+export function normalizeSymbols(raw: unknown): string[] {
   if (!raw) return [];
-  return raw.map((s) => (typeof s === "string" ? s : s.symbol)).filter(Boolean);
+  // Unwrap common envelope shapes
+  let arr: unknown = raw;
+  if (!Array.isArray(arr) && typeof arr === "object") {
+    const obj = arr as Record<string, unknown>;
+    arr = obj.symbols ?? obj.data ?? obj.content ?? obj.items ?? [];
+  }
+  if (!Array.isArray(arr)) {
+    console.warn("[symbols] Unexpected response shape:", raw);
+    return [];
+  }
+  return arr
+    .map((s) => (typeof s === "string" ? s : (s as Symbol)?.symbol))
+    .filter((s): s is string => Boolean(s));
 }
