@@ -41,9 +41,15 @@ const PAGE_SIZE = 100;
 
 function DataPage() {
   const [symbol, setSymbol] = useState("");
-  const [from, setFrom] = useState(format(subDays(new Date(), 7), "yyyy-MM-dd'T'HH:mm"));
-  const [to, setTo] = useState(format(new Date(), "yyyy-MM-dd'T'HH:mm"));
+  // Stable initial values for SSR; refreshed to "now" on mount.
+  const [from, setFrom] = useState("2024-01-01T09:30");
+  const [to, setTo] = useState("2024-01-08T16:00");
   const [interval, setInterval] = useState<Interval>("1Hour");
+
+  useEffect(() => {
+    setFrom(format(subDays(new Date(), 7), "yyyy-MM-dd'T'HH:mm"));
+    setTo(format(new Date(), "yyyy-MM-dd'T'HH:mm"));
+  }, []);
   const [enabledCols, setEnabledCols] = useState<Set<string>>(
     () => new Set(ALL_COLUMNS.map((c) => c.key as string)),
   );
