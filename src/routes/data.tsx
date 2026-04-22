@@ -55,8 +55,8 @@ function DataPage() {
   );
   const [page, setPage] = useState(0);
 
-  const fromIso = new Date(from).toISOString();
-  const toIso = new Date(to).toISOString();
+  const fromIso = `${from}:00.000Z`;
+  const toIso = `${to}:00.000Z`;
 
   const { data: bars = [], isLoading, error } = useQuery({
     enabled: !!symbol,
