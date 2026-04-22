@@ -44,8 +44,9 @@ function ChartsPage() {
   const [showRSI, setShowRSI] = useState(false);
   const [showMACD, setShowMACD] = useState(false);
 
-  const fromIso = new Date(from).toISOString();
-  const toIso = new Date(to).toISOString();
+  // Treat the datetime-local input as UTC to avoid SSR/client timezone mismatch.
+  const fromIso = `${from}:00.000Z`;
+  const toIso = `${to}:00.000Z`;
 
   const { data: bars = [], isLoading, error, isFetching } = useQuery({
     enabled: !!symbol,
