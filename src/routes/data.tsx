@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { buildPythonSnippet } from "@/lib/python-export";
-import { localDateTimeInputToUtcIso } from "@/lib/datetime";
+import { localDateTimeInputToApiParam } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/data")({
@@ -58,13 +58,13 @@ function DataPage() {
   );
   const [page, setPage] = useState(0);
 
-  const fromIso = mounted ? localDateTimeInputToUtcIso(from) : `${from}:00.000Z`;
-  const toIso = mounted ? localDateTimeInputToUtcIso(to) : `${to}:00.000Z`;
+  const fromApi = mounted ? localDateTimeInputToApiParam(from) : `${from}:00`;
+  const toApi = mounted ? localDateTimeInputToApiParam(to) : `${to}:00`;
 
   const { data: bars = [], isLoading, error } = useQuery({
-    enabled: mounted && !!symbol && !!fromIso && !!toIso,
-    queryKey: ["prices", symbol, fromIso, toIso],
-    queryFn: () => pricesApi.range(symbol, fromIso, toIso),
+    enabled: mounted && !!symbol && !!fromApi && !!toApi,
+    queryKey: ["prices", symbol, fromApi, toApi],
+    queryFn: () => pricesApi.range(symbol, fromApi, toApi),
   });
 
   const visibleCols = ALL_COLUMNS.filter((c) => enabledCols.has(c.key as string));
@@ -86,12 +86,12 @@ function DataPage() {
     () =>
       buildPythonSnippet({
         symbol: symbol || "AAPL",
-        from: fromIso,
-        to: toIso,
+        from: fromApi,
+        to: toApi,
         interval,
         columns: ALL_COLUMNS.filter((c) => enabledCols.has(c.key as string)).map((c) => c.sql),
       }),
-    [symbol, fromIso, toIso, interval, enabledCols],
+    [symbol, fromApi, toApi, interval, enabledCols],
   );
 
   return (
