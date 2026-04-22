@@ -10,14 +10,21 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const NAV = [
+type NavItem = {
+  to: "/" | "/data" | "/replay" | "/live" | "/metrics" | "/models";
+  label: string;
+  icon: typeof LineChart;
+  exact?: boolean;
+};
+
+const NAV: NavItem[] = [
   { to: "/", label: "Charts", icon: LineChart, exact: true },
   { to: "/data", label: "Data", icon: Database },
   { to: "/replay", label: "Replay", icon: History },
   { to: "/live", label: "Live", icon: Activity },
   { to: "/metrics", label: "Metrics", icon: Gauge },
   { to: "/models", label: "Models", icon: Brain },
-] as const;
+];
 
 export function AppSidebar() {
   const { pathname } = useLocation();
