@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format, subDays } from "date-fns";
 import { Loader2 } from "lucide-react";
@@ -27,9 +27,16 @@ export const Route = createFileRoute("/")({
 
 function ChartsPage() {
   const [symbol, setSymbol] = useState<string>("");
-  const [from, setFrom] = useState<string>(format(subDays(new Date(), 7), "yyyy-MM-dd'T'HH:mm"));
-  const [to, setTo] = useState<string>(format(new Date(), "yyyy-MM-dd'T'HH:mm"));
+  // Use a stable epoch on first render so SSR and client hydrate identically;
+  // we refresh to "now" in a useEffect after mount.
+  const [from, setFrom] = useState<string>("2024-01-01T09:30");
+  const [to, setTo] = useState<string>("2024-01-08T16:00");
   const [interval, setInterval] = useState<Interval>("1Hour");
+
+  useEffect(() => {
+    setFrom(format(subDays(new Date(), 7), "yyyy-MM-dd'T'HH:mm"));
+    setTo(format(new Date(), "yyyy-MM-dd'T'HH:mm"));
+  }, []);
 
   const [showSMA, setShowSMA] = useState(true);
   const [showEMA, setShowEMA] = useState(false);
