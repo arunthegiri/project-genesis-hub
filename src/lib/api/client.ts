@@ -65,7 +65,21 @@ export async function apiFetch<T>(path: string, opts: RequestOptions = {}): Prom
     );
   }
 
-  return parsed as T;
+  return unwrapEnvelope(parsed) as T;
+}
+
+/**
+ * Spring backend wraps responses as { data: ..., count: N } or { content: [...] }.
+ * Unwrap to the inner payload so callers see the raw array/object.
+ */
+function unwrapEnvelope(parsed: unknown): unknown {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return parsed;
+  const obj = parsed as Record<string, unknown>;
+  if ("data" in obj && (Array.isArray(obj.data) || typeof obj.data === "object")) {
+    return obj.data;
+  }
+  if ("content" in obj && Array.isArray(obj.content)) return obj.content;
+  return parsed;
 }
 
 function safeJson(text: string): unknown {
