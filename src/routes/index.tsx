@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { buildPythonSnippet } from "@/lib/python-export";
-import { localDateTimeInputToUtcIso } from "@/lib/datetime";
+import { localDateTimeInputToApiParam } from "@/lib/datetime";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -47,13 +47,13 @@ function ChartsPage() {
   const [showRSI, setShowRSI] = useState(false);
   const [showMACD, setShowMACD] = useState(false);
 
-  const fromIso = mounted ? localDateTimeInputToUtcIso(from) : `${from}:00.000Z`;
-  const toIso = mounted ? localDateTimeInputToUtcIso(to) : `${to}:00.000Z`;
+  const fromApi = mounted ? localDateTimeInputToApiParam(from) : `${from}:00`;
+  const toApi = mounted ? localDateTimeInputToApiParam(to) : `${to}:00`;
 
   const { data: bars = [], isLoading, error, isFetching } = useQuery({
-    enabled: mounted && !!symbol && !!fromIso && !!toIso,
-    queryKey: ["prices", symbol, fromIso, toIso],
-    queryFn: () => pricesApi.range(symbol, fromIso, toIso),
+    enabled: mounted && !!symbol && !!fromApi && !!toApi,
+    queryKey: ["prices", symbol, fromApi, toApi],
+    queryFn: () => pricesApi.range(symbol, fromApi, toApi),
   });
 
   const indicators: IndicatorConfig = useMemo(
