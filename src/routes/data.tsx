@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { buildPythonSnippet } from "@/lib/python-export";
+import { localDateTimeInputToUtcIso } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/data")({
@@ -45,8 +46,10 @@ function DataPage() {
   const [from, setFrom] = useState("2024-01-01T09:30");
   const [to, setTo] = useState("2024-01-08T16:00");
   const [interval, setInterval] = useState<Interval>("1Hour");
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     setFrom(format(subDays(new Date(), 7), "yyyy-MM-dd'T'HH:mm"));
     setTo(format(new Date(), "yyyy-MM-dd'T'HH:mm"));
   }, []);
@@ -55,11 +58,11 @@ function DataPage() {
   );
   const [page, setPage] = useState(0);
 
-  const fromIso = `${from}:00.000Z`;
-  const toIso = `${to}:00.000Z`;
+  const fromIso = mounted ? localDateTimeInputToUtcIso(from) : `${from}:00.000Z`;
+  const toIso = mounted ? localDateTimeInputToUtcIso(to) : `${to}:00.000Z`;
 
   const { data: bars = [], isLoading, error } = useQuery({
-    enabled: !!symbol,
+    enabled: mounted && !!symbol && !!fromIso && !!toIso,
     queryKey: ["prices", symbol, fromIso, toIso],
     queryFn: () => pricesApi.range(symbol, fromIso, toIso),
   });
