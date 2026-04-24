@@ -1,3 +1,4 @@
+import { format } from 'date-fns';
 import { type DateRange } from 'react-day-picker';
 import { CalendarIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -36,8 +37,8 @@ export function DateRangePicker({ startDate, endDate, onChange }: Props) {
           onSelect={(range) => {
             if (!range?.from) return;
             onChange({
-              startDate: range.from.toISOString().slice(0, 10),
-              endDate: (range.to ?? range.from).toISOString().slice(0, 10),
+              startDate: format(range.from, 'yyyy-MM-dd'),
+              endDate: format(range.to ?? range.from, 'yyyy-MM-dd'),
             });
           }}
           initialFocus
