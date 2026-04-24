@@ -83,6 +83,7 @@ function intervalToPandasRule(interval: string): string {
     case "1Min": return "1min";
     case "5Min": return "5min";
     case "15Min": return "15min";
+    case "30Min": return "30min";
     case "1Hour": return "1H";
     case "1Day": return "1D";
     default: return "";

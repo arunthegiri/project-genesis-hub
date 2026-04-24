@@ -1,20 +1,34 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { format, subDays } from "date-fns";
+import { format } from "date-fns";
 import { Loader2 } from "lucide-react";
 
 import { SymbolPicker } from "@/components/SymbolPicker";
 import { PriceChart, type IndicatorConfig } from "@/components/PriceChart";
 import { PythonExport } from "@/components/PythonExport";
+import { DateRangePicker } from "@/components/DateRangePicker";
 import { pricesApi } from "@/lib/api/prices";
+import { API_BASE_URL } from "@/lib/api/config";
 import { INTERVALS, type Interval } from "@/lib/api/types";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { buildPythonSnippet } from "@/lib/python-export";
-import { localDateTimeInputToApiParam } from "@/lib/datetime";
+import {
+  buildUtcApiRange,
+  formatDisplayDate,
+  getPresetRange,
+  type ChartRangePreset,
+} from "@/lib/date-range";
+import { aggregatePriceBars } from "@/lib/price-bars";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -26,20 +40,15 @@ export const Route = createFileRoute("/")({
   component: ChartsPage,
 });
 
-function ChartsPage() {
-  const [symbol, setSymbol] = useState<string>("");
-  // Use a stable epoch on first render so SSR and client hydrate identically;
-  // we refresh to "now" in a useEffect after mount.
-  const [from, setFrom] = useState<string>("2024-01-01T09:30");
-  const [to, setTo] = useState<string>("2024-01-08T16:00");
-  const [interval, setInterval] = useState<Interval>("1Hour");
-  const [mounted, setMounted] = useState(false);
+const RANGE_PRESETS: Exclude<ChartRangePreset, "CUSTOM">[] = ["1D", "5D", "1M", "3M", "6M", "1Y"];
 
-  useEffect(() => {
-    setMounted(true);
-    setFrom(format(subDays(new Date(), 7), "yyyy-MM-dd'T'HH:mm"));
-    setTo(format(new Date(), "yyyy-MM-dd'T'HH:mm"));
-  }, []);
+function ChartsPage() {
+  const initialRange = getPresetRange("5D");
+  const [selectedSymbol, setSelectedSymbol] = useState<string>("");
+  const [startDate, setStartDate] = useState<string>(initialRange.startDate);
+  const [endDate, setEndDate] = useState<string>(initialRange.endDate);
+  const [interval, setInterval] = useState<Interval>("1Hour");
+  const [rangePreset, setRangePreset] = useState<ChartRangePreset>("5D");
 
   const [showSMA, setShowSMA] = useState(true);
   const [showEMA, setShowEMA] = useState(false);
@@ -47,23 +56,41 @@ function ChartsPage() {
   const [showRSI, setShowRSI] = useState(false);
   const [showMACD, setShowMACD] = useState(false);
 
-  const fromApi = mounted ? localDateTimeInputToApiParam(from) : `${from}:00`;
-  const toApi = mounted ? localDateTimeInputToApiParam(to) : `${to}:00`;
+  const { from: fromApi, to: toApi } = useMemo(
+    () => buildUtcApiRange(startDate, endDate),
+    [startDate, endDate],
+  );
 
-  const { data: bars = [], isLoading, error, isFetching } = useQuery({
-    enabled: mounted && !!symbol && !!fromApi && !!toApi,
-    queryKey: ["prices", symbol, fromApi, toApi],
+  const queryUrl = useMemo(() => {
+    if (!selectedSymbol) return "";
+    const url = new URL(`${API_BASE_URL}/api/prices/${encodeURIComponent(selectedSymbol)}/range`);
+    url.searchParams.set("from", fromApi);
+    url.searchParams.set("to", toApi);
+    return url.toString();
+  }, [selectedSymbol, fromApi, toApi]);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    console.log("[chart-state]", { selectedSymbol, startDate, endDate, interval, finalApiUrl: queryUrl });
+  }, [selectedSymbol, startDate, endDate, interval, queryUrl]);
+
+  const {
+    data: rawBars = [],
+    isLoading,
+    error,
+    isFetching,
+  } = useQuery({
+    enabled: !!selectedSymbol,
+    queryKey: ["prices", selectedSymbol, fromApi, toApi, interval],
     queryFn: async () => {
-      // 1) Read from TimescaleDB first
-      let rows = await pricesApi.range(symbol, fromApi, toApi);
-      // 2) Cache miss → ask the backend to pull from Alpaca and persist, then re-read
-      if (!rows || rows.length === 0) {
-        await pricesApi.backfill(symbol, fromApi, toApi);
-        rows = await pricesApi.range(symbol, fromApi, toApi);
+      if (import.meta.env.DEV) {
+        console.log("[chart-query]", { selectedSymbol, startDate, endDate, interval, finalApiUrl: queryUrl });
       }
-      return rows;
+      return pricesApi.range(selectedSymbol, fromApi, toApi);
     },
   });
+
+  const bars = useMemo(() => aggregatePriceBars(rawBars, interval), [rawBars, interval]);
 
   const indicators: IndicatorConfig = useMemo(
     () => ({
@@ -77,45 +104,76 @@ function ChartsPage() {
   );
 
   const pythonCode = useMemo(
-    () => buildPythonSnippet({ symbol: symbol || "AAPL", from: fromApi, to: toApi, interval }),
-    [symbol, fromApi, toApi, interval],
+    () => buildPythonSnippet({ symbol: selectedSymbol || "AAPL", from: fromApi, to: toApi, interval }),
+    [selectedSymbol, fromApi, toApi, interval],
   );
 
-  const pickRandomDay = () => {
-    const daysBack = Math.floor(Math.random() * 60) + 1;
-    const day = subDays(new Date(), daysBack);
-    setFrom(format(new Date(day.setHours(9, 30, 0, 0)), "yyyy-MM-dd'T'HH:mm"));
-    setTo(format(new Date(day.setHours(16, 0, 0, 0)), "yyyy-MM-dd'T'HH:mm"));
+  const applyPreset = (preset: Exclude<ChartRangePreset, "CUSTOM">) => {
+    const nextRange = getPresetRange(preset);
+    setRangePreset(preset);
+    setStartDate(nextRange.startDate);
+    setEndDate(nextRange.endDate);
   };
 
   return (
     <div className="grid h-full grid-cols-[220px_1fr_360px] gap-3 p-3">
       <aside className="flex flex-col gap-3 overflow-auto rounded-md border border-border bg-card p-3">
-        <SymbolPicker selected={symbol} onSelect={setSymbol} />
+        <SymbolPicker selected={selectedSymbol} onSelect={setSelectedSymbol} />
       </aside>
 
       <section className="flex flex-col gap-3 overflow-hidden">
-        <div className="flex flex-wrap items-end gap-2 rounded-md border border-border bg-card p-3">
-          <Field label="From">
-            <Input type="datetime-local" value={from} onChange={(e) => setFrom(e.target.value)} className="h-8 tabular text-xs" />
-          </Field>
-          <Field label="To">
-            <Input type="datetime-local" value={to} onChange={(e) => setTo(e.target.value)} className="h-8 tabular text-xs" />
-          </Field>
-          <Field label="Interval">
-            <select
-              value={interval}
-              onChange={(e) => setInterval(e.target.value as Interval)}
-              className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground"
-            >
-              {INTERVALS.map((i) => (
-                <option key={i.value} value={i.value}>{i.label}</option>
+        <div className="flex flex-wrap items-end gap-3 rounded-md border border-border bg-card p-3">
+          <Field label="Range">
+            <div className="flex flex-wrap gap-2">
+              {RANGE_PRESETS.map((preset) => (
+                <Button
+                  key={preset}
+                  size="sm"
+                  variant={rangePreset === preset ? "default" : "outline"}
+                  onClick={() => applyPreset(preset)}
+                  className="h-8 min-w-12 text-xs"
+                >
+                  {preset}
+                </Button>
               ))}
-            </select>
+              <Button
+                size="sm"
+                variant={rangePreset === "CUSTOM" ? "default" : "outline"}
+                onClick={() => setRangePreset("CUSTOM")}
+                className="h-8 text-xs"
+              >
+                Custom
+              </Button>
+            </div>
           </Field>
-          <Button size="sm" variant="outline" onClick={pickRandomDay} className="h-8 text-xs">
-            Random day
-          </Button>
+
+          <Field label="Dates">
+            <DateRangePicker
+              startDate={startDate}
+              endDate={endDate}
+              onChange={({ startDate: nextStart, endDate: nextEnd }) => {
+                setRangePreset("CUSTOM");
+                setStartDate(nextStart);
+                setEndDate(nextEnd);
+              }}
+            />
+          </Field>
+
+          <Field label="Interval">
+            <Select value={interval} onValueChange={(value) => setInterval(value as Interval)}>
+              <SelectTrigger className="h-9 w-[160px] text-xs">
+                <SelectValue placeholder="Select interval" />
+              </SelectTrigger>
+              <SelectContent>
+                {INTERVALS.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+
           <div className="ml-auto flex items-center gap-3 text-xs">
             <Toggle checked={showSMA} onChange={setShowSMA} label="SMA" />
             <Toggle checked={showEMA} onChange={setShowEMA} label="EMA" />
@@ -126,22 +184,20 @@ function ChartsPage() {
         </div>
 
         <div className="relative flex-1 overflow-auto rounded-md border border-border bg-card">
-          {!symbol && (
-            <Empty>Select a symbol from the left panel to begin.</Empty>
-          )}
-          {symbol && isLoading && <Empty><Loader2 className="h-4 w-4 animate-spin" /> Loading bars…</Empty>}
-          {symbol && error && (
+          {!selectedSymbol && <Empty>Select a symbol from the left panel to begin.</Empty>}
+          {selectedSymbol && isLoading && <Empty><Loader2 className="h-4 w-4 animate-spin" /> Querying backend…</Empty>}
+          {selectedSymbol && error && (
             <Empty>
               <span className="text-destructive">{(error as Error).message}</span>
             </Empty>
           )}
-          {symbol && !isLoading && !error && bars.length === 0 && (
-            <Empty>No bars in this range. Try widening the date range or backfilling on the backend.</Empty>
+          {selectedSymbol && !isLoading && !error && bars.length === 0 && (
+            <Empty>No data found for {selectedSymbol} between {formatDisplayDate(startDate)} and {formatDisplayDate(endDate)}.</Empty>
           )}
-          {symbol && bars.length > 0 && <PriceChart bars={bars} indicators={indicators} />}
-          {isFetching && symbol && (
+          {selectedSymbol && bars.length > 0 && <PriceChart bars={bars} indicators={indicators} />}
+          {isFetching && selectedSymbol && (
             <div className="absolute right-3 top-3 flex items-center gap-1 text-[10px] text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" /> updating
+              <Loader2 className="h-3 w-3 animate-spin" /> refreshing from backend
             </div>
           )}
         </div>
@@ -154,8 +210,12 @@ function ChartsPage() {
               Dataframe preview
             </span>
             <span className="tabular text-[10px] text-muted-foreground">
-              {bars.length} rows
+              {bars.length} rows · {interval}
             </span>
+          </div>
+          <div className="flex items-center justify-between border-b border-border px-3 py-2 text-[11px] text-muted-foreground">
+            <span>{selectedSymbol || "No symbol selected"}</span>
+            <span>{formatDisplayDate(startDate)} - {formatDisplayDate(endDate)}</span>
           </div>
           <div className="flex-1 overflow-auto">
             <table className="tabular w-full text-[11px]">
@@ -169,7 +229,7 @@ function ChartsPage() {
               <tbody>
                 {bars.slice(0, 200).map((b, i) => (
                   <tr key={`${b.time}-${i}`} className="border-t border-border/50">
-                    <td className="px-2 py-1 text-muted-foreground">{format(new Date(b.time), "MM-dd HH:mm")}</td>
+                    <td className="px-2 py-1 text-muted-foreground">{format(new Date(b.time), "MM/dd/yy HH:mm")}</td>
                     <td className="px-2 py-1">{b.open.toFixed(2)}</td>
                     <td className="px-2 py-1 text-bull">{b.high.toFixed(2)}</td>
                     <td className="px-2 py-1 text-bear">{b.low.toFixed(2)}</td>
@@ -185,7 +245,7 @@ function ChartsPage() {
           </div>
         </div>
 
-        <PythonExport code={pythonCode} filename={`${symbol || "query"}_${interval}.py`} />
+        <PythonExport code={pythonCode} filename={`${selectedSymbol || "query"}_${interval}.py`} />
       </aside>
     </div>
   );
@@ -202,7 +262,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
-    <label className="flex items-center gap-1.5 cursor-pointer">
+    <label className="flex cursor-pointer items-center gap-1.5">
       <Checkbox checked={checked} onCheckedChange={(v) => onChange(!!v)} className="h-3.5 w-3.5" />
       <span className="text-foreground/90">{label}</span>
     </label>
@@ -211,7 +271,7 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: 
 
 function Empty({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-full min-h-[300px] items-center justify-center gap-2 text-sm text-muted-foreground">
+    <div className="flex h-full min-h-[300px] items-center justify-center gap-2 px-6 text-center text-sm text-muted-foreground">
       {children}
     </div>
   );

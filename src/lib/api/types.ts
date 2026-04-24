@@ -37,12 +37,13 @@ export interface Trade {
   modelVersion: string;
 }
 
-export type Interval = "1Min" | "5Min" | "15Min" | "1Hour" | "1Day";
+export type Interval = "1Min" | "5Min" | "15Min" | "30Min" | "1Hour" | "1Day";
 
 export const INTERVALS: { value: Interval; label: string }[] = [
   { value: "1Min", label: "1 minute" },
   { value: "5Min", label: "5 minutes" },
   { value: "15Min", label: "15 minutes" },
+  { value: "30Min", label: "30 minutes" },
   { value: "1Hour", label: "1 hour" },
   { value: "1Day", label: "1 day" },
 ];
