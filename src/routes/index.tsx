@@ -53,7 +53,16 @@ function ChartsPage() {
   const { data: bars = [], isLoading, error, isFetching } = useQuery({
     enabled: mounted && !!symbol && !!fromApi && !!toApi,
     queryKey: ["prices", symbol, fromApi, toApi],
-    queryFn: () => pricesApi.range(symbol, fromApi, toApi),
+    queryFn: async () => {
+      // 1) Read from TimescaleDB first
+      let rows = await pricesApi.range(symbol, fromApi, toApi);
+      // 2) Cache miss → ask the backend to pull from Alpaca and persist, then re-read
+      if (!rows || rows.length === 0) {
+        await pricesApi.backfill(symbol, fromApi, toApi);
+        rows = await pricesApi.range(symbol, fromApi, toApi);
+      }
+      return rows;
+    },
   });
 
   const indicators: IndicatorConfig = useMemo(
