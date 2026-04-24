@@ -81,7 +81,7 @@ function ChartsPage() {
     isFetching,
   } = useQuery({
     enabled: !!selectedSymbol,
-    queryKey: ["prices", selectedSymbol, fromApi, toApi],
+    queryKey: ["prices", selectedSymbol, fromApi, toApi, interval],
     queryFn: async () => {
       if (import.meta.env.DEV) {
         console.log("[chart-query]", { selectedSymbol, startDate, endDate, interval, finalApiUrl: queryUrl });
