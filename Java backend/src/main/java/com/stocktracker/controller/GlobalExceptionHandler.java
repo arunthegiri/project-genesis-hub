@@ -1,0 +1,60 @@
+package com.stocktracker.controller;
+
+import com.stocktracker.dto.ApiDto;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
+
+import java.util.stream.Collectors;
+
+@Slf4j
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ApiDto.ErrorResponse> handleValidation(MethodArgumentNotValidException ex) {
+        String message = ex.getBindingResult().getFieldErrors().stream()
+                .map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
+                .collect(Collectors.joining(", "));
+        return ResponseEntity
+                .badRequest()
+                .body(new ApiDto.ErrorResponse(message, 400));
+    }
+
+    @ExceptionHandler(HttpClientErrorException.class)
+    public ResponseEntity<ApiDto.ErrorResponse> handleAlpacaClientError(HttpClientErrorException ex) {
+        log.error("Alpaca API client error: {} {}", ex.getStatusCode(), ex.getMessage());
+        return ResponseEntity
+                .status(ex.getStatusCode())
+                .body(new ApiDto.ErrorResponse("Alpaca API error: " + ex.getMessage(),
+                        ex.getStatusCode().value()));
+    }
+
+    @ExceptionHandler(HttpServerErrorException.class)
+    public ResponseEntity<ApiDto.ErrorResponse> handleAlpacaServerError(HttpServerErrorException ex) {
+        log.error("Alpaca API server error: {}", ex.getMessage());
+        return ResponseEntity
+                .status(HttpStatus.BAD_GATEWAY)
+                .body(new ApiDto.ErrorResponse("Upstream Alpaca API error", 502));
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ApiDto.ErrorResponse> handleIllegalArg(IllegalArgumentException ex) {
+        return ResponseEntity
+                .badRequest()
+                .body(new ApiDto.ErrorResponse(ex.getMessage(), 400));
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiDto.ErrorResponse> handleGeneric(Exception ex) {
+        log.error("Unhandled exception: {}", ex.getMessage(), ex);
+        return ResponseEntity
+                .internalServerError()
+                .body(new ApiDto.ErrorResponse("Internal server error", 500));
+    }
+}

@@ -1,0 +1,52 @@
+services:
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: timescaledb
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       stockdb
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d stockdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  stock-tracker:
+    build:
+      context: ./Java backend
+    container_name: stock-tracker
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://timescaledb:5432/stockdb
+      DB_USERNAME:           postgres
+      DB_PASSWORD:           postgres
+      ALPACA_API_KEY:        ${ALPACA_API_KEY}
+      ALPACA_API_SECRET:     ${ALPACA_API_SECRET}
+      FETCH_INTERVAL_MS:     60000
+    ports:
+      - "8080:8080"
+
+  frontend:
+    build:
+      context: .
+      args:
+        VITE_API_BASE_URL: http://localhost:8080
+    container_name: quant-frontend
+    restart: unless-stopped
+    depends_on:
+      - stock-tracker
+    ports:
+      - "3000:5173"
+
+volumes:
+  timescale_data:
