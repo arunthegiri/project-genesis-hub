@@ -7,7 +7,7 @@ A full-stack quant trading terminal. Select any stock, view interactive OHLCV ca
 ## Prerequisites
 
 - **[Docker Desktop](https://www.docker.com/products/docker-desktop/)** — that's it. No Java, no Node.js, nothing else.
-- **[Alpaca Markets](https://alpaca.markets) API keys** — free account, Paper Trading keys work fine (you only need market data access, not a funded account).
+- **Alpaca Markets API keys** — create a free account at [alpaca.markets](https://alpaca.markets), then find your keys under **Paper Trading → API Keys** in the dashboard. Paper Trading keys work fine — a funded brokerage account is not required.
 
 ---
 
