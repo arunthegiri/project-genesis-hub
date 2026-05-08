@@ -1,4 +1,6 @@
-# Quant Trading Platform
+# Ananke
+
+Named after the Greek primordial goddess of necessity, Ananke transforms chaotic market data into a deterministic, permanent record of financial truth. This terminal serves as the "mathematical blueprint" for your trading, where every tick is captured with inescapable precision to drive high-performance execution.
 
 A full-stack quant trading terminal. Select any stock, view interactive OHLCV candlestick charts with technical indicators (SMA, EMA, Bollinger Bands, RSI, MACD), and inspect raw tick data. Price history is fetched on demand from Alpaca Markets and stored permanently in TimescaleDB — so every chart loads faster over time.
 
@@ -16,8 +18,8 @@ A full-stack quant trading terminal. Select any stock, view interactive OHLCV ca
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/arunthegiri/project-genesis-hub.git
-cd project-genesis-hub
+git clone https://github.com/arunthegiri/Ananke.git
+cd Ananke
 ```
 
 ### 2. Add your API keys
@@ -105,7 +107,7 @@ Dates use ISO-8601 format, e.g. `2026-01-01T00:00:00Z`.
 ## Project layout
 
 ```
-project-genesis-hub/
+Ananke/
 ├── Java backend/               # Spring Boot API + TimescaleDB migrations
 │   ├── Dockerfile
 │   ├── docker-compose.yml      # Standalone backend-only compose
