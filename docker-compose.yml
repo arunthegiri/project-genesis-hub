@@ -26,12 +26,12 @@ services:
     depends_on:
       timescaledb:
         condition: service_healthy
+    env_file:
+      - .env
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://timescaledb:5432/stockdb
       DB_USERNAME:           postgres
       DB_PASSWORD:           postgres
-      ALPACA_API_KEY:        ${ALPACA_API_KEY}
-      ALPACA_API_SECRET:     ${ALPACA_API_SECRET}
       FETCH_INTERVAL_MS:     60000
     ports:
       - "8080:8080"

@@ -48,7 +48,7 @@ public class AlpacaClient {
                 .queryParam("timeframe", "1Min")
                 .queryParam("start",     start.toString())
                 .queryParam("limit",     10)
-                .queryParam("feed",      "sip")
+                .queryParam("feed",      "iex")
                 .queryParam("sort",      "desc")
                 .toUriString();
 
@@ -81,7 +81,7 @@ public class AlpacaClient {
                     .queryParam("start",     from.toString())
                     .queryParam("end",       to.toString())
                     .queryParam("limit",     10000)
-                    .queryParam("feed",      "sip")
+                    .queryParam("feed",      "iex")
                     .queryParam("sort",      "asc");
 
             if (pageToken != null) {
@@ -122,7 +122,7 @@ public class AlpacaClient {
 
         String uri = UriComponentsBuilder.fromPath(SNAPSHOTS_PATH)
                 .queryParam("symbols", symbolsCsv)
-                .queryParam("feed",    "sip")
+                .queryParam("feed",    "iex")
                 .toUriString();
 
         log.debug("Fetching snapshots: {}", uri);
