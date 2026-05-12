@@ -66,6 +66,11 @@ First run takes 2–3 minutes to build the images. Subsequent starts are instant
 
 ## Managing containers
 
+All commands must be run from the **repo root** (`Ananke/`) where `docker-compose.yml` lives:
+```bash
+cd /path/to/Ananke
+```
+
 **Stop and restart with no changes (preserves all data):**
 ```bash
 docker compose down
