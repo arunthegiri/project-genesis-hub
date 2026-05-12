@@ -64,17 +64,42 @@ First run takes 2–3 minutes to build the images. Subsequent starts are instant
 
 ---
 
-## Stopping
+## Managing containers
 
+**Stop and restart with no changes (preserves all data):**
 ```bash
 docker compose down
+docker compose up -d
 ```
+Stops and removes the containers but keeps the database volume. Use this when you just want to turn the app off and back on — no code changes, no data loss.
 
-To also wipe the database and start completely fresh:
+**Stop, rebuild, restart (after code changes):**
+```bash
+docker compose down
+docker compose up -d --build
+```
+Same as above but rebuilds the Docker images from source first. Use this any time you edit backend or frontend code.
 
+**Wipe the database and start fresh:**
 ```bash
 docker compose down -v
+docker compose up -d --build
 ```
+The `-v` flag deletes the volume along with the containers. TimescaleDB starts completely empty and all stored price history is gone.
+
+**Pause and resume without removing containers:**
+```bash
+docker compose stop
+docker compose start
+```
+Faster than down/up — containers are paused rather than removed and recreated.
+
+**Rebuild only one service without touching the others:**
+```bash
+docker compose up -d --build frontend
+docker compose up -d --build stock-tracker
+```
+Useful when you only changed the frontend or only the Java backend. The database container keeps running uninterrupted.
 
 ---
 
