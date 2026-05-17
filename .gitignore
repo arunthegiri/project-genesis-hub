@@ -37,6 +37,12 @@ project-genesis-hub/
 # API keys — never commit these
 .env
 Java backend/.env
+Resources/APIkeys.txt
+Resources/APIkeys.txt.bak
+
+# Private dev notes and notebooks
+Dev-notes/
+MLmodels/
 
 # Maven build output
 Java backend/target/
