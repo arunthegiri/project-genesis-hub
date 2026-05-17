@@ -1,0 +1,232 @@
+================================================================================
+ANANKE SDK — PART 1: TRADE CLASS AND INDICATORS
+================================================================================
+
+CONTEXT
+-------
+This is Part 1 of 4 for building the Ananke Python SDK.
+Build this before anything else. Do not touch the Java backend or frontend yet.
+
+The SDK lives at:
+    /Users/phantom/Quant/Anake/ananke-sdk/
+
+Create this folder structure:
+    ananke-sdk/
+        ananke/
+            __init__.py
+            trade.py
+            indicators.py
+        setup.py
+
+Also add to /Users/phantom/Quant/Anake/.gitignore:
+    Dev-notes/
+
+================================================================================
+TRADE CLASS (ananke/trade.py)
+================================================================================
+
+Represents a single trade. Every time a strategy enters or exits a position,
+a Trade object is created or updated.
+
+Fields:
+    trade_id        str         uuid4 generated on creation
+    direction       str         'long' or 'short'
+    entry_time      datetime    time of entry bar
+    entry_price     float       open price of the bar AFTER signal fired
+    exit_time       datetime    time of exit bar (None if still open)
+    exit_price      float       price at exit (None if still open)
+    quantity        float       number of shares, default 1.0
+    stop_loss       float       decimal e.g. 0.02 means 2% (None if not set)
+    take_profit     float       decimal e.g. 0.05 means 5% (None if not set)
+    status          str         'open' or 'closed'
+    pnl             float       dollar profit/loss (None until closed)
+    pnl_pct         float       percentage profit/loss (None until closed)
+    win             bool        True if pnl > 0 (None until closed)
+
+Methods:
+
+    close(exit_time, exit_price)
+        Sets exit_time and exit_price.
+        Calculates pnl:
+            long:  pnl = (exit_price - entry_price) * quantity
+            short: pnl = (entry_price - exit_price) * quantity
+        Calculates pnl_pct:
+            long:  pnl_pct = ((exit_price - entry_price) / entry_price) * 100
+            short: pnl_pct = ((entry_price - exit_price) / entry_price) * 100
+        Sets win = True if pnl > 0, False otherwise.
+        Sets status = 'closed'.
+
+    to_dict()
+        Returns all fields as a JSON-serializable dictionary.
+        Convert datetime objects to ISO format strings.
+        Example output:
+        {
+            "trade_id": "abc123",
+            "direction": "long",
+            "entry_time": "2026-05-12T09:31:00",
+            "entry_price": 125.50,
+            "exit_time": "2026-05-12T10:15:00",
+            "exit_price": 128.00,
+            "quantity": 1.0,
+            "stop_loss": 0.02,
+            "take_profit": 0.05,
+            "status": "closed",
+            "pnl": 2.50,
+            "pnl_pct": 1.99,
+            "win": true
+        }
+
+================================================================================
+INDICATORS (ananke/indicators.py)
+================================================================================
+
+Pure functions only. No classes. Each function takes a pandas Series or
+DataFrame and returns a pandas Series aligned to the same index.
+All functions must handle NaN values gracefully — do not crash on NaN,
+just propagate them naturally.
+
+Functions to implement:
+
+    sma(series, period)
+        Simple moving average.
+        Return: pandas Series
+
+    ema(series, period)
+        Exponential moving average.
+        Use adjust=False in pandas ewm.
+        Return: pandas Series
+
+    rsi(series, period=14)
+        Relative Strength Index.
+        Standard Wilder RSI calculation:
+            delta = series.diff()
+            gain = delta.clip(lower=0)
+            loss = -delta.clip(upper=0)
+            avg_gain = gain.ewm(alpha=1/period, adjust=False).mean()
+            avg_loss = loss.ewm(alpha=1/period, adjust=False).mean()
+            rs = avg_gain / avg_loss
+            rsi = 100 - (100 / (1 + rs))
+        Return: pandas Series with values 0-100
+
+    macd(series, fast=12, slow=26, signal=9)
+        MACD line, signal line, and histogram.
+        macd_line = ema(series, fast) - ema(series, slow)
+        signal_line = ema(macd_line, signal)
+        histogram = macd_line - signal_line
+        Return: dict with keys 'macd', 'signal', 'histogram' each a pandas Series
+
+    bollinger(series, period=20, std=2)
+        Bollinger Bands.
+        middle = sma(series, period)
+        upper = middle + (std * series.rolling(period).std())
+        lower = middle - (std * series.rolling(period).std())
+        Return: dict with keys 'upper', 'middle', 'lower' each a pandas Series
+
+    atr(df, period=14)
+        Average True Range. Requires full OHLCV DataFrame with
+        columns: high, low, close
+        true_range = max(high-low, abs(high-prev_close), abs(low-prev_close))
+        atr = true_range.ewm(alpha=1/period, adjust=False).mean()
+        Return: pandas Series
+
+    vwap(df)
+        Volume Weighted Average Price. Requires DataFrame with
+        columns: high, low, close, volume
+        typical_price = (high + low + close) / 3
+        vwap = cumsum(typical_price * volume) / cumsum(volume)
+        Note: VWAP resets each trading day. Group by date before calculating.
+        Return: pandas Series
+
+================================================================================
+__init__.py
+================================================================================
+
+Export the main classes so users can import cleanly:
+
+    from ananke import Kairos
+    from ananke.indicators import rsi, sma, ema, macd, bollinger, atr, vwap
+
+__init__.py should contain:
+    from .kairos import Kairos
+    from .trade import Trade
+    from .results import Results
+    from . import indicators
+
+================================================================================
+DOCUMENTATION REQUIREMENTS
+================================================================================
+
+Every function and class MUST have a detailed docstring including:
+    - What it does in plain English
+    - All parameters with types and descriptions
+    - Return type and description
+    - A short usage example
+    - Any edge cases or gotchas
+
+Example docstring format:
+
+    def rsi(series, period=14):
+        """
+        Calculate the Relative Strength Index (RSI) for a price series.
+
+        RSI measures the speed and magnitude of price changes on a scale
+        of 0 to 100. Values below 30 are considered oversold (potential
+        buy signal), values above 70 are considered overbought (potential
+        sell signal).
+
+        Parameters
+        ----------
+        series : pd.Series
+            A pandas Series of closing prices indexed by datetime.
+        period : int, optional
+            The lookback period for RSI calculation. Default is 14.
+            Common values: 9 (short-term), 14 (standard), 25 (long-term).
+
+        Returns
+        -------
+        pd.Series
+            RSI values ranging from 0 to 100, aligned to the input index.
+            First (period) values will be NaN due to the warm-up period.
+
+        Example
+        -------
+        >>> from ananke.indicators import rsi
+        >>> rsi_vals = rsi(df['close'], period=14)
+        >>> buy_signal = rsi_vals < 30
+        >>> sell_signal = rsi_vals > 70
+
+        Notes
+        -----
+        Uses Wilder's smoothing method (EMA with alpha=1/period).
+        NaN values in the input series are propagated to the output.
+        """
+
+Apply this same level of documentation to ALL functions and classes.
+
+================================================================================
+VERIFICATION
+================================================================================
+
+After building Part 1, verify it works by running in Jupyter:
+
+    from ananke.indicators import rsi, sma, ema, bollinger, macd
+    from ananke.trade import Trade
+    from datetime import datetime
+
+    # Test Trade
+    t = Trade(direction='long', entry_time=datetime.now(),
+              entry_price=100.0, stop_loss=0.02, take_profit=0.05)
+    t.close(exit_time=datetime.now(), exit_price=105.0)
+    print(t.to_dict())
+    # Should show pnl=5.0, pnl_pct=5.0, win=True
+
+    # Test indicators (assume df is already loaded)
+    print(rsi(df['close'], 14).tail())
+    print(sma(df['close'], 20).tail())
+    print(bollinger(df['close'])['upper'].tail())
+
+Confirm all output looks correct before moving to Part 2.
+
+================================================================================
+END OF PART 1
+================================================================================

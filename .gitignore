@@ -31,6 +31,9 @@ dist-ssr
 *.sln
 *.sw?
 
+# Nested repo — has its own git history, managed separately
+project-genesis-hub/
+
 # API keys — never commit these
 .env
 Java backend/.env

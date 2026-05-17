@@ -1,0 +1,275 @@
+================================================================================
+ANANKE SDK — PART 4: SETUP, PACKAGING, AND DOCUMENTATION
+================================================================================
+
+CONTEXT
+-------
+This is Part 4 of 4 for building the Ananke Python SDK.
+Complete Parts 1, 2, and 3 before starting this.
+This part makes the SDK pip installable and creates the full documentation.
+
+================================================================================
+SETUP.PY
+================================================================================
+
+Location: /Users/phantom/Quant/Anake/ananke-sdk/setup.py
+
+    from setuptools import setup, find_packages
+
+    setup(
+        name='ananke',
+        version='0.1.0',
+        description='Python SDK for the Ananke Quant Trading Platform',
+        author='Arun Thegiri',
+        packages=find_packages(),
+        python_requires='>=3.9',
+        install_requires=[
+            'pandas>=1.5.0',
+            'numpy>=1.23.0',
+            'matplotlib>=3.6.0',
+            'requests>=2.28.0',
+            'sqlalchemy>=2.0.0',
+            'psycopg2-binary>=2.9.0',
+        ],
+    )
+
+After creating setup.py, install the SDK in editable mode:
+
+    pip install -e /Users/phantom/Quant/Anake/ananke-sdk/
+
+This means any changes you make to the SDK source files are immediately
+available without reinstalling.
+
+================================================================================
+FINAL FOLDER STRUCTURE
+================================================================================
+
+Verify the complete structure looks like this:
+
+    ananke-sdk/
+        ananke/
+            __init__.py         exports Kairos, Trade, Results, indicators
+            trade.py            Trade class
+            indicators.py       sma, ema, rsi, macd, bollinger, atr, vwap
+            kairos.py           Kairos class
+            results.py          Results class
+            client.py           HTTP client for backend communication
+        setup.py
+        README.md
+
+================================================================================
+README.md
+================================================================================
+
+Location: /Users/phantom/Quant/Anake/ananke-sdk/README.md
+
+Write a comprehensive README with the following sections:
+
+---
+
+# Ananke SDK
+
+Python SDK for the Ananke Quant Trading Platform. Define, backtest, and export
+trading strategies from Jupyter notebooks to the Ananke dashboard.
+
+## Installation
+
+    pip install -e /path/to/ananke-sdk/
+
+## Quick Start
+
+    from ananke import Kairos
+    from ananke.indicators import rsi, sma
+
+    # df is your OHLCV DataFrame already loaded from TimescaleDB
+    s = Kairos(df, name='my_strategy')
+
+    # Define entry conditions
+    rsi_vals = rsi(df['close'], period=14)
+    s.enter_long(condition=rsi_vals < 30)
+    s.enter_short(condition=rsi_vals > 70)
+
+    # Define exit conditions
+    s.exit_trade(stop_loss=0.02, take_profit=0.05)
+
+    # Run the backtest
+    results = s.run()
+    results  # displays summary table
+
+    # Visualize
+    s.plot()
+
+    # Export to dashboard
+    s.export()
+
+## Indicators
+
+Document every indicator with its signature, description, and example:
+
+### sma(series, period)
+### ema(series, period)
+### rsi(series, period=14)
+### macd(series, fast=12, slow=26, signal=9)
+### bollinger(series, period=20, std=2)
+### atr(df, period=14)
+### vwap(df)
+
+## Kairos Class
+
+Document all methods:
+### Kairos(df, name=None)
+### enter_long(condition)
+### enter_short(condition)
+### exit_trade(condition, stop_loss, take_profit)
+### set_quantity(qty)
+### run()
+### plot()
+### export(name=None)
+
+## Results Class
+
+Document all fields and methods:
+### Fields: total_trades, win_rate, total_pnl, sharpe_ratio, etc.
+### summary()
+### to_dict()
+
+## Kairos Examples
+
+Include 3 complete working examples:
+
+### Example 1: RSI Mean Reversion
+    from ananke import Kairos
+    from ananke.indicators import rsi, ema
+
+    s = Kairos(df, name='rsi_mean_reversion')
+    rsi_vals = rsi(df['close'], period=14)
+    fast_ema = ema(df['close'], period=9)
+    slow_ema = ema(df['close'], period=21)
+    s.enter_long(condition=(rsi_vals < 30) & (fast_ema > slow_ema))
+    s.enter_short(condition=(rsi_vals > 70) & (fast_ema < slow_ema))
+    s.exit_trade(stop_loss=0.02, take_profit=0.05)
+    results = s.run()
+    s.plot()
+    s.export()
+
+### Example 2: Moving Average Crossover
+    from ananke import Kairos
+    from ananke.indicators import sma
+
+    s = Kairos(df, name='ma_crossover')
+    fast = sma(df['close'], 10)
+    slow = sma(df['close'], 50)
+    s.enter_long(condition=(fast > slow) & (fast.shift(1) <= slow.shift(1)))
+    s.enter_short(condition=(fast < slow) & (fast.shift(1) >= slow.shift(1)))
+    s.exit_trade(stop_loss=0.03, take_profit=0.06)
+    results = s.run()
+    s.export('ma_crossover')
+
+### Example 3: Bollinger Band Squeeze
+    from ananke import Kairos
+    from ananke.indicators import bollinger, rsi
+
+    s = Kairos(df, name='bollinger_rsi')
+    bands = bollinger(df['close'], period=20, std=2)
+    rsi_vals = rsi(df['close'], period=14)
+    s.enter_long(
+        condition=(df['close'] <= bands['lower']) & (rsi_vals < 35)
+    )
+    s.exit_trade(
+        condition=(df['close'] >= bands['upper']) | (rsi_vals > 65),
+        stop_loss=0.02
+    )
+    results = s.run()
+    results.summary()
+    s.plot()
+    s.export()
+
+## Configuration
+
+    # Override the backend URL (default: http://localhost:8080)
+    export ANANKE_API_URL=http://your-server:8080
+
+    # Override the database URL (default: localhost:5432)
+    export TIMESCALE_URL=postgresql+psycopg2://user:pass@host:5432/stockdb
+
+## Performance Notes
+
+- All indicators are computed using pandas vectorized operations — fast
+  even on large DataFrames
+- The backtest runs bar by bar in Python — for DataFrames over 100,000 rows
+  consider using a date range filter to reduce data size
+- Entry is always executed at the OPEN of the next bar after signal fires
+  for realistic simulation
+
+---
+
+================================================================================
+DOCUMENTATION STANDARDS — APPLY TO ALL FILES
+================================================================================
+
+Every Python file must start with a module-level docstring explaining:
+    - What the module contains
+    - How it fits into the overall SDK
+    - Any important notes or dependencies
+
+Every class must have a class-level docstring with:
+    - What the class represents
+    - Constructor parameters
+    - A complete usage example
+
+Every method and function must have a docstring with:
+    - Plain English description
+    - Parameters section (name, type, description for each)
+    - Returns section (type and description)
+    - Raises section (any exceptions that can be raised)
+    - Example section (working code snippet)
+
+Use NumPy docstring format throughout for consistency.
+
+================================================================================
+VERIFICATION — FULL END TO END TEST
+================================================================================
+
+After completing all 4 parts, run this complete test in Jupyter:
+
+    # Assumes df is already loaded from TimescaleDB
+
+    from ananke import Kairos
+    from ananke.indicators import rsi, sma, ema, bollinger, macd, atr, vwap
+
+    # Test all indicators
+    assert len(rsi(df['close'], 14)) == len(df)
+    assert len(sma(df['close'], 20)) == len(df)
+    assert 'upper' in bollinger(df['close'])
+    assert 'macd' in macd(df['close'])
+    assert len(atr(df, 14)) == len(df)
+    assert len(vwap(df)) == len(df)
+    print("✓ All indicators working")
+
+    # Test strategy
+    s = Kairos(df, name='full_test')
+    rsi_vals = rsi(df['close'], 14)
+    s.enter_long(condition=rsi_vals < 35)
+    s.enter_short(condition=rsi_vals > 65)
+    s.exit_trade(stop_loss=0.02, take_profit=0.04)
+    s.set_quantity(5)
+
+    results = s.run()
+    assert results.total_trades >= 0
+    assert 0 <= results.win_rate <= 100
+    assert isinstance(results.to_dict(), dict)
+    assert 'trades' in results.to_dict()
+    print("✓ Kairos backtest working")
+
+    # Display results
+    results  # should show summary table
+
+    # Plot
+    s.plot()  # should show chart with markers and equity curve
+    print("✓ Plot working")
+
+    print("\n✓ All SDK tests passed. Ready to export once backend is built.")
+
+================================================================================
+END OF PART 4
+================================================================================
