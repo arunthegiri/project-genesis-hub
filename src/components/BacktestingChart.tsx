@@ -95,7 +95,7 @@ function buildMarkers(trades: Trade[], bars: PriceBar[]) {
   return markers.sort((a, b) => (a.time as number) - (b.time as number));
 }
 
-export function ReplayChart({ bars, trades, height = "100%" }: Props) {
+export function BacktestingChart({ bars, trades, height = "100%" }: Props) {
   const containerRef    = useRef<HTMLDivElement>(null);
   const chartRef        = useRef<IChartApi | null>(null);
   const seriesRef       = useRef<ISeriesApi<"Candlestick"> | null>(null);

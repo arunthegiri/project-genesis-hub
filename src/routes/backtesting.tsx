@@ -14,7 +14,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 
-import { ReplayChart } from "@/components/ReplayChart";
+import { BacktestingChart } from "@/components/BacktestingChart";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -28,16 +28,24 @@ import { symbolsApi, normalizeSymbols } from "@/lib/api/symbols";
 import { tradesApi } from "@/lib/api/trades";
 import type { PriceBar, Trade } from "@/lib/api/types";
 
-export const Route = createFileRoute("/replay")({
-  head: () => ({ meta: [{ title: "Replay — Quant Trading Platform" }] }),
-  component: ReplayPage,
-});
-
 const SPEEDS = [0.5, 1, 2, 5, 10, 25, 50] as const;
 type Speed = (typeof SPEEDS)[number];
 
 const DEFAULT_FROM = "2026-05-12T00:00";
 const DEFAULT_TO   = "2026-05-17T00:00";
+
+export const Route = createFileRoute("/backtesting")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    symbol:  (search.symbol  as string | undefined) ?? "",
+    from:    (search.from    as string | undefined) ?? DEFAULT_FROM,
+    to:      (search.to      as string | undefined) ?? DEFAULT_TO,
+    speed:   (Number(search.speed ?? 1)) as Speed,
+    // true once the user has clicked Load at least once
+    loaded:  search.loaded === "true" || search.loaded === true,
+  }),
+  head: () => ({ meta: [{ title: "Backtesting — Quant Trading Platform" }] }),
+  component: BacktestingPage,
+});
 
 function toApiIso(local: string) {
   return new Date(local).toISOString();
@@ -58,103 +66,130 @@ function formatPnl(pnl: number) {
   return `${sign}$${pnl.toFixed(2)}`;
 }
 
-function ReplayPage() {
+const SESSION_KEY = "backtesting-state";
+
+function BacktestingPage() {
+  const search   = Route.useSearch();
+  const navigate = Route.useNavigate();
+
+  const setSearch = useCallback(
+    (updates: Partial<typeof search>) =>
+      navigate({ search: (prev) => ({ ...prev, ...updates }), replace: true }),
+    [navigate],
+  );
+
+  // On mount: if the sidebar stripped our URL params, restore from sessionStorage.
+  useEffect(() => {
+    if (!search.loaded || !search.symbol) {
+      try {
+        const stored = sessionStorage.getItem(SESSION_KEY);
+        if (stored) {
+          const restored = JSON.parse(stored) as typeof search;
+          if (restored.loaded && restored.symbol) {
+            navigate({ search: restored, replace: true });
+          }
+        }
+      } catch { /* ignore parse errors */ }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally only on first mount
+
   const { data: rawSymbols } = useQuery({
     queryKey: ["symbols"],
     queryFn: symbolsApi.list,
   });
   const symbols = normalizeSymbols(rawSymbols);
 
-  const [symbol, setSymbol]   = useState<string>("");
-  const [from, setFrom]       = useState(DEFAULT_FROM);
-  const [to, setTo]           = useState(DEFAULT_TO);
-  const [speed, setSpeed]     = useState<Speed>(1);
-  const [jumpTo, setJumpTo]   = useState("");
-
-  const [allBars, setAllBars]     = useState<PriceBar[]>([]);
-  const [allTrades, setAllTrades] = useState<Trade[]>([]);
-  const [currentIdx, setCurrentIdx] = useState(0);
-  const [playing, setPlaying]     = useState(false);
-  const [loaded, setLoaded]       = useState(false);
-
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
+  const { symbol, from, to, speed, loaded } = search;
   const selectedSymbol = symbol || symbols[0] || "";
 
-  // ── Load ────────────────────────────────────────────────────────────────────
-  const handleLoad = useCallback(async () => {
-    if (!selectedSymbol) return;
-    setPlaying(false);
-    setLoaded(false);
+  const fromIso = toApiIso(from);
+  const toIso   = toApiIso(to);
 
-    const fromIso = toApiIso(from);
-    const toIso   = toApiIso(to);
+  // ── Bars — cached in React Query; only enabled once user clicks Load ────────
+  const { data: allBars = [] } = useQuery<PriceBar[]>({
+    enabled: loaded && !!selectedSymbol,
+    queryKey: ["backtesting-bars", selectedSymbol, fromIso, toIso],
+    queryFn: () => pricesApi.range(selectedSymbol, fromIso, toIso),
+    staleTime: Infinity,
+    gcTime:   30 * 60 * 1000,
+  });
 
-    const bars = await pricesApi.range(selectedSymbol, fromIso, toIso);
-    setAllBars(bars);
-    setCurrentIdx(0);
+  // ── Trades — cached the same way ────────────────────────────────────────────
+  const { data: allTrades = [] } = useQuery<Trade[]>({
+    enabled: loaded && !!selectedSymbol,
+    queryKey: ["backtesting-trades", selectedSymbol, fromIso, toIso],
+    queryFn: async () => {
+      try {
+        return await tradesApi.range(selectedSymbol, fromIso, toIso);
+      } catch {
+        return [];
+      }
+    },
+    staleTime: Infinity,
+    gcTime:   30 * 60 * 1000,
+  });
 
-    let trades: Trade[] = [];
-    try {
-      trades = await tradesApi.range(selectedSymbol, fromIso, toIso);
-    } catch {
-      // endpoint not yet deployed — silently fall back to no markers
+  // ── Playback state ──────────────────────────────────────────────────────────
+  // -1 = sentinel for "show all bars" — used on mount and after nav so the
+  // chart immediately renders the full dataset from cache instead of 1 bar.
+  const [currentIdx, setCurrentIdx] = useState(-1);
+  const [playing, setPlaying]       = useState(false);
+  const [jumpTo, setJumpTo]         = useState("");
+
+  const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const prevDataKey = useRef("");
+
+  // Only reset playhead when the actual dataset changes (not on nav back).
+  useEffect(() => {
+    const key = `${selectedSymbol}|${fromIso}|${toIso}`;
+    if (key !== prevDataKey.current && loaded) {
+      setCurrentIdx(-1);
+      setPlaying(false);
+      prevDataKey.current = key;
     }
-    setAllTrades(trades);
-    setLoaded(true);
-  }, [selectedSymbol, from, to]);
+  }, [selectedSymbol, fromIso, toIso, loaded]);
+
+  // Resolved index: -1 collapses to the last bar so all data is visible.
+  const resolvedIdx  = currentIdx === -1 ? Math.max(0, allBars.length - 1) : currentIdx;
 
   // ── Timer ───────────────────────────────────────────────────────────────────
   const stopTimer = useCallback(() => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
   }, []);
 
   useEffect(() => {
-    if (!playing) {
-      stopTimer();
-      return;
-    }
-
+    if (!playing) { stopTimer(); return; }
     const ms = Math.max(16, Math.round(1000 / speed));
     timerRef.current = setInterval(() => {
       setCurrentIdx(prev => {
-        if (prev >= allBars.length - 1) {
-          setPlaying(false);
-          return prev;
-        }
-        return prev + 1;
+        // If we're in "show all" mode, replay starts from bar 0.
+        const cur = prev === -1 ? 0 : prev;
+        if (cur >= allBars.length - 1) { setPlaying(false); return allBars.length - 1; }
+        return cur + 1;
       });
     }, ms);
-
     return stopTimer;
   }, [playing, speed, allBars.length, stopTimer]);
 
   // ── Controls ────────────────────────────────────────────────────────────────
-  const restart = () => {
+  const handleLoad = () => {
     setPlaying(false);
-    setCurrentIdx(0);
+    setCurrentIdx(-1);
+    const next = { symbol: selectedSymbol, from, to, speed, loaded: true };
+    setSearch(next);
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(next));
   };
 
-  const stepBack = () => {
-    setPlaying(false);
-    setCurrentIdx(i => Math.max(0, i - 1));
-  };
-
-  const stepForward = () => {
-    setPlaying(false);
-    setCurrentIdx(i => Math.min(allBars.length - 1, i + 1));
-  };
-
-  const togglePlay = () => setPlaying(p => !p);
+  const restart     = () => { setPlaying(false); setCurrentIdx(0); };
+  const stepBack    = () => { setPlaying(false); setCurrentIdx(i => Math.max(0, (i === -1 ? allBars.length - 1 : i) - 1)); };
+  const stepForward = () => { setPlaying(false); setCurrentIdx(i => Math.min(allBars.length - 1, (i === -1 ? allBars.length - 1 : i) + 1)); };
+  const togglePlay  = () => setPlaying(p => !p);
 
   const handleJump = () => {
     if (!jumpTo || !allBars.length) return;
     const target = new Date(jumpTo).getTime();
-    let best = 0;
-    let bestDiff = Infinity;
+    let best = 0, bestDiff = Infinity;
     for (let i = 0; i < allBars.length; i++) {
       const diff = Math.abs(new Date(allBars[i].time).getTime() - target);
       if (diff < bestDiff) { bestDiff = diff; best = i; }
@@ -163,13 +198,12 @@ function ReplayPage() {
     setCurrentIdx(best);
   };
 
-  // ── Derived data ─────────────────────────────────────────────────────────────
-  const visibleBars   = allBars.slice(0, currentIdx + 1);
-  const currentBar    = allBars[currentIdx];
+  // ── Derived ─────────────────────────────────────────────────────────────────
+  const visibleBars   = allBars.slice(0, resolvedIdx + 1);
+  const currentBar    = allBars[resolvedIdx];
   const currentTime   = currentBar?.time ?? "";
-
   const visibleTrades = allTrades.filter(
-    t => new Date(t.exitTime).getTime() <= new Date(currentTime).getTime()
+    t => new Date(t.exitTime).getTime() <= new Date(currentTime).getTime(),
   );
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -182,7 +216,10 @@ function ReplayPage() {
         {/* Symbol */}
         <div className="flex flex-col gap-1">
           <label className="text-xs text-muted-foreground">Symbol</label>
-          <Select value={selectedSymbol} onValueChange={setSymbol}>
+          <Select
+            value={selectedSymbol}
+            onValueChange={v => setSearch({ symbol: v, loaded: false })}
+          >
             <SelectTrigger className="h-8 w-28 text-xs">
               <SelectValue placeholder="Symbol" />
             </SelectTrigger>
@@ -200,7 +237,7 @@ function ReplayPage() {
           <input
             type="datetime-local"
             value={from}
-            onChange={e => setFrom(e.target.value)}
+            onChange={e => setSearch({ from: e.target.value, loaded: false })}
             className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           />
         </div>
@@ -211,7 +248,7 @@ function ReplayPage() {
           <input
             type="datetime-local"
             value={to}
-            onChange={e => setTo(e.target.value)}
+            onChange={e => setSearch({ to: e.target.value, loaded: false })}
             className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           />
         </div>
@@ -219,7 +256,10 @@ function ReplayPage() {
         {/* Speed */}
         <div className="flex flex-col gap-1">
           <label className="text-xs text-muted-foreground">Speed (bars/s)</label>
-          <Select value={String(speed)} onValueChange={v => setSpeed(Number(v) as Speed)}>
+          <Select
+            value={String(speed)}
+            onValueChange={v => setSearch({ speed: Number(v) as Speed })}
+          >
             <SelectTrigger className="h-8 w-24 text-xs">
               <SelectValue />
             </SelectTrigger>
@@ -237,7 +277,7 @@ function ReplayPage() {
         </Button>
 
         {/* Playback buttons */}
-        {loaded && (
+        {loaded && allBars.length > 0 && (
           <div className="ml-auto flex items-center gap-1">
             <Button size="icon" variant="ghost" className="h-8 w-8" onClick={restart} title="Restart">
               <RotateCcw className="h-4 w-4" />
@@ -256,10 +296,10 @@ function ReplayPage() {
       </div>
 
       {/* ── Status / jump row ────────────────────────────────────────────── */}
-      {loaded && (
+      {loaded && allBars.length > 0 && (
         <div className="flex flex-wrap items-center gap-4 px-1 text-xs text-muted-foreground">
           <span className="font-mono text-foreground">{currentTime ? formatTs(currentTime) : "—"}</span>
-          <span>Bar {currentIdx + 1} / {allBars.length}</span>
+          <span>Bar {resolvedIdx + 1} / {allBars.length}</span>
           {currentBar && (
             <span className="font-mono">
               O {currentBar.open.toFixed(2)}
@@ -290,12 +330,14 @@ function ReplayPage() {
 
         {/* Chart */}
         <div className="overflow-hidden rounded-md border border-border bg-card">
-          {!loaded ? (
+          {!loaded || allBars.length === 0 ? (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-              Select a symbol and date range, then click Load.
+              {!loaded
+                ? "Select a symbol and date range, then click Load."
+                : "Loading data…"}
             </div>
           ) : (
-            <ReplayChart bars={visibleBars} trades={visibleTrades} />
+            <BacktestingChart bars={visibleBars} trades={visibleTrades} />
           )}
         </div>
 

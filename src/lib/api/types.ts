@@ -37,6 +37,26 @@ export interface Trade {
   modelVersion: string;
 }
 
+export type BackfillStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
+
+export interface BackfillJob {
+  jobId: string;
+  symbol: string;
+  fromTime: string;
+  toTime: string;
+  status: BackfillStatus;
+  totalChunks: number;
+  completedChunks: number;
+  totalBars: number;
+  progressPct: number;
+  errorMessage: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  currentChunkFrom: string | null;
+  currentChunkTo: string | null;
+}
+
 export type Interval = "1Min" | "5Min" | "15Min" | "30Min" | "1Hour" | "1Day";
 
 export const INTERVALS: { value: Interval; label: string }[] = [

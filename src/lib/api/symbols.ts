@@ -1,12 +1,19 @@
 import { apiFetch } from "./client";
 import type { Symbol } from "./types";
 
+export interface AssetMatch {
+  symbol: string;
+  name: string;
+}
+
 export const symbolsApi = {
   list: () => apiFetch<Symbol[] | string[]>("/api/symbols"),
   add: (symbol: string) =>
     apiFetch<Symbol>("/api/symbols", { method: "POST", body: { symbol } }),
   remove: (symbol: string) =>
     apiFetch<void>(`/api/symbols/${encodeURIComponent(symbol)}`, { method: "DELETE" }),
+  search: (q: string) =>
+    apiFetch<AssetMatch[]>(`/api/symbols/search`, { query: { q } }),
 };
 
 /** Normalize backend response (could be string[], {symbol}[], or wrapped {symbols:[...]}) */

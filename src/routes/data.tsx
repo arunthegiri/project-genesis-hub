@@ -7,6 +7,7 @@ import { Loader2 } from "lucide-react";
 
 import { SymbolPicker } from "@/components/SymbolPicker";
 import { PythonExport } from "@/components/PythonExport";
+import { BackfillPanel } from "@/components/BackfillPanel";
 import { pricesApi } from "@/lib/api/prices";
 import { INTERVALS, type Interval, type PriceBar } from "@/lib/api/types";
 import { Input } from "@/components/ui/input";
@@ -203,6 +204,8 @@ function DataPage() {
             </div>
           </div>
         </div>
+
+        <BackfillPanel symbol={symbol} />
 
         <PythonExport code={pythonCode} filename={`${symbol || "query"}_data.py`} />
       </section>

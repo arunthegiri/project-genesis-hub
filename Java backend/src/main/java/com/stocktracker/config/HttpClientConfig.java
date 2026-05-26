@@ -22,4 +22,14 @@ public class HttpClientConfig {
                 .defaultHeader("Accept", "application/json")
                 .build();
     }
+
+    @Bean
+    public RestClient alpacaBrokerClient() {
+        return RestClient.builder()
+                .baseUrl(props.getBrokerBaseUrl())
+                .defaultHeader("APCA-API-KEY-ID",     props.getKey())
+                .defaultHeader("APCA-API-SECRET-KEY", props.getSecret())
+                .defaultHeader("Accept", "application/json")
+                .build();
+    }
 }

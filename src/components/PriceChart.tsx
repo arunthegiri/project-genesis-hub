@@ -4,10 +4,12 @@ import {
   CrosshairMode,
   type IChartApi,
   type ISeriesApi,
+  type SeriesMarker,
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
 import type { PriceBar } from "@/lib/api/types";
+import type { BacktestTrade } from "@/lib/api/strategies";
 import { sma, ema, bollinger, rsi, macd } from "@/lib/indicators";
 
 export type ChartType = "candlestick" | "line" | "bar" | "area";
@@ -31,6 +33,7 @@ interface Props {
   height?: number;
   chartType?: ChartType;
   compareData?: CompareEntry[];
+  trades?: BacktestTrade[];
 }
 
 const INDICATOR_COLORS = ["#60a5fa", "#f59e0b", "#a78bfa", "#34d399", "#f472b6", "#fb923c"];
@@ -62,6 +65,7 @@ export function PriceChart({
   height = 480,
   chartType = "candlestick",
   compareData = [],
+  trades = [],
 }: Props) {
   const containerRef   = useRef<HTMLDivElement>(null);
   const chartRef       = useRef<IChartApi | null>(null);
@@ -210,6 +214,49 @@ export function PriceChart({
       subChartsRef.current = [];
     };
   }, [bars, indicators.rsi, indicators.macd, compareData]);
+
+  // Trade markers — runs after the series effect so mainSeriesRef is populated
+  useEffect(() => {
+    const series = mainSeriesRef.current;
+    if (!series) return;
+
+    if (!trades.length) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (series as ISeriesApi<any>).setMarkers([]);
+      return;
+    }
+
+    const toTs = (iso: string) =>
+      Math.floor(new Date(iso).getTime() / 1000) as UTCTimestamp;
+
+    const markers: SeriesMarker<Time>[] = [];
+
+    for (const t of trades) {
+      const isLong = t.direction === "long";
+
+      markers.push({
+        time: toTs(t.entry_time) as Time,
+        position: isLong ? "belowBar" : "aboveBar",
+        color: isLong ? "#22c55e" : "#ef4444",
+        shape: isLong ? "arrowUp" : "arrowDown",
+        text: isLong ? "L" : "S",
+      });
+
+      if (t.status === "closed" && t.exit_time && t.exit_price != null) {
+        markers.push({
+          time: toTs(t.exit_time) as Time,
+          position: isLong ? "aboveBar" : "belowBar",
+          color: t.win ? "#22c55e" : "#ef4444",
+          shape: "circle",
+          text: t.win ? "+" : "-",
+        });
+      }
+    }
+
+    markers.sort((a, b) => (a.time as number) - (b.time as number));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (series as ISeriesApi<any>).setMarkers(markers);
+  }, [trades, bars]);
 
   return (
     <div className="flex flex-col">

@@ -9,16 +9,16 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as ReplayRouteImport } from './routes/replay'
+import { Route as BacktestingRouteImport } from './routes/backtesting'
 import { Route as ModelsRouteImport } from './routes/models'
 import { Route as MetricsRouteImport } from './routes/metrics'
 import { Route as LiveRouteImport } from './routes/live'
 import { Route as DataRouteImport } from './routes/data'
 import { Route as IndexRouteImport } from './routes/index'
 
-const ReplayRoute = ReplayRouteImport.update({
-  id: '/replay',
-  path: '/replay',
+const BacktestingRoute = BacktestingRouteImport.update({
+  id: '/backtesting',
+  path: '/backtesting',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ModelsRoute = ModelsRouteImport.update({
@@ -53,7 +53,7 @@ export interface FileRoutesByFullPath {
   '/live': typeof LiveRoute
   '/metrics': typeof MetricsRoute
   '/models': typeof ModelsRoute
-  '/replay': typeof ReplayRoute
+  '/backtesting': typeof BacktestingRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -61,7 +61,7 @@ export interface FileRoutesByTo {
   '/live': typeof LiveRoute
   '/metrics': typeof MetricsRoute
   '/models': typeof ModelsRoute
-  '/replay': typeof ReplayRoute
+  '/backtesting': typeof BacktestingRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -70,14 +70,14 @@ export interface FileRoutesById {
   '/live': typeof LiveRoute
   '/metrics': typeof MetricsRoute
   '/models': typeof ModelsRoute
-  '/replay': typeof ReplayRoute
+  '/backtesting': typeof BacktestingRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/data' | '/live' | '/metrics' | '/models' | '/replay'
+  fullPaths: '/' | '/data' | '/live' | '/metrics' | '/models' | '/backtesting'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/data' | '/live' | '/metrics' | '/models' | '/replay'
-  id: '__root__' | '/' | '/data' | '/live' | '/metrics' | '/models' | '/replay'
+  to: '/' | '/data' | '/live' | '/metrics' | '/models' | '/backtesting'
+  id: '__root__' | '/' | '/data' | '/live' | '/metrics' | '/models' | '/backtesting'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -86,16 +86,16 @@ export interface RootRouteChildren {
   LiveRoute: typeof LiveRoute
   MetricsRoute: typeof MetricsRoute
   ModelsRoute: typeof ModelsRoute
-  ReplayRoute: typeof ReplayRoute
+  BacktestingRoute: typeof BacktestingRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/replay': {
-      id: '/replay'
-      path: '/replay'
-      fullPath: '/replay'
-      preLoaderRoute: typeof ReplayRouteImport
+    '/backtesting': {
+      id: '/backtesting'
+      path: '/backtesting'
+      fullPath: '/backtesting'
+      preLoaderRoute: typeof BacktestingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/models': {
@@ -142,7 +142,7 @@ const rootRouteChildren: RootRouteChildren = {
   LiveRoute: LiveRoute,
   MetricsRoute: MetricsRoute,
   ModelsRoute: ModelsRoute,
-  ReplayRoute: ReplayRoute,
+  BacktestingRoute: BacktestingRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

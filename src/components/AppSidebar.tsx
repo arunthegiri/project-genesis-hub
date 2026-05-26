@@ -11,7 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 
 type NavItem = {
-  to: "/" | "/data" | "/replay" | "/live" | "/metrics" | "/models";
+  to: "/" | "/data" | "/backtesting" | "/live" | "/metrics" | "/models";
   label: string;
   icon: typeof LineChart;
   exact?: boolean;
@@ -20,7 +20,7 @@ type NavItem = {
 const NAV: NavItem[] = [
   { to: "/", label: "Charts", icon: LineChart, exact: true },
   { to: "/data", label: "Data", icon: Database },
-  { to: "/replay", label: "Backtesting", icon: History },
+  { to: "/backtesting", label: "Backtesting", icon: History },
   { to: "/live", label: "Live", icon: Activity },
   { to: "/metrics", label: "Metrics", icon: Gauge },
   { to: "/models", label: "Models", icon: Brain },

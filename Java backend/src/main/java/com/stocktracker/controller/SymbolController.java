@@ -1,6 +1,7 @@
 package com.stocktracker.controller;
 
 import com.stocktracker.dto.ApiDto;
+import com.stocktracker.service.AssetSearchService;
 import com.stocktracker.service.SymbolService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -13,10 +14,12 @@ import java.util.List;
 @RequestMapping("/api/symbols")
 public class SymbolController {
 
-    private final SymbolService symbolService;
+    private final SymbolService        symbolService;
+    private final AssetSearchService   assetSearchService;
 
-    public SymbolController(SymbolService symbolService) {
-        this.symbolService = symbolService;
+    public SymbolController(SymbolService symbolService, AssetSearchService assetSearchService) {
+        this.symbolService       = symbolService;
+        this.assetSearchService  = assetSearchService;
     }
 
     /** GET /api/symbols — list all tracked symbols */
@@ -39,5 +42,11 @@ public class SymbolController {
     public ResponseEntity<Void> removeSymbol(@PathVariable String symbol) {
         symbolService.removeSymbol(symbol);
         return ResponseEntity.noContent().build();
+    }
+
+    /** GET /api/symbols/search?q=nvidia — search all tradable US equities by symbol or name */
+    @GetMapping("/search")
+    public List<ApiDto.AssetResult> searchAssets(@RequestParam String q) {
+        return assetSearchService.search(q);
     }
 }

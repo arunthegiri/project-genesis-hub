@@ -106,4 +106,16 @@ public class AlpacaDto {
         @JsonProperty("bp")
         private BigDecimal bidPrice;
     }
+
+    /** An asset entry from GET /v2/assets */
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class Asset {
+        private String symbol;
+        private String name;
+        private String status;
+        @JsonProperty("class")
+        private String assetClass;
+        private boolean tradable;
+    }
 }

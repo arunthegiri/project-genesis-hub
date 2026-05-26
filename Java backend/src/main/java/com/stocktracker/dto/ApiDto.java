@@ -1,12 +1,15 @@
 package com.stocktracker.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
+import lombok.AllArgsConstructor;
 import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 public class ApiDto {
 
@@ -51,6 +54,95 @@ public class ApiDto {
             this.data  = data;
             this.count = data.size();
         }
+    }
+
+    /** Request body sent from Jupyter via s.export() */
+    @Data
+    public static class StrategyRequest {
+        @NotBlank(message = "name must not be blank")
+        private String name;
+        private String description;
+        @NotNull(message = "definition must not be null")
+        private Map<String, Object> definition;
+        @NotNull(message = "results must not be null")
+        private Map<String, Object> results;
+        private String symbol;
+        private String fromTs;
+        private String toTs;
+        private String interval;
+    }
+
+    /** Summary response — used in list endpoint */
+    @Data
+    public static class StrategyResponse {
+        private Long    id;
+        private String  name;
+        private String  description;
+        private Instant createdAt;
+    }
+
+    /** Full strategy with latest backtest results */
+    @Data
+    public static class StrategyDetailResponse {
+        private Long                   id;
+        private String                 name;
+        private String                 description;
+        private Map<String, Object>    definition;
+        private BacktestResultResponse latestResults;
+        private Instant                createdAt;
+    }
+
+    /** Single backtest run with all stats and trade list */
+    @Data
+    public static class BacktestResultResponse {
+        private Long                       id;
+        private String                     symbol;
+        private Instant                    fromTs;
+        private Instant                    toTs;
+        private Integer                    totalTrades;
+        private Integer                    winningTrades;
+        private Integer                    losingTrades;
+        private BigDecimal                 winRate;
+        private BigDecimal                 totalPnl;
+        private BigDecimal                 totalPnlPct;
+        private BigDecimal                 avgWin;
+        private BigDecimal                 avgLoss;
+        private BigDecimal                 largestWin;
+        private BigDecimal                 largestLoss;
+        private BigDecimal                 profitFactor;
+        private BigDecimal                 maxDrawdown;
+        private BigDecimal                 sharpeRatio;
+        private List<Map<String, Object>>  trades;
+        private List<Map<String, Object>>  equityCurve;
+        private Instant                    createdAt;
+    }
+
+    /** Response for async backfill job status */
+    @Data
+    public static class BackfillJobResponse {
+        private java.util.UUID jobId;
+        private String         symbol;
+        private Instant        fromTime;
+        private Instant        toTime;
+        private String         status;
+        private int            totalChunks;
+        private int            completedChunks;
+        private int            totalBars;
+        private double         progressPct;
+        private String         errorMessage;
+        private Instant        createdAt;
+        private Instant        startedAt;
+        private Instant        completedAt;
+        private Instant        currentChunkFrom;
+        private Instant        currentChunkTo;
+    }
+
+    /** Symbol search result from the Alpaca assets list */
+    @Data
+    @AllArgsConstructor
+    public static class AssetResult {
+        private String symbol;
+        private String name;
     }
 
     /** Error body */

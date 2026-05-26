@@ -1,22 +1,27 @@
 package com.stocktracker.controller;
 
 import com.stocktracker.dto.ApiDto;
+import com.stocktracker.service.BackfillJobService;
 import com.stocktracker.service.StockPriceService;
-import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/prices")
 public class PriceController {
 
-    private final StockPriceService stockPriceService;
+    private final StockPriceService  stockPriceService;
+    private final BackfillJobService backfillJobService;
 
-    public PriceController(StockPriceService stockPriceService) {
-        this.stockPriceService = stockPriceService;
+    public PriceController(StockPriceService stockPriceService,
+                           BackfillJobService backfillJobService) {
+        this.stockPriceService  = stockPriceService;
+        this.backfillJobService = backfillJobService;
     }
 
     /**
@@ -75,5 +80,55 @@ public class PriceController {
             @RequestParam Instant to) {
         stockPriceService.backfillAll(from, to);
         return ResponseEntity.ok("Backfill triggered for all enabled symbols.");
+    }
+
+    /**
+     * POST /api/prices/{symbol}/backfill/async?from=...&to=...
+     * Starts an async backfill job. Returns immediately with a jobId to poll.
+     */
+    @PostMapping("/{symbol}/backfill/async")
+    public ResponseEntity<ApiDto.BackfillJobResponse> backfillAsync(
+            @PathVariable String symbol,
+            @RequestParam Instant from,
+            @RequestParam Instant to) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(backfillJobService.submitJob(symbol, from, to));
+    }
+
+    /**
+     * GET /api/prices/jobs/{jobId}
+     * Poll this to track progress of an async backfill job.
+     */
+    @GetMapping("/jobs/{jobId}")
+    public ApiDto.BackfillJobResponse getJobStatus(@PathVariable UUID jobId) {
+        return backfillJobService.getJobStatus(jobId);
+    }
+
+    /**
+     * GET /api/prices/jobs?symbol=NVDA
+     * List all backfill jobs for a symbol.
+     */
+    @GetMapping("/jobs")
+    public List<ApiDto.BackfillJobResponse> getJobs(@RequestParam String symbol) {
+        return backfillJobService.getJobsForSymbol(symbol);
+    }
+
+    /**
+     * POST /api/prices/jobs/{jobId}/retry
+     * Retry a failed job from where it left off.
+     */
+    @PostMapping("/jobs/{jobId}/retry")
+    public ApiDto.BackfillJobResponse retryJob(@PathVariable UUID jobId) {
+        return backfillJobService.retryJob(jobId);
+    }
+
+    /**
+     * POST /api/prices/jobs/{jobId}/cancel
+     * Cancel a pending or running job.
+     */
+    @PostMapping("/jobs/{jobId}/cancel")
+    public ResponseEntity<Void> cancelJob(@PathVariable UUID jobId) {
+        backfillJobService.cancelJob(jobId);
+        return ResponseEntity.noContent().build();
     }
 }

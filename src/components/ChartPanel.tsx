@@ -6,8 +6,12 @@ import { ChevronDown, ChevronUp, Loader2, Plus, X } from "lucide-react";
 import { PriceChart, type IndicatorConfig, type ChartType } from "@/components/PriceChart";
 import { PythonExport } from "@/components/PythonExport";
 import { DateRangePicker } from "@/components/DateRangePicker";
+import { StrategySelector } from "@/components/StrategySelector";
+import { BacktestStatsPanel } from "@/components/BacktestStatsPanel";
+import { EquityChart } from "@/components/EquityChart";
 import { pricesApi } from "@/lib/api/prices";
 import { symbolsApi, normalizeSymbols } from "@/lib/api/symbols";
+import { strategiesApi } from "@/lib/api/strategies";
 import { INTERVALS, type Interval } from "@/lib/api/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,6 +64,17 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "" }: Props) {
   const [showRSI,  setShowRSI]        = useState(false);
   const [showMACD, setShowMACD]       = useState(false);
 
+  const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
+
+  const { data: strategyDetail } = useQuery({
+    queryKey: ["strategy", selectedStrategy],
+    queryFn: () => strategiesApi.get(selectedStrategy!),
+    enabled: !!selectedStrategy,
+  });
+
+  const strategyTrades = strategyDetail?.latestResults?.trades ?? [];
+  const equityCurve    = strategyDetail?.latestResults?.equityCurve ?? [];
+
   const dragRef = useRef<{ startY: number; startH: number } | null>(null);
   const onResizeStart = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -107,6 +122,8 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "" }: Props) {
     enabled: !!selectedSymbol,
     queryKey: ["prices", selectedSymbol, fromApi, toApi],
     queryFn: () => pricesApi.range(selectedSymbol, fromApi, toApi),
+    staleTime: 5 * 60 * 1000,
+    gcTime:   30 * 60 * 1000,
   });
 
   const bars = useMemo(() => aggregatePriceBars(rawBars, interval), [rawBars, interval]);
@@ -116,6 +133,8 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "" }: Props) {
       queryKey: ["prices", sym, fromApi, toApi],
       queryFn: () => pricesApi.range(sym, fromApi, toApi),
       enabled: !!sym,
+      staleTime: 5 * 60 * 1000,
+      gcTime:   30 * 60 * 1000,
     })),
   });
 
@@ -178,7 +197,11 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "" }: Props) {
             {bars.length} bars · {formatDisplayDate(startDate)} – {formatDisplayDate(endDate)}
           </span>
         )}
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex items-center gap-1.5">
+          <StrategySelector
+            selectedStrategy={selectedStrategy}
+            onSelect={setSelectedStrategy}
+          />
           <Button
             size="sm"
             variant="ghost"
@@ -334,6 +357,7 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "" }: Props) {
                 height={chartHeight}
                 chartType={chartType}
                 compareData={compareData}
+                trades={strategyTrades}
               />
             )}
             {isFetching && selectedSymbol && (
@@ -398,6 +422,18 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "" }: Props) {
           </>
         )}
       </div>
+      {/* Strategy stats panel */}
+      {selectedStrategy && strategyDetail?.latestResults && (
+        <BacktestStatsPanel
+          results={strategyDetail.latestResults}
+          strategyName={selectedStrategy}
+        />
+      )}
+
+      {/* Equity curve */}
+      {selectedStrategy && equityCurve.length > 0 && (
+        <EquityChart equityCurve={equityCurve} height={180} />
+      )}
     </div>
   );
 }

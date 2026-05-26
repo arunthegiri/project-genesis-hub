@@ -1,5 +1,5 @@
 import { apiFetch } from "./client";
-import type { PriceBar } from "./types";
+import type { BackfillJob, PriceBar } from "./types";
 
 export const pricesApi = {
   latest: (symbol: string, hours = 1) =>
@@ -19,4 +19,22 @@ export const pricesApi = {
       method: "POST",
       query: { from, to },
     }),
+
+  backfillAsync: (symbol: string, from: string, to: string) =>
+    apiFetch<BackfillJob>(`/api/prices/${encodeURIComponent(symbol)}/backfill/async`, {
+      method: "POST",
+      query: { from, to },
+    }),
+
+  getJob: (jobId: string) =>
+    apiFetch<BackfillJob>(`/api/prices/jobs/${jobId}`),
+
+  listJobs: (symbol: string) =>
+    apiFetch<BackfillJob[]>(`/api/prices/jobs`, { query: { symbol } }),
+
+  retryJob: (jobId: string) =>
+    apiFetch<BackfillJob>(`/api/prices/jobs/${jobId}/retry`, { method: "POST" }),
+
+  cancelJob: (jobId: string) =>
+    apiFetch<void>(`/api/prices/jobs/${jobId}/cancel`, { method: "POST" }),
 };

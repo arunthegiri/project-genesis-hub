@@ -9,6 +9,7 @@ import lombok.Data;
 @ConfigurationProperties(prefix = "alpaca.api")
 public class AlpacaProperties {
     private String baseUrl;
+    private String brokerBaseUrl = "https://paper-api.alpaca.markets";
     private String key;
     private String secret;
 }
