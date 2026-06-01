@@ -2,8 +2,10 @@ package com.stocktracker.service;
 
 import com.stocktracker.dto.ApiDto;
 import com.stocktracker.model.BacktestResult;
+import com.stocktracker.model.StockPrice;
 import com.stocktracker.model.Strategy;
 import com.stocktracker.repository.BacktestResultRepository;
+import com.stocktracker.repository.StockPriceRepository;
 import com.stocktracker.repository.StrategyRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -21,11 +23,17 @@ public class StrategyService {
 
     private final StrategyRepository      strategyRepo;
     private final BacktestResultRepository resultRepo;
+    private final StockPriceRepository    priceRepo;
+    private final BacktestEngineService   engine;
 
     public StrategyService(StrategyRepository strategyRepo,
-                           BacktestResultRepository resultRepo) {
+                           BacktestResultRepository resultRepo,
+                           StockPriceRepository priceRepo,
+                           BacktestEngineService engine) {
         this.strategyRepo = strategyRepo;
         this.resultRepo   = resultRepo;
+        this.priceRepo    = priceRepo;
+        this.engine       = engine;
     }
 
     // ── Save (upsert) ─────────────────────────────────────────────────────────
@@ -96,6 +104,35 @@ public class StrategyService {
         log.info("Strategy '{}' deleted", name);
     }
 
+    // ── Re-run on new symbol / date range ────────────────────────────────────
+
+    @Transactional(readOnly = true)
+    public ApiDto.BacktestResultResponse runBacktest(String name, ApiDto.RunBacktestRequest req) {
+        Strategy strategy = strategyRepo.findByName(name)
+                .orElseThrow(() -> new NoSuchElementException("Strategy not found: " + name));
+
+        Instant from = Instant.parse(req.getFromTs());
+        Instant to   = Instant.parse(req.getToTs());
+
+        List<StockPrice> bars = priceRepo.findBySymbolAndTimeBetweenOrderByTimeAsc(
+                req.getSymbol(), from, to);
+
+        log.info("Re-running strategy '{}' on {} bars for {} [{} → {}]",
+                name, bars.size(), req.getSymbol(), from, to);
+
+        return engine.run(strategy, bars, req.getSymbol());
+    }
+
+    // ── Active strategies (ACTIVE or STANDBY) ────────────────────────────────
+
+    @Transactional(readOnly = true)
+    public List<ApiDto.StrategyResponse> getActiveStrategies() {
+        return strategyRepo.findByStatusInOrderByUpdatedAtDesc(List.of("ACTIVE", "STANDBY"))
+                .stream()
+                .map(this::toStrategyResponse)
+                .toList();
+    }
+
     // ── All backtest runs for a strategy ─────────────────────────────────────
 
     @Transactional(readOnly = true)
@@ -149,6 +186,8 @@ public class StrategyService {
         resp.setId(s.getId());
         resp.setName(s.getName());
         resp.setDescription(s.getDescription());
+        resp.setStatus(s.getStatus());
+        resp.setDeployMode(s.getDeployMode());
         resp.setCreatedAt(s.getCreatedAt());
         return resp;
     }

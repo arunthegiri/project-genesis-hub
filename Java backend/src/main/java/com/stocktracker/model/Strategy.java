@@ -32,6 +32,13 @@ public class Strategy {
     @JdbcTypeCode(SqlTypes.JSON)
     private Map<String, Object> definition;
 
+    @Column(nullable = false)
+    @Builder.Default
+    private String status = "EXPORTED";
+
+    @Column(name = "deploy_mode")
+    private String deployMode;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     @Builder.Default
     private Instant createdAt = Instant.now();

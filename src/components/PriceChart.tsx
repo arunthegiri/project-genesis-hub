@@ -8,9 +8,10 @@ import {
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
-import type { PriceBar } from "@/lib/api/types";
+import type { Interval, PriceBar } from "@/lib/api/types";
 import type { BacktestTrade } from "@/lib/api/strategies";
 import { sma, ema, bollinger, rsi, macd } from "@/lib/indicators";
+import { intervalForSpan } from "@/lib/price-bars";
 
 export type ChartType = "candlestick" | "line" | "bar" | "area";
 
@@ -34,6 +35,9 @@ interface Props {
   chartType?: ChartType;
   compareData?: CompareEntry[];
   trades?: BacktestTrade[];
+  onAutoInterval?: (interval: Interval) => void;
+  onRangeChange?: (from: number, to: number) => void;
+  visibleRange?: { from: number; to: number };
 }
 
 const INDICATOR_COLORS = ["#60a5fa", "#f59e0b", "#a78bfa", "#34d399", "#f472b6", "#fb923c"];
@@ -66,6 +70,9 @@ export function PriceChart({
   chartType = "candlestick",
   compareData = [],
   trades = [],
+  onAutoInterval,
+  onRangeChange,
+  visibleRange,
 }: Props) {
   const containerRef   = useRef<HTMLDivElement>(null);
   const chartRef       = useRef<IChartApi | null>(null);
@@ -74,6 +81,16 @@ export function PriceChart({
   const overlaysRef    = useRef<ISeriesApi<"Line">[]>([]);
   const compareSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
   const subChartsRef   = useRef<{ chart: IChartApi; container: HTMLDivElement }[]>([]);
+
+  // Stable refs to latest callbacks — avoids re-subscribing on every render
+  const onAutoIntervalRef  = useRef(onAutoInterval);
+  const onRangeChangeRef   = useRef(onRangeChange);
+  useEffect(() => { onAutoIntervalRef.current = onAutoInterval; }, [onAutoInterval]);
+  useEffect(() => { onRangeChangeRef.current  = onRangeChange;  }, [onRangeChange]);
+
+  // When auto-interval fires mid-zoom we suppress fitContent and restore the range instead
+  const suppressFitRef = useRef(false);
+  const savedRangeRef  = useRef<{ from: Time; to: Time } | null>(null);
 
   // Create chart once
   useEffect(() => {
@@ -88,6 +105,50 @@ export function PriceChart({
       compareSeriesRef.current = [];
     };
   }, []);
+
+  // Subscribe to visible time range changes for auto-resolution switching
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const handler = (range: { from: Time; to: Time } | null) => {
+      if (!range || !onAutoIntervalRef.current) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        const spanDays = ((range.to as number) - (range.from as number)) / 86400;
+        const suggested = intervalForSpan(spanDays);
+        suppressFitRef.current = true;
+        savedRangeRef.current  = range;
+        onAutoIntervalRef.current!(suggested);
+      }, 300);
+    };
+    chart.timeScale().subscribeVisibleTimeRangeChange(handler);
+    return () => {
+      clearTimeout(timer);
+      chart.timeScale().unsubscribeVisibleTimeRangeChange(handler);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Emit logical range (bar indices) to parent for the scrollbar
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const handler = (range: { from: number; to: number } | null) => {
+      if (range) onRangeChangeRef.current?.(range.from, range.to);
+    };
+    chart.timeScale().subscribeVisibleLogicalRangeChange(handler);
+    return () => chart.timeScale().unsubscribeVisibleLogicalRangeChange(handler);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Apply visibleRange from parent (scrollbar/zoom buttons) → chart
+  useEffect(() => {
+    if (!visibleRange || !chartRef.current) return;
+    const ts  = chartRef.current.timeScale();
+    const cur = ts.getVisibleLogicalRange();
+    // Skip if already matches to avoid infinite loop
+    if (cur && Math.abs(cur.from - visibleRange.from) < 0.5 && Math.abs(cur.to - visibleRange.to) < 0.5) return;
+    ts.setVisibleLogicalRange(visibleRange);
+  }, [visibleRange]);
 
   // Main series + indicators
   useEffect(() => {
@@ -165,7 +226,13 @@ export function PriceChart({
       }
     }
 
-    chart.timeScale().fitContent();
+    if (suppressFitRef.current && savedRangeRef.current) {
+      chart.timeScale().setVisibleRange(savedRangeRef.current);
+      suppressFitRef.current = false;
+      savedRangeRef.current  = null;
+    } else {
+      chart.timeScale().fitContent();
+    }
   }, [bars, indicators, chartType, compareData]);
 
   // Sub-charts: RSI + MACD (hidden in compare mode)

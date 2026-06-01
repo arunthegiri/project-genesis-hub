@@ -12,6 +12,8 @@ interface Props {
   bars: PriceBar[];
   trades: Trade[];
   height?: number | string;
+  onRangeChange?: (from: number, to: number) => void;
+  visibleRange?: { from: number; to: number };
 }
 
 const CHART_OPTIONS = {
@@ -95,12 +97,14 @@ function buildMarkers(trades: Trade[], bars: PriceBar[]) {
   return markers.sort((a, b) => (a.time as number) - (b.time as number));
 }
 
-export function BacktestingChart({ bars, trades, height = "100%" }: Props) {
+export function BacktestingChart({ bars, trades, height = "100%", onRangeChange, visibleRange }: Props) {
   const containerRef    = useRef<HTMLDivElement>(null);
   const chartRef        = useRef<IChartApi | null>(null);
   const seriesRef       = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const prevLenRef      = useRef(0);
   const prevFirstTime   = useRef("");
+  const onRangeChangeRef = useRef(onRangeChange);
+  useEffect(() => { onRangeChangeRef.current = onRangeChange; }, [onRangeChange]);
 
   // Create chart + series once on mount
   useEffect(() => {
@@ -124,6 +128,26 @@ export function BacktestingChart({ bars, trades, height = "100%" }: Props) {
     };
   }, []);
 
+  // Emit logical range for scrollbar
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const handler = (range: { from: number; to: number } | null) => {
+      if (range) onRangeChangeRef.current?.(range.from, range.to);
+    };
+    chart.timeScale().subscribeVisibleLogicalRangeChange(handler);
+    return () => chart.timeScale().unsubscribeVisibleLogicalRangeChange(handler);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Apply visibleRange from scrollbar → chart
+  useEffect(() => {
+    if (!visibleRange || !chartRef.current) return;
+    const ts  = chartRef.current.timeScale();
+    const cur = ts.getVisibleLogicalRange();
+    if (cur && Math.abs(cur.from - visibleRange.from) < 0.5 && Math.abs(cur.to - visibleRange.to) < 0.5) return;
+    ts.setVisibleLogicalRange(visibleRange);
+  }, [visibleRange]);
+
   // Update series — incremental update when playing, full reset on new data / jump back
   useEffect(() => {
     const series = seriesRef.current;
@@ -137,18 +161,26 @@ export function BacktestingChart({ bars, trades, height = "100%" }: Props) {
       return;
     }
 
-    const firstTime   = bars[0].time;
+    const firstTime    = bars[0].time;
     const isNewDataset = firstTime !== prevFirstTime.current;
     const isJumpBack   = bars.length < prevLenRef.current;
 
     if (isNewDataset || isJumpBack || prevLenRef.current === 0) {
       series.setData(bars.map(toBar));
-      chart.timeScale().fitContent();
+      if (isNewDataset || prevLenRef.current === 0) {
+        // Fresh dataset — fit all bars so user sees the full range
+        chart.timeScale().fitContent();
+      } else {
+        // Replay restarted — show a window with room for bars to grow into
+        // rather than fitContent on 1-2 bars which zooms in microscopically
+        chart.timeScale().setVisibleLogicalRange({ from: -5, to: 120 });
+      }
     } else {
-      // Incremental path — only append new bars; much faster during replay
+      // Incremental path — append new bars and scroll to keep latest in view
       for (let i = prevLenRef.current; i < bars.length; i++) {
         series.update(toBar(bars[i]));
       }
+      chart.timeScale().scrollToPosition(0, false);
     }
 
     prevLenRef.current = bars.length;

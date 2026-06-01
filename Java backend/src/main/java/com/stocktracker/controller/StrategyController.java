@@ -59,6 +59,27 @@ public class StrategyController {
     }
 
     /**
+     * POST /api/strategies/{name}/run
+     * Re-runs the strategy definition against a new symbol/date range.
+     * Results are NOT saved — they are returned for live preview.
+     */
+    @PostMapping("/{name}/run")
+    public ApiDto.BacktestResultResponse run(
+            @PathVariable String name,
+            @Valid @RequestBody ApiDto.RunBacktestRequest req) {
+        return strategyService.runBacktest(name, req);
+    }
+
+    /**
+     * GET /api/strategies/active
+     * Returns strategies with status ACTIVE or STANDBY (deployed to trading engine).
+     */
+    @GetMapping("/active")
+    public ApiDto.PagedResponse<ApiDto.StrategyResponse> active() {
+        return new ApiDto.PagedResponse<>(strategyService.getActiveStrategies());
+    }
+
+    /**
      * GET /api/strategies/{name}/results
      * Get all backtest runs for a strategy (history across multiple exports).
      */

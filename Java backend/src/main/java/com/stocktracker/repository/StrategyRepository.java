@@ -12,4 +12,5 @@ public interface StrategyRepository extends JpaRepository<Strategy, Long> {
     Optional<Strategy> findByName(String name);
     boolean existsByName(String name);
     List<Strategy> findAllByOrderByCreatedAtDesc();
+    List<Strategy> findByStatusInOrderByUpdatedAtDesc(List<String> statuses);
 }

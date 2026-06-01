@@ -52,7 +52,7 @@ class Kairos:
     >>> k.export()       # send to dashboard
     """
 
-    def __init__(self, df, name=None):
+    def __init__(self, df, name=None, params=None):
         df = df.copy()
         if 'time' in df.columns:
             df = df.set_index('time')
@@ -60,6 +60,7 @@ class Kairos:
 
         self.df = df
         self.name = name or f'kairos_{int(time.time())}'
+        self._params = params  # optional structured definition for dashboard re-runs
         self._entry_long = None
         self._entry_short = None
         self._exit_cond = None
@@ -350,38 +351,46 @@ class Kairos:
         self._results = Results(trades=trades, equity=equity, df=self.df)
         return self._results
 
-    def export(self, name=None):
+    def export(self, name=None, description=None):
         """
-        Export the strategy definition and backtest results to the dashboard.
+        Export the strategy and backtest results to the Ananke dashboard.
 
-        Sends a POST request to the Ananke backend at
-        http://localhost:8080/api/strategies (or the URL set by the
-        ANANKE_API_URL environment variable). After export, the strategy
-        appears in the dashboard dropdown.
+        Sends a POST request to http://localhost:8080/api/strategies.
+        After export the strategy appears in the Strategies tab where it
+        can be replayed and re-run on any symbol without going back to Jupyter.
+
+        Pass ``params`` to the Kairos constructor (not here) to enable
+        dashboard re-runs on different symbols::
+
+            k = Kairos(df, name='rsi_mean_reversion', params={
+                'type': 'rsi_crossover',
+                'rsi_period': RSI_PERIOD,
+                'long_entry_rsi_below': OVERSOLD,
+                'short_entry_rsi_above': OVERBOUGHT,
+                'long_exit_rsi_above': LONG_EXIT_RSI,
+                'short_exit_rsi_below': SHORT_EXIT_RSI,
+                'stop_loss': STOP_LOSS,
+                'take_profit': TAKE_PROFIT,
+                'quantity': QUANTITY,
+            })
+            ...
+            k.export()  # no extra args needed
 
         Parameters
         ----------
         name : str, optional
-            Override the strategy name. If not provided, uses the name
-            set in the constructor.
+            Override the strategy name set in the constructor.
+        description : str, optional
+            Human-readable description stored with the strategy.
 
         Returns
         -------
         dict
-            The server response containing the saved strategy id and name.
-
-        Raises
-        ------
-        RuntimeError
-            If run() has not been called before export().
-        ConnectionError
-            If the Ananke backend is not reachable.
-        ValueError
-            If the backend returns a non-2xx status code.
+            Server response with the saved strategy id and name.
 
         Example
         -------
-        >>> k.export('rsi_mean_reversion')
+        >>> k.export()
         Kairos 'rsi_mean_reversion' exported successfully ✓
         """
         if self._results is None:
@@ -393,15 +402,19 @@ class Kairos:
 
         from . import client
 
+        definition = self._params if self._params is not None else {
+            'type': 'generic',
+            'has_long_entry': self._entry_long is not None,
+            'has_short_entry': self._entry_short is not None,
+            'stop_loss': self._stop_loss,
+            'take_profit': self._take_profit,
+            'quantity': self._quantity,
+        }
+
         payload = {
             'name': self.name,
-            'definition': {
-                'has_long_entry': self._entry_long is not None,
-                'has_short_entry': self._entry_short is not None,
-                'stop_loss': self._stop_loss,
-                'take_profit': self._take_profit,
-                'quantity': self._quantity,
-            },
+            'description': description,
+            'definition': definition,
             'results': self._results.to_dict(),
             'symbol': self.df['symbol'].iloc[0] if 'symbol' in self.df.columns else None,
             'from_ts': str(self.df.index[0]),

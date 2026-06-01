@@ -68,4 +68,11 @@ export const strategiesApi = {
 
   get: (name: string): Promise<StrategyDetail> =>
     apiFetch(`/api/strategies/${encodeURIComponent(name)}`),
+
+  /** Re-run the strategy on a new symbol/date range. Results are NOT saved. */
+  run: (name: string, symbol: string, fromTs: string, toTs: string): Promise<BacktestResults> =>
+    apiFetch(`/api/strategies/${encodeURIComponent(name)}/run`, {
+      method: "POST",
+      body: { symbol, fromTs, toTs },
+    }),
 };

@@ -1,9 +1,10 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueries } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { ChevronDown, ChevronUp, Loader2, Plus, X } from "lucide-react";
 
 import { PriceChart, type IndicatorConfig, type ChartType } from "@/components/PriceChart";
+import { ChartScrollbar } from "@/components/ChartScrollbar";
 import { PythonExport } from "@/components/PythonExport";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { StrategySelector } from "@/components/StrategySelector";
@@ -27,7 +28,7 @@ import {
   getPresetRange,
   type ChartRangePreset,
 } from "@/lib/date-range";
-import { aggregatePriceBars } from "@/lib/price-bars";
+import { aggregatePriceBars, intervalForSpan } from "@/lib/price-bars";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -50,7 +51,10 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "" }: Props) {
   const [selectedSymbol, setSelectedSymbol] = useState(initialSymbol);
   const [startDate, setStartDate]     = useState(initialRange.startDate);
   const [endDate, setEndDate]         = useState(initialRange.endDate);
-  const [interval, setInterval]       = useState<Interval>("1Hour");
+  const [interval, setInterval]       = useState<Interval>(() => {
+    const days = (new Date(initialRange.endDate).getTime() - new Date(initialRange.startDate).getTime()) / 86_400_000;
+    return intervalForSpan(days);
+  });
   const [rangePreset, setRangePreset] = useState<ChartRangePreset>("5D");
   const [chartType, setChartType]     = useState<ChartType>("candlestick");
   const [compareSymbols, setCompareSymbols] = useState<string[]>([]);
@@ -65,6 +69,17 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "" }: Props) {
   const [showMACD, setShowMACD]       = useState(false);
 
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
+
+  // Auto-pick interval whenever the date range changes
+  useEffect(() => {
+    const days = (new Date(endDate).getTime() - new Date(startDate).getTime()) / 86_400_000;
+    setInterval(intervalForSpan(days));
+  }, [startDate, endDate]);
+
+  const handleAutoInterval = useCallback((i: Interval) => setInterval(i), []);
+
+  const [visibleRange, setVisibleRange] = useState<{ from: number; to: number } | null>(null);
+  const handleRangeChange = useCallback((from: number, to: number) => setVisibleRange({ from, to }), []);
 
   const { data: strategyDetail } = useQuery({
     queryKey: ["strategy", selectedStrategy],
@@ -341,29 +356,45 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "" }: Props) {
       <div className="relative flex min-h-0">
         {/* Chart column */}
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="relative overflow-hidden" style={{ height: chartHeight }}>
-            {!selectedSymbol && <Empty>Select a symbol above to begin.</Empty>}
-            {selectedSymbol && isLoading && <Empty><Loader2 className="h-4 w-4 animate-spin" /> Loading…</Empty>}
-            {selectedSymbol && error && (
-              <Empty><span className="text-destructive">{(error as Error).message}</span></Empty>
-            )}
-            {selectedSymbol && !isLoading && !error && bars.length === 0 && (
-              <Empty>No data for {selectedSymbol} in this range.</Empty>
-            )}
-            {selectedSymbol && bars.length > 0 && (
-              <PriceChart
-                bars={bars}
-                indicators={indicators}
-                height={chartHeight}
-                chartType={chartType}
-                compareData={compareData}
-                trades={strategyTrades}
+          <div className="relative flex overflow-hidden" style={{ height: chartHeight }}>
+            {/* Chart content */}
+            <div className="relative flex-1 min-w-0">
+              {!selectedSymbol && <Empty>Select a symbol above to begin.</Empty>}
+              {selectedSymbol && isLoading && <Empty><Loader2 className="h-4 w-4 animate-spin" /> Loading…</Empty>}
+              {selectedSymbol && error && (
+                <Empty><span className="text-destructive">{(error as Error).message}</span></Empty>
+              )}
+              {selectedSymbol && !isLoading && !error && bars.length === 0 && (
+                <Empty>No data for {selectedSymbol} in this range.</Empty>
+              )}
+              {selectedSymbol && bars.length > 0 && (
+                <PriceChart
+                  bars={bars}
+                  indicators={indicators}
+                  height={chartHeight}
+                  chartType={chartType}
+                  compareData={compareData}
+                  trades={strategyTrades}
+                  onAutoInterval={handleAutoInterval}
+                  onRangeChange={handleRangeChange}
+                  visibleRange={visibleRange ?? undefined}
+                />
+              )}
+              {isFetching && selectedSymbol && (
+                <div className="absolute right-3 top-3 flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" /> refreshing
+                </div>
+              )}
+            </div>
+
+            {/* Vertical scrollbar on right */}
+            {bars.length > 0 && visibleRange && (
+              <ChartScrollbar
+                totalBars={bars.length}
+                from={visibleRange.from}
+                to={visibleRange.to}
+                onRangeChange={(f, t) => setVisibleRange({ from: f, to: t })}
               />
-            )}
-            {isFetching && selectedSymbol && (
-              <div className="absolute right-3 top-3 flex items-center gap-1 text-[10px] text-muted-foreground">
-                <Loader2 className="h-3 w-3 animate-spin" /> refreshing
-              </div>
             )}
           </div>
 

@@ -1,5 +1,13 @@
 import type { Interval, PriceBar } from './api/types';
 
+export function intervalForSpan(days: number): Interval {
+  if (days > 365) return '1Day';
+  if (days > 90)  return '1Hour';
+  if (days > 14)  return '15Min';
+  if (days > 3)   return '5Min';
+  return '1Min';
+}
+
 const INTERVAL_TO_MS: Record<Interval, number> = {
   '1Min': 60_000,
   '5Min': 5 * 60_000,

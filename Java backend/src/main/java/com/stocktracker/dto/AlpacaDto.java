@@ -107,6 +107,63 @@ public class AlpacaDto {
         private BigDecimal bidPrice;
     }
 
+    /** Account info from GET /v2/account */
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class AlpacaAccount {
+        private String id;
+        @JsonProperty("account_number")
+        private String accountNumber;
+        private String status;
+        private String currency;
+        @JsonProperty("buying_power")
+        private BigDecimal buyingPower;
+        private BigDecimal cash;
+        @JsonProperty("portfolio_value")
+        private BigDecimal portfolioValue;
+        private BigDecimal equity;
+        @JsonProperty("last_equity")
+        private BigDecimal lastEquity;
+        @JsonProperty("long_market_value")
+        private BigDecimal longMarketValue;
+        @JsonProperty("short_market_value")
+        private BigDecimal shortMarketValue;
+        @JsonProperty("daytrading_buying_power")
+        private BigDecimal daytradingBuyingPower;
+        @JsonProperty("regt_buying_power")
+        private BigDecimal regtBuyingPower;
+        @JsonProperty("created_at")
+        private Instant createdAt;
+    }
+
+    /** A single open position from GET /v2/positions */
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class AlpacaPosition {
+        private String symbol;
+        private String exchange;
+        @JsonProperty("asset_class")
+        private String assetClass;
+        private BigDecimal qty;
+        @JsonProperty("qty_available")
+        private BigDecimal qtyAvailable;
+        private String side;
+        @JsonProperty("market_value")
+        private BigDecimal marketValue;
+        @JsonProperty("cost_basis")
+        private BigDecimal costBasis;
+        @JsonProperty("unrealized_pl")
+        private BigDecimal unrealizedPl;
+        @JsonProperty("unrealized_plpc")
+        private BigDecimal unrealizedPlPct;
+        @JsonProperty("current_price")
+        private BigDecimal currentPrice;
+        @JsonProperty("lastday_price")
+        private BigDecimal lastdayPrice;
+        @JsonProperty("change_today")
+        private BigDecimal changeToday;
+    }
+
     /** An asset entry from GET /v2/assets */
     @Data
     @JsonIgnoreProperties(ignoreUnknown = true)

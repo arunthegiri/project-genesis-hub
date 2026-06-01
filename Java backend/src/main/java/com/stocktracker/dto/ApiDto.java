@@ -78,7 +78,42 @@ public class ApiDto {
         private Long    id;
         private String  name;
         private String  description;
+        private String  status;
+        private String  deployMode;
         private Instant createdAt;
+    }
+
+    /** Account snapshot from the Alpaca trading API */
+    @Data
+    public static class AccountResponse {
+        private String     id;
+        private String     accountNumber;
+        private String     status;
+        private String     currency;
+        private BigDecimal buyingPower;
+        private BigDecimal cash;
+        private BigDecimal portfolioValue;
+        private BigDecimal equity;
+        private BigDecimal lastEquity;
+        private BigDecimal longMarketValue;
+        private BigDecimal shortMarketValue;
+        private BigDecimal daytradingBuyingPower;
+        private BigDecimal regtBuyingPower;
+    }
+
+    /** Single open position from the Alpaca trading API */
+    @Data
+    public static class PositionResponse {
+        private String     symbol;
+        private String     side;
+        private BigDecimal qty;
+        private BigDecimal marketValue;
+        private BigDecimal costBasis;
+        private BigDecimal unrealizedPl;
+        private BigDecimal unrealizedPlPct;
+        private BigDecimal currentPrice;
+        private BigDecimal lastdayPrice;
+        private BigDecimal changeToday;
     }
 
     /** Full strategy with latest backtest results */
@@ -135,6 +170,17 @@ public class ApiDto {
         private Instant        completedAt;
         private Instant        currentChunkFrom;
         private Instant        currentChunkTo;
+    }
+
+    /** Request body for re-running a strategy on a different symbol/range */
+    @Data
+    public static class RunBacktestRequest {
+        @NotBlank(message = "symbol must not be blank")
+        private String symbol;
+        @NotNull(message = "fromTs must not be null")
+        private String fromTs;
+        @NotNull(message = "toTs must not be null")
+        private String toTs;
     }
 
     /** Symbol search result from the Alpaca assets list */
