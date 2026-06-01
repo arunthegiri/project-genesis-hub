@@ -9,18 +9,13 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as BacktestingRouteImport } from './routes/backtesting'
 import { Route as ModelsRouteImport } from './routes/models'
 import { Route as MetricsRouteImport } from './routes/metrics'
 import { Route as LiveRouteImport } from './routes/live'
 import { Route as DataRouteImport } from './routes/data'
+import { Route as BacktestingRouteImport } from './routes/backtesting'
 import { Route as IndexRouteImport } from './routes/index'
 
-const BacktestingRoute = BacktestingRouteImport.update({
-  id: '/backtesting',
-  path: '/backtesting',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ModelsRoute = ModelsRouteImport.update({
   id: '/models',
   path: '/models',
@@ -41,6 +36,11 @@ const DataRoute = DataRouteImport.update({
   path: '/data',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BacktestingRoute = BacktestingRouteImport.update({
+  id: '/backtesting',
+  path: '/backtesting',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -49,55 +49,55 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/backtesting': typeof BacktestingRoute
   '/data': typeof DataRoute
   '/live': typeof LiveRoute
   '/metrics': typeof MetricsRoute
   '/models': typeof ModelsRoute
-  '/backtesting': typeof BacktestingRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/backtesting': typeof BacktestingRoute
   '/data': typeof DataRoute
   '/live': typeof LiveRoute
   '/metrics': typeof MetricsRoute
   '/models': typeof ModelsRoute
-  '/backtesting': typeof BacktestingRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/backtesting': typeof BacktestingRoute
   '/data': typeof DataRoute
   '/live': typeof LiveRoute
   '/metrics': typeof MetricsRoute
   '/models': typeof ModelsRoute
-  '/backtesting': typeof BacktestingRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/data' | '/live' | '/metrics' | '/models' | '/backtesting'
+  fullPaths: '/' | '/backtesting' | '/data' | '/live' | '/metrics' | '/models'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/data' | '/live' | '/metrics' | '/models' | '/backtesting'
-  id: '__root__' | '/' | '/data' | '/live' | '/metrics' | '/models' | '/backtesting'
+  to: '/' | '/backtesting' | '/data' | '/live' | '/metrics' | '/models'
+  id:
+    | '__root__'
+    | '/'
+    | '/backtesting'
+    | '/data'
+    | '/live'
+    | '/metrics'
+    | '/models'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  BacktestingRoute: typeof BacktestingRoute
   DataRoute: typeof DataRoute
   LiveRoute: typeof LiveRoute
   MetricsRoute: typeof MetricsRoute
   ModelsRoute: typeof ModelsRoute
-  BacktestingRoute: typeof BacktestingRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/backtesting': {
-      id: '/backtesting'
-      path: '/backtesting'
-      fullPath: '/backtesting'
-      preLoaderRoute: typeof BacktestingRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/models': {
       id: '/models'
       path: '/models'
@@ -126,6 +126,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DataRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/backtesting': {
+      id: '/backtesting'
+      path: '/backtesting'
+      fullPath: '/backtesting'
+      preLoaderRoute: typeof BacktestingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -138,11 +145,11 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  BacktestingRoute: BacktestingRoute,
   DataRoute: DataRoute,
   LiveRoute: LiveRoute,
   MetricsRoute: MetricsRoute,
   ModelsRoute: ModelsRoute,
-  BacktestingRoute: BacktestingRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

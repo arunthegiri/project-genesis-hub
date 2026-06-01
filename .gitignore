@@ -43,6 +43,14 @@ Resources/APIkeys.txt.bak
 # Private dev notes and notebooks
 Dev-notes/
 MLmodels/
+Test trading strategies/
 
 # Maven build output
 Java backend/target/
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+**/__pycache__/
+**/*.pyc
