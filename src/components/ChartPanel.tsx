@@ -14,6 +14,7 @@ import { pricesApi } from "@/lib/api/prices";
 import { symbolsApi, normalizeSymbols } from "@/lib/api/symbols";
 import { strategiesApi } from "@/lib/api/strategies";
 import { INTERVALS, type Interval } from "@/lib/api/types";
+import { applyCapitalConstraints } from "@/lib/backtest-capital";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -87,8 +88,11 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "" }: Props) {
     enabled: !!selectedStrategy,
   });
 
+  const capitalStats = strategyDetail?.latestResults
+    ? applyCapitalConstraints(strategyDetail.latestResults, 10_000)
+    : null;
   const strategyTrades = strategyDetail?.latestResults?.trades ?? [];
-  const equityCurve    = strategyDetail?.latestResults?.equityCurve ?? [];
+  const equityCurve    = capitalStats?.equityCurve ?? [];
 
   const dragRef = useRef<{ startY: number; startH: number } | null>(null);
   const onResizeStart = (e: React.MouseEvent) => {
@@ -454,9 +458,9 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "" }: Props) {
         )}
       </div>
       {/* Strategy stats panel */}
-      {selectedStrategy && strategyDetail?.latestResults && (
+      {selectedStrategy && capitalStats && (
         <BacktestStatsPanel
-          results={strategyDetail.latestResults}
+          capitalStats={capitalStats}
           strategyName={selectedStrategy}
         />
       )}
