@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { Plus } from "lucide-react";
 
 import { SymbolPicker } from "@/components/SymbolPicker";
@@ -17,8 +17,18 @@ export const Route = createFileRoute("/")({
 });
 
 function ChartsPage() {
-  const nextId = useRef(2);
-  const [panels, setPanels] = useState<{ id: number; symbol?: string }[]>([{ id: 1 }]);
+  const [panels, setPanels] = useState<{ id: number; symbol?: string }[]>(() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem("charts-panels") ?? "null");
+      if (Array.isArray(saved) && saved.length > 0) return saved;
+    } catch {}
+    return [{ id: 1 }];
+  });
+  const nextId = useRef(panels.reduce((m, p) => Math.max(m, p.id), 0) + 1);
+
+  useEffect(() => {
+    sessionStorage.setItem("charts-panels", JSON.stringify(panels));
+  }, [panels]);
 
   const addPanel = (symbol?: string) => {
     setPanels(prev => [...prev, { id: nextId.current++, symbol }]);
@@ -47,6 +57,7 @@ function ChartsPage() {
         {panels.map(p => (
           <ChartPanel
             key={p.id}
+            persistKey={`charts-panel-${p.id}`}
             initialSymbol={p.symbol}
             onRemove={() => removePanel(p.id)}
             canRemove={panels.length > 1}

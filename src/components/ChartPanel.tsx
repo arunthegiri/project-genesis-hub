@@ -36,6 +36,7 @@ interface Props {
   onRemove: () => void;
   canRemove: boolean;
   initialSymbol?: string;
+  persistKey?: string;
 }
 
 const RANGE_PRESETS: Exclude<ChartRangePreset, "CUSTOM">[] = ["1D", "5D", "1M", "3M", "6M", "1Y"];
@@ -47,29 +48,59 @@ const CHART_TYPES: { value: ChartType; label: string }[] = [
 ];
 const COMPARE_COLORS = ["#f59e0b", "#a78bfa", "#34d399", "#f472b6", "#fb923c"];
 
-export function ChartPanel({ onRemove, canRemove, initialSymbol = "" }: Props) {
+function loadSession(key: string | undefined): Record<string, unknown> {
+  if (!key) return {};
+  try {
+    const p = JSON.parse(sessionStorage.getItem(key) ?? "{}");
+    return p && typeof p === "object" && !Array.isArray(p) ? p : {};
+  } catch { return {}; }
+}
+
+export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey }: Props) {
   const initialRange = getPresetRange("5D");
-  const [selectedSymbol, setSelectedSymbol] = useState(initialSymbol);
-  const [startDate, setStartDate]     = useState(initialRange.startDate);
-  const [endDate, setEndDate]         = useState(initialRange.endDate);
+
+  // Restore persisted state once on mount (lazy ref init pattern)
+  const _ss = useRef<Record<string, unknown> | null>(null);
+  if (_ss.current === null) _ss.current = loadSession(persistKey);
+  const s = _ss.current!;
+
+  const [selectedSymbol, setSelectedSymbol] = useState<string>(() =>
+    typeof s.symbol === "string" ? s.symbol : initialSymbol);
+  const [startDate, setStartDate]     = useState<string>(() =>
+    typeof s.startDate === "string" ? s.startDate : initialRange.startDate);
+  const [endDate, setEndDate]         = useState<string>(() =>
+    typeof s.endDate === "string" ? s.endDate : initialRange.endDate);
   const [interval, setInterval]       = useState<Interval>(() => {
+    if (typeof s.interval === "string") return s.interval as Interval;
     const days = (new Date(initialRange.endDate).getTime() - new Date(initialRange.startDate).getTime()) / 86_400_000;
     return intervalForSpan(days);
   });
-  const [rangePreset, setRangePreset] = useState<ChartRangePreset>("5D");
-  const [chartType, setChartType]     = useState<ChartType>("candlestick");
-  const [compareSymbols, setCompareSymbols] = useState<string[]>([]);
+  const [rangePreset, setRangePreset] = useState<ChartRangePreset>(() =>
+    typeof s.rangePreset === "string" ? s.rangePreset as ChartRangePreset : "5D");
+  const [chartType, setChartType]     = useState<ChartType>(() =>
+    typeof s.chartType === "string" ? s.chartType as ChartType : "candlestick");
+  const [compareSymbols, setCompareSymbols] = useState<string[]>(() =>
+    Array.isArray(s.compareSymbols) ? s.compareSymbols as string[] : []);
   const [compareInput, setCompareInput]     = useState("");
-  const [chartHeight, setChartHeight] = useState(420);
-  const [dataWidth, setDataWidth]     = useState(288);
-  const [showData, setShowData]       = useState(false);
-  const [showSMA,  setShowSMA]        = useState(true);
-  const [showEMA,  setShowEMA]        = useState(false);
-  const [showBB,   setShowBB]         = useState(false);
-  const [showRSI,  setShowRSI]        = useState(false);
-  const [showMACD, setShowMACD]       = useState(false);
+  const [chartHeight, setChartHeight] = useState<number>(() =>
+    typeof s.chartHeight === "number" ? s.chartHeight : 420);
+  const [dataWidth, setDataWidth]     = useState<number>(() =>
+    typeof s.dataWidth === "number" ? s.dataWidth : 288);
+  const [showData, setShowData]       = useState<boolean>(() =>
+    typeof s.showData === "boolean" ? s.showData : false);
+  const [showSMA,  setShowSMA]        = useState<boolean>(() =>
+    typeof s.showSMA === "boolean" ? s.showSMA : true);
+  const [showEMA,  setShowEMA]        = useState<boolean>(() =>
+    typeof s.showEMA === "boolean" ? s.showEMA : false);
+  const [showBB,   setShowBB]         = useState<boolean>(() =>
+    typeof s.showBB === "boolean" ? s.showBB : false);
+  const [showRSI,  setShowRSI]        = useState<boolean>(() =>
+    typeof s.showRSI === "boolean" ? s.showRSI : false);
+  const [showMACD, setShowMACD]       = useState<boolean>(() =>
+    typeof s.showMACD === "boolean" ? s.showMACD : false);
 
-  const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
+  const [selectedStrategy, setSelectedStrategy] = useState<string | null>(() =>
+    typeof s.strategy === "string" ? s.strategy : null);
 
   // Auto-pick interval whenever the date range changes
   useEffect(() => {
@@ -81,6 +112,18 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "" }: Props) {
 
   const [visibleRange, setVisibleRange] = useState<{ from: number; to: number } | null>(null);
   const handleRangeChange = useCallback((from: number, to: number) => setVisibleRange({ from, to }), []);
+
+  // Persist configuration so state survives tab navigation
+  useEffect(() => {
+    if (!persistKey) return;
+    sessionStorage.setItem(persistKey, JSON.stringify({
+      symbol: selectedSymbol, startDate, endDate, interval, rangePreset, chartType,
+      compareSymbols, chartHeight, dataWidth, showData,
+      showSMA, showEMA, showBB, showRSI, showMACD, strategy: selectedStrategy,
+    }));
+  }, [persistKey, selectedSymbol, startDate, endDate, interval, rangePreset, chartType,
+      compareSymbols, chartHeight, dataWidth, showData, showSMA, showEMA, showBB, showRSI, showMACD,
+      selectedStrategy]);
 
   const { data: strategyDetail } = useQuery({
     queryKey: ["strategy", selectedStrategy],
