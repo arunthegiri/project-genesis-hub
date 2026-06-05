@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
+const DT_FMT_HINT = "YYYY-MM-DDTHH:MM";
+
 const ACTIVE_STATUSES: BackfillStatus[] = ["PENDING", "RUNNING"];
 
 const STATUS_STYLE: Record<BackfillStatus, string> = {
@@ -29,6 +31,8 @@ export function BackfillPanel({ symbol }: Props) {
     format(subMonths(new Date(), 6), "yyyy-MM-dd'T'HH:mm"),
   );
   const [to, setTo] = useState(() => format(new Date(), "yyyy-MM-dd'T'HH:mm"));
+  const [fromError, setFromError] = useState("");
+  const [toError, setToError] = useState("");
 
   const qc = useQueryClient();
 
@@ -90,21 +94,27 @@ export function BackfillPanel({ symbol }: Props) {
               if (symbol) submitMut.mutate();
             }}
           >
-            <Field label="From">
+            <Field label="From" hint={DT_FMT_HINT}>
               <Input
                 type="datetime-local"
                 value={from}
-                onChange={(e) => setFrom(e.target.value)}
-                className="h-8 tabular text-xs"
+                onChange={(e) => { setFrom(e.target.value); if (e.target.value) setFromError(""); }}
+                onBlur={(e) => { if (!e.target.value) setFromError("Required"); }}
+                aria-invalid={!!fromError}
+                className={cn("h-8 tabular text-xs", fromError && "border-destructive")}
               />
+              {fromError && <p className="text-[10px] text-destructive">{fromError}</p>}
             </Field>
-            <Field label="To">
+            <Field label="To" hint={DT_FMT_HINT}>
               <Input
                 type="datetime-local"
                 value={to}
-                onChange={(e) => setTo(e.target.value)}
-                className="h-8 tabular text-xs"
+                onChange={(e) => { setTo(e.target.value); if (e.target.value) setToError(""); }}
+                onBlur={(e) => { if (!e.target.value) setToError("Required"); }}
+                aria-invalid={!!toError}
+                className={cn("h-8 tabular text-xs", toError && "border-destructive")}
               />
+              {toError && <p className="text-[10px] text-destructive">{toError}</p>}
             </Field>
             <Button
               type="submit"
@@ -257,10 +267,13 @@ function JobRow({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
-      <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</Label>
+      <div className="flex items-baseline gap-1.5">
+        <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</Label>
+        {hint && <span className="font-mono text-[9px] text-muted-foreground/50">{hint}</span>}
+      </div>
       {children}
     </div>
   );

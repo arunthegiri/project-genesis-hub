@@ -41,11 +41,15 @@ const ALL_COLUMNS: { key: keyof PriceBar; label: string; sql: string }[] = [
 
 const PAGE_SIZE = 100;
 
+const DT_FMT_HINT = "YYYY-MM-DDTHH:MM";
+
 function DataPage() {
   const [symbol, setSymbol] = useState("");
   // Stable initial values for SSR; refreshed to "now" on mount.
   const [from, setFrom] = useState("2024-01-01T09:30");
   const [to, setTo] = useState("2024-01-08T16:00");
+  const [fromError, setFromError] = useState("");
+  const [toError, setToError] = useState("");
   const [interval, setInterval] = useState<Interval>("1Hour");
   const [mounted, setMounted] = useState(false);
 
@@ -103,11 +107,27 @@ function DataPage() {
 
       <section className="flex flex-col gap-3 overflow-hidden">
         <div className="flex flex-wrap items-end gap-3 rounded-md border border-border bg-card p-3">
-          <Field label="From">
-            <Input type="datetime-local" value={from} onChange={(e) => { setFrom(e.target.value); setPage(0); }} className="h-8 tabular text-xs" />
+          <Field label="From" hint={DT_FMT_HINT}>
+            <Input
+              type="datetime-local"
+              value={from}
+              onChange={(e) => { setFrom(e.target.value); setPage(0); if (e.target.value) setFromError(""); }}
+              onBlur={(e) => { if (!e.target.value) setFromError("Required"); }}
+              aria-invalid={!!fromError}
+              className={cn("h-8 tabular text-xs", fromError && "border-destructive")}
+            />
+            {fromError && <p className="text-[10px] text-destructive">{fromError}</p>}
           </Field>
-          <Field label="To">
-            <Input type="datetime-local" value={to} onChange={(e) => { setTo(e.target.value); setPage(0); }} className="h-8 tabular text-xs" />
+          <Field label="To" hint={DT_FMT_HINT}>
+            <Input
+              type="datetime-local"
+              value={to}
+              onChange={(e) => { setTo(e.target.value); setPage(0); if (e.target.value) setToError(""); }}
+              onBlur={(e) => { if (!e.target.value) setToError("Required"); }}
+              aria-invalid={!!toError}
+              className={cn("h-8 tabular text-xs", toError && "border-destructive")}
+            />
+            {toError && <p className="text-[10px] text-destructive">{toError}</p>}
           </Field>
           <Field label="Interval">
             <select
@@ -223,10 +243,13 @@ function formatCell(v: unknown, key: string): string {
   return String(v);
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
-      <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</Label>
+      <div className="flex items-baseline gap-1.5">
+        <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</Label>
+        {hint && <span className="font-mono text-[9px] text-muted-foreground/50">{hint}</span>}
+      </div>
       {children}
     </div>
   );

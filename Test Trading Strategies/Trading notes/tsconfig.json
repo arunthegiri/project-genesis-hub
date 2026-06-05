@@ -1,0 +1,810 @@
+# Ananke V1 — Claude Code Build Batches
+*Work through these in order. Complete and verify each batch before starting the next.*
+
+---
+
+## CURRENT STATE
+- Kairos SDK: fully built and functional
+- Java async backfill: done
+- Frontend: charts, backtesting, results tab all working
+- C++ engine: does not exist yet
+- ONNX export from Jupyter: not yet implemented
+
+## V1 GOAL
+Train a Random Forest in Jupyter → export to ONNX → backtest on dashboard
+→ deploy to C++ engine → paper trade on Alpaca → log trades to TimescaleDB
+
+---
+
+## BATCH 1 — ONNX Export from Jupyter
+*Give this to Claude Code alone. Nothing else.*
+
+Context to give Claude Code:
+"Read ananke-sdk/ananke/kairos.py and ananke-sdk/ananke/client.py in full before making any changes."
+
+What to build:
+1. Add export_onnx() method to Kairos class:
+       def export_onnx(self, model, feature_names, name=None,
+                       buy_threshold=0.65, sell_threshold=0.35)
+       - model: a trained sklearn or similar model
+       - feature_names: list of strings matching the columns used during training
+       - Converts model to ONNX using skl2onnx or sklearn-onnx
+       - Saves the .onnx file locally to ananke-sdk/models/{name}.onnx
+       - Builds the contract JSON:
+           {
+             "strategy_name": name,
+             "model_file": "{name}.onnx",
+             "features": feature_names,
+             "input_shape": [1, len(feature_names)],
+             "output_type": "probabilities",
+             "output_classes": ["SELL", "HOLD", "BUY"],
+             "buy_threshold": buy_threshold,
+             "sell_threshold": sell_threshold
+           }
+       - Saves contract to ananke-sdk/models/{name}.json
+       - POSTs both files to Java backend:
+           POST /api/models/upload (multipart: onnx file + json contract)
+       - Prints: "Model 'name' exported successfully ✓"
+       - Returns the contract dict
+
+2. Add deploy() method update to Kairos:
+       def deploy(self, name=None, mode="paper", symbols=None)
+       - Validates mode is paper or live
+       - Validates symbols is a non-empty list
+       - Shows confirmation prompt with strategy stats
+       - POSTs to /api/models/{name}/deploy:
+           { "mode": mode, "symbols": symbols }
+       - Prints confirmation
+
+3. Add to client.py:
+       upload_model(onnx_path, contract) — multipart POST
+       deploy_model(name, mode, symbols) — POST deploy endpoint
+
+Verification in Jupyter:
+    from sklearn.ensemble import RandomForestClassifier
+    from ananke import Kairos
+    
+    # Assume df already loaded with features
+    model = RandomForestClassifier(n_estimators=100)
+    model.fit(X_train, y_train)
+    
+    k = Kairos(df, name="rf_v1")
+    k.export_onnx(
+        model=model,
+        feature_names=["rsi_14", "ema_9", "ema_21", "volume_delta"],
+        name="rf_v1",
+        buy_threshold=0.65,
+        sell_threshold=0.35
+    )
+    # Should print: Model 'rf_v1' exported successfully ✓
+    # Should create ananke-sdk/models/rf_v1.onnx and rf_v1.json
+
+---
+
+## BATCH 2 — Java Backend Model Endpoints
+*Give this to Claude Code alone. Read all existing Java backend files first.*
+
+Context to give Claude Code:
+"Read all files in Java backend/src/main/java/com/stocktracker/ before making changes.
+Do not break any existing endpoints."
+
+What to build:
+1. DB Migration V5__models.sql:
+       CREATE TABLE IF NOT EXISTS models (
+           id              BIGSERIAL PRIMARY KEY,
+           name            VARCHAR(100) NOT NULL UNIQUE,
+           onnx_file_path  TEXT NOT NULL,
+           contract        JSONB NOT NULL,
+           status          VARCHAR(20) NOT NULL DEFAULT 'EXPORTED',
+           -- EXPORTED, ACTIVE, STOPPED
+           deploy_mode     VARCHAR(10),
+           -- paper, live, null
+           symbols         TEXT[],
+           created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+           updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+       );
+
+2. Model.java JPA entity mapping to models table
+
+3. ModelRepository.java:
+       findByName(String name)
+       findByStatus(String status)
+       existsByName(String name)
+
+4. ModelController.java endpoints:
+       POST /api/models/upload
+           Accepts multipart: onnx_file + contract JSON string
+           Saves .onnx file to server filesystem: /app/models/{name}.onnx
+           Saves contract to models table
+           Returns: { id, name, status, created_at }
+
+       GET /api/models
+           Returns list of all models: [{ id, name, status, deploy_mode,
+           symbols, created_at }]
+
+       GET /api/models/{name}
+           Returns full model with contract
+
+       POST /api/models/{name}/deploy
+           Body: { mode: "paper"|"live", symbols: ["NVDA", "AAPL"] }
+           Updates model status to ACTIVE
+           Updates deploy_mode and symbols
+           Writes deploy config to /app/models/{name}_deploy.json
+           Returns updated model
+
+       DELETE /api/models/{name}
+           Sets status to STOPPED
+
+5. ModelService.java handling the business logic
+
+Verification:
+    # Upload a model
+    curl -X POST http://localhost:8080/api/models/upload \
+      -F "onnx_file=@rf_v1.onnx" \
+      -F 'contract={"strategy_name":"rf_v1","features":["rsi_14"],...}'
+    
+    # List models
+    curl http://localhost:8080/api/models
+    
+    # Deploy
+    curl -X POST http://localhost:8080/api/models/rf_v1/deploy \
+      -H "Content-Type: application/json" \
+      -d '{"mode":"paper","symbols":["NVDA"]}'
+
+---
+
+## BATCH 3 — Dashboard Models Tab
+*Give this to Claude Code alone. Read all existing frontend files first.*
+
+Context to give Claude Code:
+"Read all files in src/routes/ and src/components/ before making changes.
+Do not break any existing functionality."
+
+What to build:
+1. Models tab on Backtesting page already exists as a placeholder.
+   Fill it in with:
+
+   A. Model list — fetches GET /api/models, shows cards:
+       - Model name
+       - Status badge (EXPORTED / ACTIVE / STOPPED)
+       - Created date
+       - Deploy mode and symbols if active
+
+   B. Per-model backtest runner:
+       - Symbol picker (multi-select — pick multiple symbols at once)
+       - Date range picker
+       - Starting capital input
+       - Run button — calls POST /api/strategies/{name}/run for each symbol
+       - Results shown in a comparison table:
+           | Symbol | Win Rate | Total PnL | Sharpe | Max DD | vs B&H |
+           | NVDA   | 62%      | +$842     | 1.8    | 4.2%   | +12%   |
+           | AAPL   | 51%      | +$124     | 0.9    | 6.1%   | -3%    |
+           | TSLA   | 38%      | -$340     | -0.4   | 18%    | -22%   |
+       - Rows sortable by any column
+       - Color code: green if beats B&H, red if loses to B&H
+
+   C. Deploy to Engine button:
+       - Opens a modal showing all backtested symbols with checkboxes
+       - Each row shows the backtest stats so user can decide
+       - Mode selector: Paper / Live
+       - Deploy Selected button
+       - Calls POST /api/models/{name}/deploy with selected symbols and mode
+       - Shows success toast: "rf_v1 deployed to paper trading on NVDA, MSFT"
+
+2. Add api/models.ts client:
+       getModels() → GET /api/models
+       getModel(name) → GET /api/models/{name}
+       deployModel(name, mode, symbols) → POST /api/models/{name}/deploy
+
+Verification:
+    - Export a model from Jupyter, refresh dashboard Models tab, see it appear
+    - Run backtest on 3 symbols, see comparison table populate
+    - Click Deploy, select 2 symbols, confirm modal, see success toast
+    - Check GET /api/models — model status should be ACTIVE
+
+---
+
+## BATCH 4 — C++ Engine Project Setup
+*This is a new project. Create it at: Anake/cpp-engine/*
+*Use the cpp-engine git branch for all C++ work.*
+
+Context to give Claude Code:
+"Create a new C++ project at Anake/cpp-engine/. This is the trading execution
+engine for the Ananke platform. Read Anake/Dev-notes/cpp_engine_ideas.md
+before starting."
+
+What to build:
+1. CMakeLists.txt project setup:
+       cmake_minimum_required(VERSION 3.20)
+       project(HermesEngine VERSION 0.1.0)
+       set(CMAKE_CXX_STANDARD 20)
+       
+       Dependencies to find/fetch:
+       - onnxruntime (ONNX inference)
+       - nlohmann_json (JSON parsing)
+       - libpqxx (PostgreSQL client)
+       - cpp-httplib (HTTP server + client)
+       - OpenSSL (for HTTPS)
+
+2. Project structure:
+       cpp-engine/
+           CMakeLists.txt
+           README.md
+           src/
+               main.cpp
+               engine/
+                   TradingEngine.hpp / .cpp
+               feed/
+                   MarketDataFeed.hpp / .cpp
+               inference/
+                   ONNXModel.hpp / .cpp
+               execution/
+                   OrderExecutor.hpp / .cpp
+               logging/
+                   TradeLogger.hpp / .cpp
+               config/
+                   EngineConfig.hpp / .cpp
+           models/        (empty — ONNX files land here)
+           config/        (empty — deploy JSON files land here)
+
+3. EngineConfig — reads deploy config JSON:
+       struct EngineConfig {
+           string strategy_name;
+           string model_file;
+           vector<string> features;
+           vector<int> input_shape;
+           string output_type;
+           vector<string> output_classes;
+           double buy_threshold;
+           double sell_threshold;
+           string deploy_mode;
+           vector<string> symbols;
+           string alpaca_key;
+           string alpaca_secret;
+           string db_connection_string;
+       };
+       
+       static EngineConfig fromFile(const string& path);
+       static EngineConfig fromJson(const nlohmann::json& j);
+
+4. main.cpp entry point:
+       int main(int argc, char* argv[]) {
+           // Load config from file path argument
+           // Initialize all components
+           // Start engine
+           // Block until shutdown signal
+       }
+
+5. Simple Makefile or build script:
+       build.sh — runs cmake and make
+       run.sh — starts the engine with a config file
+
+Verification:
+    cd Anake/cpp-engine
+    ./build.sh
+    # Should compile with no errors
+    ./run.sh config/test_config.json
+    # Should print: "Hermes Engine v0.1.0 starting..."
+    # Should print: "Loaded config for strategy: rf_v1"
+    # Should print: "Symbols: NVDA"
+
+---
+
+## BATCH 5 — ONNX Inference Component
+*Build on top of Batch 4. cpp-engine branch.*
+
+Context to give Claude Code:
+"Read all existing files in Anake/cpp-engine/src/ before making changes.
+The ONNX Runtime C++ API documentation is at:
+https://onnxruntime.ai/docs/api/c/"
+
+What to build:
+ONNXModel class in src/inference/ONNXModel.hpp and .cpp:
+
+    class ONNXModel {
+    public:
+        ONNXModel(const string& model_path, const EngineConfig& config);
+        
+        // Takes a map of feature_name -> value
+        // Returns probability for each output class
+        map<string, float> predict(const map<string, float>& features);
+        
+        // Returns BUY, SELL, or HOLD based on thresholds
+        string getSignal(const map<string, float>& features);
+        
+        // Returns confidence score for the signal
+        float getConfidence(const map<string, float>& features);
+        
+    private:
+        Ort::Env env;
+        Ort::Session session;
+        EngineConfig config;
+        vector<string> input_names;
+        vector<string> output_names;
+        
+        // Converts feature map to ONNX input tensor
+        // Features must be in exact order as config.features
+        vector<float> buildInputTensor(const map<string, float>& features);
+    };
+
+Verification:
+    // Test with a dummy ONNX model
+    ONNXModel model("models/rf_v1.onnx", config);
+    
+    map<string, float> features = {
+        {"rsi_14", 28.5},
+        {"ema_9", 125.3},
+        {"ema_21", 124.1},
+        {"volume_delta", 0.15}
+    };
+    
+    string signal = model.getSignal(features);
+    float confidence = model.getConfidence(features);
+    
+    cout << "Signal: " << signal << endl;
+    cout << "Confidence: " << confidence << endl;
+    // Should print: Signal: BUY
+    // Should print: Confidence: 0.72
+
+---
+
+## BATCH 6 — Feature Calculator
+*Build on top of Batch 5. cpp-engine branch.*
+
+Context to give Claude Code:
+"Read all existing files in Anake/cpp-engine/src/ before making changes."
+
+What to build:
+FeatureCalculator class in src/engine/FeatureCalculator.hpp and .cpp:
+
+    struct Bar {
+        time_t time;
+        double open, high, low, close, volume, vwap;
+    };
+    
+    class FeatureCalculator {
+    public:
+        FeatureCalculator(const vector<string>& required_features,
+                         int lookback_period = 50);
+        
+        // Add a new bar to the history
+        void update(const Bar& bar);
+        
+        // Returns true when enough bars have been seen to calculate all features
+        bool isReady() const;
+        
+        // Calculate all required features from current bar history
+        // Returns map of feature_name -> value
+        map<string, float> calculate();
+        
+    private:
+        deque<Bar> history;
+        vector<string> required_features;
+        int lookback_period;
+        
+        // Individual feature calculations
+        float rsi(int period);
+        float ema(int period);
+        float sma(int period);
+        float volume_delta();
+        float vwap_distance();
+        float bollinger_pct(int period, float std_dev);
+        
+        // Feature name parser
+        // "rsi_14" -> calls rsi(14)
+        // "ema_9" -> calls ema(9)
+        float calculateFeature(const string& feature_name);
+    };
+
+Verification:
+    FeatureCalculator calc({"rsi_14", "ema_9", "ema_21", "volume_delta"}, 50);
+    
+    // Feed 60 bars
+    for (auto& bar : test_bars) {
+        calc.update(bar);
+    }
+    
+    assert(calc.isReady());
+    
+    auto features = calc.calculate();
+    assert(features.count("rsi_14") > 0);
+    assert(features["rsi_14"] >= 0 && features["rsi_14"] <= 100);
+    cout << "RSI: " << features["rsi_14"] << endl;
+    // Should print a valid RSI value
+
+---
+
+## BATCH 7 — Alpaca WebSocket Feed
+*Build on top of Batch 6. cpp-engine branch.*
+
+Context to give Claude Code:
+"Read all existing files in Anake/cpp-engine/src/ before making changes.
+Alpaca WebSocket streaming docs:
+https://docs.alpaca.markets/reference/stream-market-data"
+
+What to build:
+MarketDataFeed class in src/feed/MarketDataFeed.hpp and .cpp:
+
+    class MarketDataFeed {
+    public:
+        MarketDataFeed(const string& api_key,
+                      const string& api_secret,
+                      const string& mode); // "paper" or "live"
+        
+        // Subscribe to bars for a symbol
+        // callback is called on every new bar
+        void subscribe(const string& symbol,
+                      function<void(const Bar&)> callback);
+        
+        // Start the WebSocket connection (blocking)
+        void start();
+        
+        // Stop gracefully
+        void stop();
+        
+        // Reconnect on disconnect
+        void reconnect();
+        
+    private:
+        string api_key, api_secret, mode;
+        map<string, function<void(const Bar&)>> callbacks;
+        bool running = false;
+        
+        // WebSocket URL
+        // paper: wss://stream.data.alpaca.markets/v2/iex
+        // live:  wss://stream.data.alpaca.markets/v2/sip
+        string getStreamUrl() const;
+        
+        // Auth message
+        // {"action":"auth","key":"...","secret":"..."}
+        string buildAuthMessage() const;
+        
+        // Subscribe message
+        // {"action":"subscribe","bars":["NVDA"]}
+        string buildSubscribeMessage(const vector<string>& symbols) const;
+        
+        // Parse incoming bar JSON to Bar struct
+        Bar parseBar(const nlohmann::json& j) const;
+    };
+
+Verification:
+    MarketDataFeed feed(api_key, api_secret, "paper");
+    
+    feed.subscribe("NVDA", [](const Bar& bar) {
+        cout << "New bar: close=" << bar.close
+             << " volume=" << bar.volume << endl;
+    });
+    
+    feed.start(); // blocks — should print bars as they arrive during market hours
+
+---
+
+## BATCH 8 — Order Executor
+*Build on top of Batch 7. cpp-engine branch.*
+
+Context to give Claude Code:
+"Read all existing files in Anake/cpp-engine/src/ before making changes.
+Alpaca Trading API docs:
+https://docs.alpaca.markets/reference/postorder"
+
+What to build:
+OrderExecutor class in src/execution/OrderExecutor.hpp and .cpp:
+
+    struct Order {
+        string symbol;
+        string side;       // "buy" or "sell"
+        string type;       // "market"
+        string time_in_force; // "day"
+        int qty;
+        string client_order_id;
+    };
+    
+    struct Fill {
+        string order_id;
+        string symbol;
+        string side;
+        double filled_price;
+        int filled_qty;
+        time_t filled_at;
+    };
+    
+    class OrderExecutor {
+    public:
+        OrderExecutor(const string& api_key,
+                     const string& api_secret,
+                     const string& mode); // "paper" or "live"
+        
+        // Submit a market order
+        string submitOrder(const Order& order);
+        
+        // Get order status
+        string getOrderStatus(const string& order_id);
+        
+        // Cancel an order
+        void cancelOrder(const string& order_id);
+        
+        // Get current positions
+        vector<Position> getPositions();
+        
+        // Get account info
+        Account getAccount();
+        
+    private:
+        string api_key, api_secret;
+        string base_url; // paper-api or api.alpaca.markets
+        
+        // HTTP client for REST calls
+        httplib::SSLClient makeClient() const;
+        
+        // Build auth headers
+        map<string, string> authHeaders() const;
+    };
+
+Verification:
+    OrderExecutor exec(api_key, api_secret, "paper");
+    
+    // Check account
+    auto account = exec.getAccount();
+    cout << "Buying power: " << account.buying_power << endl;
+    
+    // Submit a test order (paper only)
+    Order order{"NVDA", "buy", "market", "day", 1, "test_001"};
+    string order_id = exec.submitOrder(order);
+    cout << "Order ID: " << order_id << endl;
+
+---
+
+## BATCH 9 — Trade Logger
+*Build on top of Batch 8. cpp-engine branch.*
+
+Context to give Claude Code:
+"Read all existing files in Anake/cpp-engine/src/ before making changes.
+The TimescaleDB connection string is in EngineConfig."
+
+What to build:
+TradeLogger class in src/logging/TradeLogger.hpp and .cpp:
+
+    struct CompletedTrade {
+        string strategy_name;
+        string symbol;
+        string direction;      // "long" or "short"
+        time_t entry_time;
+        double entry_price;
+        time_t exit_time;
+        double exit_price;
+        int quantity;
+        double pnl;
+        double pnl_pct;
+        bool win;
+        string exit_reason;    // "take_profit", "stop_loss", "signal"
+    };
+    
+    class TradeLogger {
+    public:
+        TradeLogger(const string& connection_string);
+        
+        void logTrade(const CompletedTrade& trade);
+        void logSignal(const string& strategy, const string& symbol,
+                      const string& signal, float confidence, time_t time);
+        void logEngineEvent(const string& event, const string& details);
+        
+    private:
+        pqxx::connection conn;
+        
+        // Ensure tables exist
+        void initSchema();
+    };
+
+DB tables to create in initSchema():
+    CREATE TABLE IF NOT EXISTS engine_trades (
+        id              BIGSERIAL PRIMARY KEY,
+        strategy_name   VARCHAR(100),
+        symbol          VARCHAR(20),
+        direction       VARCHAR(10),
+        entry_time      TIMESTAMPTZ,
+        entry_price     NUMERIC(18,4),
+        exit_time       TIMESTAMPTZ,
+        exit_price      NUMERIC(18,4),
+        quantity        INT,
+        pnl             NUMERIC(18,4),
+        pnl_pct         NUMERIC(8,4),
+        win             BOOLEAN,
+        exit_reason     VARCHAR(50),
+        created_at      TIMESTAMPTZ DEFAULT NOW()
+    );
+    
+    CREATE TABLE IF NOT EXISTS engine_signals (
+        id              BIGSERIAL PRIMARY KEY,
+        strategy_name   VARCHAR(100),
+        symbol          VARCHAR(20),
+        signal          VARCHAR(10),
+        confidence      NUMERIC(6,4),
+        signal_time     TIMESTAMPTZ,
+        created_at      TIMESTAMPTZ DEFAULT NOW()
+    );
+
+---
+
+## BATCH 10 — Wire Everything Together
+*Build on top of Batches 4-9. cpp-engine branch.*
+
+Context to give Claude Code:
+"Read ALL existing files in Anake/cpp-engine/src/ before making changes.
+Wire all components together in TradingEngine.cpp."
+
+What to build:
+TradingEngine class in src/engine/TradingEngine.hpp and .cpp:
+
+    class TradingEngine {
+    public:
+        TradingEngine(const EngineConfig& config);
+        
+        void start();
+        void stop();
+        
+    private:
+        EngineConfig config;
+        ONNXModel model;
+        FeatureCalculator calculator;
+        MarketDataFeed feed;
+        OrderExecutor executor;
+        TradeLogger logger;
+        
+        // Current positions per symbol
+        map<string, Position> positions;
+        
+        // Called on every new bar for every subscribed symbol
+        void onBar(const string& symbol, const Bar& bar);
+        
+        // Decision logic
+        void processSignal(const string& symbol,
+                          const string& signal,
+                          float confidence,
+                          const Bar& bar);
+        
+        // Position management
+        void enterLong(const string& symbol, const Bar& bar);
+        void exitPosition(const string& symbol, const Bar& bar,
+                         const string& reason);
+        
+        // Check stop loss and take profit
+        void checkExitConditions(const string& symbol, const Bar& bar);
+    };
+
+The onBar flow:
+    1. calculator.update(bar)
+    2. if (!calculator.isReady()) return
+    3. features = calculator.calculate()
+    4. signal = model.getSignal(features)
+    5. confidence = model.getConfidence(features)
+    6. logger.logSignal(strategy_name, symbol, signal, confidence, bar.time)
+    7. checkExitConditions(symbol, bar)
+    8. processSignal(symbol, signal, confidence, bar)
+
+Verification — full end to end test:
+    EngineConfig config = EngineConfig::fromFile("config/rf_v1_deploy.json");
+    TradingEngine engine(config);
+    engine.start();
+    
+    // During market hours should see:
+    // "New bar: NVDA close=125.40"
+    // "Signal: BUY confidence=0.72"
+    // "Entering long: NVDA at 125.40"
+    // "Order submitted: buy 1 NVDA market"
+    // Trade logged to TimescaleDB
+
+---
+
+## BATCH 11 — HTTP Server for Java Communication
+*Build on top of Batch 10. cpp-engine branch.*
+
+Context to give Claude Code:
+"Read ALL existing files in Anake/cpp-engine/src/ before making changes."
+
+What to build:
+Small HTTP server so Java backend can communicate with the engine:
+
+    POST /engine/start
+        Body: { config_path: "models/rf_v1_deploy.json" }
+        Starts the engine with the given config
+        Returns: { status: "started", strategy: "rf_v1" }
+
+    POST /engine/stop
+        Stops the engine gracefully
+        Returns: { status: "stopped" }
+
+    GET /engine/status
+        Returns: {
+            status: "running",
+            strategy: "rf_v1",
+            symbols: ["NVDA"],
+            mode: "paper",
+            trades_today: 12,
+            pnl_today: 84.50
+        }
+
+    POST /engine/backtest
+        Body: { symbol, bars[], contract }
+        Runs bar-by-bar simulation using ONNX model
+        Returns: { trades[], stats }
+        This replaces the Java backtest engine for ONNX models
+
+Use cpp-httplib for the HTTP server.
+Run on port 9090.
+
+---
+
+## BATCH 12 — Docker Integration
+*Final batch. Main branch after cpp-engine is validated.*
+
+Context to give Claude Code:
+"Read docker-compose.yml and all existing Dockerfiles before making changes."
+
+What to build:
+1. Dockerfile for C++ engine:
+       FROM ubuntu:22.04
+       Install: cmake, g++, libssl-dev, libpq-dev, onnxruntime
+       Copy source, build, run
+
+2. Add cpp-engine service to docker-compose.yml:
+       cpp-engine:
+           build: ./cpp-engine
+           container_name: hermes-engine
+           depends_on:
+               - timescaledb
+               - stock-tracker
+           environment:
+               DB_CONNECTION_STRING: ...
+               ALPACA_API_KEY: ${ALPACA_API_KEY}
+               ALPACA_API_SECRET: ${ALPACA_API_SECRET}
+           ports:
+               - "9090:9090"
+           volumes:
+               - ./models:/app/models
+
+3. Update Java backend to call C++ engine:
+       When POST /api/models/{name}/deploy is called:
+           Write deploy JSON to shared models volume
+           POST http://cpp-engine:9090/engine/start
+               { config_path: "models/{name}_deploy.json" }
+
+4. Update frontend Live page to call:
+       GET http://localhost:9090/engine/status
+       Display: strategy running, symbols, trades today, PnL today
+
+---
+
+## BUILD ORDER SUMMARY
+
+| Batch | What | Branch |
+|-------|------|--------|
+| 1 | ONNX export from Jupyter | main |
+| 2 | Java model endpoints | main |
+| 3 | Dashboard Models tab | main |
+| 4 | C++ project setup | cpp-engine |
+| 5 | ONNX inference component | cpp-engine |
+| 6 | Feature calculator | cpp-engine |
+| 7 | Alpaca WebSocket feed | cpp-engine |
+| 8 | Order executor | cpp-engine |
+| 9 | Trade logger | cpp-engine |
+| 10 | Wire everything together | cpp-engine |
+| 11 | HTTP server for Java comms | cpp-engine |
+| 12 | Docker integration | main (merge cpp-engine first) |
+
+---
+
+## NOTES FOR CLAUDE CODE
+
+- Always read existing files before making changes
+- Never break existing functionality
+- Build and verify each batch before starting the next
+- Batches 1-3 can be done now — no C++ needed
+- Batches 4-11 are on the cpp-engine branch
+- Batch 12 only after cpp-engine is fully working and validated
+- The first real end-to-end test is: train RF in Jupyter → export → deploy
+  → see a trade execute on Alpaca paper account → verify in TimescaleDB
+
+---
+
+*Last updated: This conversation*
+*Status: Ready to build — start with Batch 1*

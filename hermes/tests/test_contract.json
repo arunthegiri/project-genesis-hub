@@ -1,0 +1,34 @@
+{
+  "strategy_name": "rf_test",
+  "model_file": "tests/test_model.onnx",
+  "features": [
+    "rsi_14",
+    "ema_9",
+    "ema_21",
+    "volume_ratio",
+    "hmm_regime"
+  ],
+  "input_shape": [
+    1,
+    5
+  ],
+  "output_type": "probabilities",
+  "output_classes": [
+    "SHORT",
+    "NEUTRAL",
+    "LONG"
+  ],
+  "buy_threshold": 0.5,
+  "sell_threshold": 0.5,
+  "stop_loss": 0.0015,
+  "take_profit": 0.0025,
+  "starting_capital": 100000.0,
+  "deploy_mode": "paper",
+  "symbols": [
+    "NVDA"
+  ],
+  "alpaca_key": "",
+  "alpaca_secret": "",
+  "db_connection_string": "",
+  "http_port": 9090
+}
