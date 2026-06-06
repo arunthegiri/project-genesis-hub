@@ -55,3 +55,6 @@ __pycache__/
 **/*.pyc
 **/__pycache__/
 **/*.pyc
+
+# Large/regenerable Python caches — never commit (exceeds GitHub 100MB limit)
+*.pkl
