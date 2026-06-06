@@ -59,48 +59,52 @@ function loadSession(key: string | undefined): Record<string, unknown> {
 export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey }: Props) {
   const initialRange = getPresetRange("5D");
 
-  // Restore persisted state once on mount (lazy ref init pattern)
-  const _ss = useRef<Record<string, unknown> | null>(null);
-  if (_ss.current === null) _ss.current = loadSession(persistKey);
-  const s = _ss.current!;
+  const initialInterval = intervalForSpan(
+    (new Date(initialRange.endDate).getTime() - new Date(initialRange.startDate).getTime()) / 86_400_000);
 
-  const [selectedSymbol, setSelectedSymbol] = useState<string>(() =>
-    typeof s.symbol === "string" ? s.symbol : initialSymbol);
-  const [startDate, setStartDate]     = useState<string>(() =>
-    typeof s.startDate === "string" ? s.startDate : initialRange.startDate);
-  const [endDate, setEndDate]         = useState<string>(() =>
-    typeof s.endDate === "string" ? s.endDate : initialRange.endDate);
-  const [interval, setInterval]       = useState<Interval>(() => {
-    if (typeof s.interval === "string") return s.interval as Interval;
-    const days = (new Date(initialRange.endDate).getTime() - new Date(initialRange.startDate).getTime()) / 86_400_000;
-    return intervalForSpan(days);
-  });
-  const [rangePreset, setRangePreset] = useState<ChartRangePreset>(() =>
-    typeof s.rangePreset === "string" ? s.rangePreset as ChartRangePreset : "5D");
-  const [chartType, setChartType]     = useState<ChartType>(() =>
-    typeof s.chartType === "string" ? s.chartType as ChartType : "candlestick");
-  const [compareSymbols, setCompareSymbols] = useState<string[]>(() =>
-    Array.isArray(s.compareSymbols) ? s.compareSymbols as string[] : []);
+  // SSR-safe defaults: sessionStorage must NOT be read during render, or the
+  // server-rendered markup (no storage) won't match the client's first render
+  // and React will throw a hydration mismatch. Persisted state is restored in a
+  // post-mount effect below instead.
+  const [selectedSymbol, setSelectedSymbol] = useState<string>(initialSymbol);
+  const [startDate, setStartDate]     = useState<string>(initialRange.startDate);
+  const [endDate, setEndDate]         = useState<string>(initialRange.endDate);
+  const [interval, setInterval]       = useState<Interval>(initialInterval);
+  const [rangePreset, setRangePreset] = useState<ChartRangePreset>("5D");
+  const [chartType, setChartType]     = useState<ChartType>("candlestick");
+  const [compareSymbols, setCompareSymbols] = useState<string[]>([]);
   const [compareInput, setCompareInput]     = useState("");
-  const [chartHeight, setChartHeight] = useState<number>(() =>
-    typeof s.chartHeight === "number" ? s.chartHeight : 420);
-  const [dataWidth, setDataWidth]     = useState<number>(() =>
-    typeof s.dataWidth === "number" ? s.dataWidth : 288);
-  const [showData, setShowData]       = useState<boolean>(() =>
-    typeof s.showData === "boolean" ? s.showData : false);
-  const [showSMA,  setShowSMA]        = useState<boolean>(() =>
-    typeof s.showSMA === "boolean" ? s.showSMA : true);
-  const [showEMA,  setShowEMA]        = useState<boolean>(() =>
-    typeof s.showEMA === "boolean" ? s.showEMA : false);
-  const [showBB,   setShowBB]         = useState<boolean>(() =>
-    typeof s.showBB === "boolean" ? s.showBB : false);
-  const [showRSI,  setShowRSI]        = useState<boolean>(() =>
-    typeof s.showRSI === "boolean" ? s.showRSI : false);
-  const [showMACD, setShowMACD]       = useState<boolean>(() =>
-    typeof s.showMACD === "boolean" ? s.showMACD : false);
+  const [chartHeight, setChartHeight] = useState<number>(420);
+  const [dataWidth, setDataWidth]     = useState<number>(288);
+  const [showData, setShowData]       = useState<boolean>(false);
+  const [showSMA,  setShowSMA]        = useState<boolean>(true);
+  const [showEMA,  setShowEMA]        = useState<boolean>(false);
+  const [showBB,   setShowBB]         = useState<boolean>(false);
+  const [showRSI,  setShowRSI]        = useState<boolean>(false);
+  const [showMACD, setShowMACD]       = useState<boolean>(false);
+  const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
 
-  const [selectedStrategy, setSelectedStrategy] = useState<string | null>(() =>
-    typeof s.strategy === "string" ? s.strategy : null);
+  // Restore persisted state after mount (client only, post-hydration).
+  useEffect(() => {
+    const s = loadSession(persistKey);
+    if (typeof s.symbol === "string") setSelectedSymbol(s.symbol);
+    if (typeof s.startDate === "string") setStartDate(s.startDate);
+    if (typeof s.endDate === "string") setEndDate(s.endDate);
+    if (typeof s.interval === "string") setInterval(s.interval as Interval);
+    if (typeof s.rangePreset === "string") setRangePreset(s.rangePreset as ChartRangePreset);
+    if (typeof s.chartType === "string") setChartType(s.chartType as ChartType);
+    if (Array.isArray(s.compareSymbols)) setCompareSymbols(s.compareSymbols as string[]);
+    if (typeof s.chartHeight === "number") setChartHeight(s.chartHeight);
+    if (typeof s.dataWidth === "number") setDataWidth(s.dataWidth);
+    if (typeof s.showData === "boolean") setShowData(s.showData);
+    if (typeof s.showSMA === "boolean") setShowSMA(s.showSMA);
+    if (typeof s.showEMA === "boolean") setShowEMA(s.showEMA);
+    if (typeof s.showBB === "boolean") setShowBB(s.showBB);
+    if (typeof s.showRSI === "boolean") setShowRSI(s.showRSI);
+    if (typeof s.showMACD === "boolean") setShowMACD(s.showMACD);
+    if (typeof s.strategy === "string") setSelectedStrategy(s.strategy);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Auto-pick interval whenever the date range changes
   useEffect(() => {
@@ -113,9 +117,13 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
   const [visibleRange, setVisibleRange] = useState<{ from: number; to: number } | null>(null);
   const handleRangeChange = useCallback((from: number, to: number) => setVisibleRange({ from, to }), []);
 
-  // Persist configuration so state survives tab navigation
+  // Persist configuration so state survives tab navigation. Skip the first run
+  // (mount, before the restore effect has applied) so we don't overwrite saved
+  // state with defaults.
+  const skipPersist = useRef(true);
   useEffect(() => {
     if (!persistKey) return;
+    if (skipPersist.current) { skipPersist.current = false; return; }
     sessionStorage.setItem(persistKey, JSON.stringify({
       symbol: selectedSymbol, startDate, endDate, interval, rangePreset, chartType,
       compareSymbols, chartHeight, dataWidth, showData,

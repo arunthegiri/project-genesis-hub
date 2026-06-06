@@ -17,16 +17,24 @@ export const Route = createFileRoute("/")({
 });
 
 function ChartsPage() {
-  const [panels, setPanels] = useState<{ id: number; symbol?: string }[]>(() => {
-    try {
-      const saved = JSON.parse(sessionStorage.getItem("charts-panels") ?? "null");
-      if (Array.isArray(saved) && saved.length > 0) return saved;
-    } catch {}
-    return [{ id: 1 }];
-  });
-  const nextId = useRef(panels.reduce((m, p) => Math.max(m, p.id), 0) + 1);
+  // SSR-safe default; persisted panels are restored after mount (see below) so
+  // the server and first client render match and hydration doesn't break.
+  const [panels, setPanels] = useState<{ id: number; symbol?: string }[]>([{ id: 1 }]);
+  const nextId = useRef(2);
 
   useEffect(() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem("charts-panels") ?? "null");
+      if (Array.isArray(saved) && saved.length > 0) {
+        setPanels(saved);
+        nextId.current = saved.reduce((m, p) => Math.max(m, p.id), 0) + 1;
+      }
+    } catch {}
+  }, []);
+
+  const skipPersist = useRef(true);
+  useEffect(() => {
+    if (skipPersist.current) { skipPersist.current = false; return; }
     sessionStorage.setItem("charts-panels", JSON.stringify(panels));
   }, [panels]);
 
