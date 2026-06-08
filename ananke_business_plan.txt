@@ -1,0 +1,250 @@
+ANANKE — BUSINESS PLAN
+Arun Thegiri | Draft v1 | June 2026
+============================================================
+
+NOTE: This is a working document, not a pitch deck. It is meant
+to capture decisions, timing, and priorities so nothing gets lost
+while the product is still being built. Update it as things change.
+
+------------------------------------------------------------
+1. WHAT ANANKE IS
+------------------------------------------------------------
+
+Ananke is a full-stack algorithmic trading development platform
+that lets quantitative developers build, test, and deploy
+production-grade trading strategies without managing low-level
+infrastructure.
+
+The platform consists of:
+- Java Spring Boot backend — data ingestion from Alpaca Markets,
+  stored in TimescaleDB, REST API for price history and backfill
+- React frontend — candlestick charts, technical indicators,
+  strategy monitoring dashboard
+- Python SDK (Kairos) — pip-installable library for Jupyter
+  notebooks, supporting indicators, backtesting, and model export
+- C++ execution engine — low-latency order execution, ONNX model
+  inference, live trading against broker APIs
+- ML pipeline — ensemble model training framework (FirstRRC is
+  the first production model built on it)
+
+Current status: ML pipeline ~70% complete (Batches 1-3 done,
+Batches 4-6 in progress). C++ engine in design phase.
+
+------------------------------------------------------------
+2. THE MARKET
+------------------------------------------------------------
+
+Target users (V1):
+- Quantitative developers and applied math / CS students who
+  want to build real trading systems without starting from scratch
+- Researchers who need a clean Python-to-production pipeline
+- Small prop trading desks that lack infrastructure engineering
+
+The gap Ananke fills: existing platforms (QuantConnect, Zipline,
+Backtrader) are either cloud-locked, Python-only with no
+production path, or require significant DevOps to self-host.
+Ananke owns the full stack from data ingestion to C++ execution,
+with a clean SDK layer in between.
+
+------------------------------------------------------------
+3. NEAR-TERM PRODUCT MILESTONES
+------------------------------------------------------------
+
+Milestone 1 — FirstRRC complete (target: ~8 weeks)
+  Batches 4, 5, 6 done. Ensemble model trained, backtested,
+  exported to ONNX, deployed through C++ engine. This is the
+  proof that the full pipeline works end to end.
+
+Milestone 2 — SDK public alpha (target: ~3 months)
+  Kairos SDK packaged and documented well enough for external
+  users. First 5-10 users from personal network / SFSU / NVIDIA.
+
+Milestone 3 — Live paper trading (target: ~4 months)
+  FirstRRC running in paper trading mode against real Alpaca
+  market data. Performance tracked and published.
+
+Milestone 4 — First external user running their own model
+  (target: ~6 months)
+  Someone outside Arun's network builds and deploys a strategy
+  using the Ananke SDK. This is the product-market fit signal.
+
+------------------------------------------------------------
+4. INCORPORATION — DO THIS BEFORE NVIDIA STARTS
+------------------------------------------------------------
+
+Timeline: incorporate within the next 6 weeks, before the
+NVIDIA internship begins.
+
+Why before NVIDIA:
+  NVIDIA's IP agreement requires disclosure of outside projects.
+  Having Ananke incorporated as a separate legal entity BEFORE
+  signing that agreement provides cleaner protection of the work
+  already built. Consult a lawyer for one hour before signing
+  the NVIDIA offer letter — not after.
+
+Entity type: Delaware C-Corp
+  Rationale: Required for most startup grants, YC, and
+  institutional investment. Easier to issue equity to future
+  co-founders or advisors. Converting from LLC to C-Corp later
+  is costly and annoying — do it right the first time.
+
+How to incorporate: Stripe Atlas ($500)
+  Handles filing, EIN, registered agent (first year), and
+  Stripe account setup. Takes about one week.
+
+Steps in order:
+  1. Secure domain (see Section 5) — do this first
+  2. Incorporate via Stripe Atlas using the domain email
+  3. Open Mercury business bank account (free, startup-friendly)
+  4. Set up AWS under the business account (separate from
+     personal AWS — new account, new free tier, clean billing)
+  5. Set a $20/month billing alert on AWS immediately
+
+------------------------------------------------------------
+5. DOMAIN
+------------------------------------------------------------
+
+Check availability in this order:
+  ananke.io        — preferred
+  ananke.trade     — strong alternative
+  tryananke.com    — fallback
+
+Register through Cloudflare Registrar (at-cost pricing, no
+markup). Do not use GoDaddy.
+
+Once domain is secured:
+  Create infrastructure@ananke.io (or equivalent) for AWS
+  and business accounts. Use Google Workspace ($6/mo) only
+  when there are actual users or collaborators — not before.
+  Gmail with the domain alias works fine for now.
+
+------------------------------------------------------------
+6. GRANTS AND FUNDING STRATEGY
+------------------------------------------------------------
+
+Do not pursue funding until FirstRRC is live and at least one
+external user is running a strategy. Premature fundraising
+costs equity and time without providing signal.
+
+Grant targets (after incorporation, ~12 months out):
+  NSF SBIR Phase I
+    - Requires incorporation + EIN + US business bank account
+    - Awards up to $275,000 non-dilutive
+    - Technical narrative: ML-driven regime detection for
+      intraday trading systems, connecting to Arun's undergrad
+      thesis work at SFSU
+    - Company age matters — the clock starts at incorporation
+
+  DOE SBIR / STOI
+    - Relevant if the quantum module (PennyLane / Qiskit
+      integration for portfolio optimization) is built out
+    - Nicola Pancotti (Caltech / AWS) is a natural reference
+      once the relationship is reactivated post-NVIDIA
+
+  University accelerators
+    - SFSU Lam Family College of Business has startup resources
+    - Once enrolled in MS CS at SFSU, pitch to whatever
+      accelerator or entrepreneurship program is available
+    - These are low-dilution, high-network opportunities
+
+Angel / pre-seed (much later):
+  Not relevant until there are paying users or clear
+  product-market fit. Do not approach investors with a
+  notebook and a roadmap — approach them with a live system
+  and users.
+
+------------------------------------------------------------
+7. CO-FOUNDER / TEAM
+------------------------------------------------------------
+
+Do not add a business co-founder now. The work needs to be
+unambiguously Arun's for PhD applications. A co-founder at
+this stage means giving away significant equity for
+administrative work that can be done in a weekend.
+
+The right time to bring someone on the business side:
+  - When there's a working product and no clear path to users
+  - When fundraising relationships are needed that Arun doesn't
+    have
+  - Organically, through SFSU MS CS program or NVIDIA network
+
+Advisor structure (when the time comes):
+  0.25-0.5% equity, 2-year vest, no cliff
+  Target profile: fintech or quant background, opens doors,
+  has done SBIR before or has research lab relationships
+
+------------------------------------------------------------
+8. THE EDUCATION / BUSINESS PARALLEL PATH
+------------------------------------------------------------
+
+This is the through line. Ananke is not a distraction from
+the PhD path — it IS the research artifact.
+
+Current: NVIDIA internship (Santa Clara, starts ~58 days)
+  Priority: return offer. Everything else is secondary.
+  Do not approach PhD programs, Nicola, or Stanford contacts
+  until the return offer is secured.
+
+SFSU Applied Math BS (finishing part time, ~2 years):
+  Undergrad thesis: Mathematical framework for regime prediction
+  Advisor target: Alexandra Piryatinska (stochastic processes)
+  Second reader: Wes Bethel (HPC + quantum computing)
+  Ananke is the empirical backbone of this thesis.
+
+SFSU MS CS (after BS):
+  HPC with Bethel (fall) → Quantum Computing with Bethel (spring)
+  MS thesis: HPC + quantum applied to financial regime prediction
+  This is the work that opens PhD applications.
+
+PhD targets (Stanford 1, Berkeley 2, Caltech 3):
+  Stanford: geographic advantage (Santa Clara office proximity),
+    deep NVIDIA faculty ties, attend talks while interning
+  Berkeley: strong quant finance + ML research overlap
+  Caltech: Nicola Pancotti is based in LA, natural connection
+    once relationship is reactivated ~6 months into internship
+
+By the time PhD applications go in, Ananke is a live platform
+with a published backtest, an undergrad thesis, and an MS thesis
+all connected to the same research thread. That is a rare and
+compelling application.
+
+------------------------------------------------------------
+9. INFRASTRUCTURE TIMELINE
+------------------------------------------------------------
+
+Now:
+  - Finish FirstRRC Batches 4-6
+  - Grab domain
+  - Incorporate (before NVIDIA starts)
+  - Open Mercury account
+  - Set up Ananke AWS account
+
+During NVIDIA internship:
+  - EC2 us-east-1 for C++ execution engine (same region as
+    Alpaca infrastructure)
+  - Recommended instance for inference: c5.large or t3.medium
+  - Training (Batch 4): g4dn.xlarge spot instance, ~$3-5 total,
+    terminate after training is done
+  - Set billing alerts before spinning up anything
+
+Post-internship / pre-users:
+  - Move off spot instances to reserved for execution engine
+  - Set up CI/CD pipeline for SDK
+  - Documentation site
+
+------------------------------------------------------------
+10. WHAT SUCCESS LOOKS LIKE IN 12 MONTHS
+------------------------------------------------------------
+
+- FirstRRC live in paper trading, performance logged
+- Ananke SDK used by at least 5 external developers
+- Domain + Delaware C-Corp + Mercury account active
+- NVIDIA return offer secured
+- SFSU undergrad thesis topic formally proposed
+- SBIR application in progress or submitted
+- Nicola Pancotti reactivated as an advisor relationship
+
+============================================================
+Last updated: June 2026
+Next review: After NVIDIA internship (est. ~4 months)
+============================================================
