@@ -1,0 +1,29 @@
+{
+    "strategy_name": "engine_test",
+    "model_file": "tests/test_model.onnx",
+    "features": ["rsi_14", "ema_9", "ema_21", "volume_ratio", "hmm_regime"],
+    "input_shape": [1, 5],
+    "output_type": "probabilities",
+    "output_classes": ["SHORT", "NEUTRAL", "LONG"],
+    "buy_threshold": 0.34,
+    "sell_threshold": 0.34,
+    "stop_loss": 0.0015,
+    "take_profit": 0.0025,
+    "starting_capital": 100000.0,
+    "deploy_mode": "paper",
+    "symbols": ["NVDA"],
+    "themis": {
+        "max_position_pct": 0.20,
+        "daily_loss_limit": 0.10,
+        "max_drawdown": 0.20,
+        "min_confidence": 0.05,
+        "suppress_regime": -1,
+        "no_trade_open_min": 15,
+        "no_trade_close_min": 15,
+        "max_trades_per_day": 50
+    },
+    "alpaca_key": "",
+    "alpaca_secret": "",
+    "db_connection_string": "postgresql://postgres:postgres@localhost:5432/stockdb",
+    "http_port": 9090
+}

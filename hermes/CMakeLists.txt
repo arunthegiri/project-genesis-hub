@@ -184,6 +184,18 @@ else()
     message(WARNING "Hermes: libpqxx not found — building without TradeLogger (Part 7). Install with `brew install libpqxx`.")
 endif()
 
+# Part 8 — HermesEngine. The wiring layer needs every optional dependency:
+# ONNX (inference), OpenSSL + Asio (feed/executor), libpqxx (logger).
+if(HERMES_HAVE_ONNX AND OpenSSL_FOUND AND HERMES_HAVE_ASIO AND HERMES_HAVE_PQXX)
+    set(HERMES_HAVE_ENGINE ON)
+    list(APPEND HERMES_SOURCES src/engine/HermesEngine.cpp)
+    add_compile_definitions(HERMES_HAVE_ENGINE=1)  # main.cpp engine + HTTP path
+    message(STATUS "Hermes: all deps present — building HermesEngine (Part 8)")
+else()
+    set(HERMES_HAVE_ENGINE OFF)
+    message(WARNING "Hermes: missing optional deps — building without HermesEngine (Part 8)")
+endif()
+
 add_executable(hermes ${HERMES_SOURCES})
 
 target_include_directories(hermes PRIVATE
@@ -296,5 +308,53 @@ if(HERMES_HAVE_PQXX)
         ${PQXX_LIB} ${PostgreSQL_LIBRARIES} Threads::Threads)
     if(HERMES_DB_TEST_DSN)
         add_test(NAME logger COMMAND test_logger ${HERMES_DB_TEST_DSN})
+    endif()
+endif()
+
+# Part 8 — HermesEngine offline integration test. Drives a synthetic trading
+# day through the full loop with simulated fills. Needs a live TimescaleDB
+# (TradeLogger connects in the engine constructor) but no Alpaca connection,
+# so it is ctest-registered only when -DHERMES_DB_TEST_DSN is set.
+if(HERMES_HAVE_ENGINE)
+    add_executable(test_engine
+        tests/test_engine.cpp
+        src/engine/HermesEngine.cpp
+        src/engine/FeatureCalculator.cpp
+        src/config/EngineConfig.cpp
+        src/inference/ONNXModel.cpp
+        src/alpaca/AlpacaJson.cpp
+        src/execution/OrderExecutor.cpp
+        src/feed/MarketDataFeed.cpp
+        src/logging/TradeLogger.cpp)
+    target_include_directories(test_engine PRIVATE
+        src/
+        "${ONNXRUNTIME_ROOT}/include"
+        ${websocketpp_SOURCE_DIR}
+        "${ASIO_INCLUDE_DIR}"
+        ${PostgreSQL_INCLUDE_DIRS}
+        ${PQXX_INCLUDE_DIR})
+    target_compile_definitions(test_engine PRIVATE
+        ASIO_STANDALONE=1
+        _WEBSOCKETPP_CPP11_STL_=1
+        ASIO_HAS_STD_INVOKE_RESULT=1
+        CPPHTTPLIB_OPENSSL_SUPPORT=1)
+    target_link_directories(test_engine PRIVATE "${ONNXRUNTIME_ROOT}/lib")
+    target_link_libraries(test_engine PRIVATE
+        onnxruntime
+        OpenSSL::SSL OpenSSL::Crypto
+        ${PQXX_LIB} ${PostgreSQL_LIBRARIES}
+        nlohmann_json::nlohmann_json
+        httplib::httplib
+        Threads::Threads)
+    set_target_properties(test_engine PROPERTIES
+        BUILD_RPATH "${ONNXRUNTIME_ROOT}/lib")
+    if(HERMES_DB_TEST_DSN)
+        # Run from the source dir: the contract's model_file path is relative.
+        add_test(NAME engine
+                 COMMAND test_engine
+                     ${CMAKE_SOURCE_DIR}/tests/test_engine_contract.json
+                     ${HERMES_DB_TEST_DSN})
+        set_tests_properties(engine PROPERTIES
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
     endif()
 endif()

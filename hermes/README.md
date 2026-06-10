@@ -9,14 +9,20 @@ trades on an Alpaca paper-trading account.
 - **Language:** C++20
 - **Build system:** CMake 3.20+
 
-> **Build status:** Parts 1–7 are implemented — build system, config loader,
+> **Build status:** Parts 1–10 are implemented — build system, config loader,
 > feature calculator, ONNX inference, market-data feed (Alpaca WebSocket over
-> TLS), order executor (Alpaca REST over HTTPS), and the TimescaleDB trade
-> logger (verified end-to-end against a dockerized TimescaleDB). Parts 8–11
-> (engine loop, HTTP status server, full integration) are next. The feed and
-> executor are compiled and linked; their JSON parsing is unit-tested offline
-> (`test_alpaca_parse`), but live Alpaca connectivity is exercised only once
-> the engine loop (Part 8) wires them together.
+> TLS), order executor (Alpaca REST over HTTPS), TimescaleDB trade logger, the
+> **HermesEngine loop** (feed → features → ONNX → Themis → execution →
+> logging), the HTTP status server, and the full main() wiring with graceful
+> SIGINT / `POST /stop` shutdown. The loop is verified offline by
+> `test_engine` (synthetic trading day, simulated fills, asserts against the
+> rows persisted to TimescaleDB), and the binary has been smoke-tested
+> end-to-end: it starts, connects to the live Alpaca WebSocket, serves
+> `/status` / `/health`, and shuts down cleanly. When the config carries no
+> Alpaca credentials the engine fills orders locally at bar prices; with
+> credentials set it routes real orders. **Remaining: Part 11** — a live
+> paper-trading session during market hours with real `ALPACA_API_KEY` /
+> `ALPACA_API_SECRET` (authenticated subscribe, real bars, real paper orders).
 
 ## Dependencies
 
@@ -91,19 +97,23 @@ export ALPACA_API_SECRET=...
 ## Run
 
 ```bash
+export ALPACA_API_KEY=...      # omit both to run with simulated fills
+export ALPACA_API_SECRET=...
 ./run.sh configs/rf_v1_deploy.json
 ```
 
-In the current (Parts 1–2) build this loads and validates the contract, prints
-a summary, and exits.
+Loads and validates the contract, starts the market-data feed, the engine
+loop, and the HTTP status server, then runs until SIGINT or `POST /stop`.
+Without Alpaca credentials the engine announces simulated-fill mode: signals
+and trades are still produced and logged, but orders are filled locally
+instead of being routed to Alpaca.
 
 ## Status
 
-(Available once the HTTP server, Part 9, is built.)
-
 ```bash
-curl http://localhost:9090/status
-curl http://localhost:9090/health
+curl http://localhost:9090/health           # {"status":"ok","version":"0.1.0"}
+curl http://localhost:9090/status           # engine snapshot (positions, PnL, ...)
+curl -X POST http://localhost:9090/stop     # graceful shutdown
 ```
 
 ## How the ONNX contract works
