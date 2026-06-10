@@ -9,18 +9,23 @@ trades on an Alpaca paper-trading account.
 - **Language:** C++20
 - **Build system:** CMake 3.20+
 
-> **Build status:** Part 1 (build system) and Part 2 (config loader) are
-> implemented. Parts 3–11 (feature calculator, ONNX inference, market-data
-> feed, order executor, trade logger, engine loop, HTTP status server) are
-> scaffolded in the source tree and built incrementally.
+> **Build status:** Parts 1–7 are implemented — build system, config loader,
+> feature calculator, ONNX inference, market-data feed (Alpaca WebSocket over
+> TLS), order executor (Alpaca REST over HTTPS), and the TimescaleDB trade
+> logger (verified end-to-end against a dockerized TimescaleDB). Parts 8–11
+> (engine loop, HTTP status server, full integration) are next. The feed and
+> executor are compiled and linked; their JSON parsing is unit-tested offline
+> (`test_alpaca_parse`), but live Alpaca connectivity is exercised only once
+> the engine loop (Part 8) wires them together.
 
 ## Dependencies
 
 Fetched automatically by CMake (FetchContent):
 
 - [nlohmann/json](https://github.com/nlohmann/json) v3.11.3 — JSON parsing
-- [cpp-httplib](https://github.com/yhirose/cpp-httplib) v0.14.3 — HTTP client/server
+- [cpp-httplib](https://github.com/yhirose/cpp-httplib) v0.14.3 — HTTP client/server (HTTPS via OpenSSL)
 - [websocketpp](https://github.com/zaphoyd/websocketpp) 0.8.2 — Alpaca WebSocket feed
+- [Asio](https://github.com/chriskohlhoff/asio) 1.18.2 (standalone, header-only) — transport for websocketpp; no Boost required
 
 System dependencies (install before building):
 

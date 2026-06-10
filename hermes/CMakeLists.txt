@@ -60,6 +60,26 @@ if(NOT websocketpp_POPULATED)
     FetchContent_Populate(websocketpp)
 endif()
 
+# Standalone Asio — transport layer for websocketpp (Part 5). Header-only, so
+# Boost is NOT required. Pinned to 1.18.2: websocketpp 0.8.2 predates Asio's
+# removal of the deprecated io_service API, so a newer Asio will not compile.
+FetchContent_Declare(asio
+    GIT_REPOSITORY https://github.com/chriskohlhoff/asio.git
+    GIT_TAG asio-1-18-2)
+FetchContent_GetProperties(asio)
+if(NOT asio_POPULATED)
+    FetchContent_Populate(asio)
+endif()
+# Asio ships under <root>/asio/include; only mark it available if that exists.
+if(EXISTS "${asio_SOURCE_DIR}/asio/include/asio.hpp")
+    set(HERMES_HAVE_ASIO ON)
+    set(ASIO_INCLUDE_DIR "${asio_SOURCE_DIR}/asio/include")
+    message(STATUS "Hermes: standalone Asio at ${ASIO_INCLUDE_DIR}")
+else()
+    set(HERMES_HAVE_ASIO OFF)
+    message(WARNING "Hermes: Asio not available — building without the market-data feed (Part 5)")
+endif()
+
 # ---------------------------------------------------------------------------
 # ONNX Runtime (inference — Part 4). Optional: when the prebuilt runtime is
 # not present we still build Parts 1-2 (config / build system) without it.
@@ -108,20 +128,28 @@ endif()
 # ---------------------------------------------------------------------------
 find_package(OpenSSL)
 find_package(PostgreSQL)
-find_library(PQXX_LIB pqxx)
-find_path(PQXX_INCLUDE_DIR pqxx/pqxx)
+
+# libpqxx is built from source (the v7.x C++17 series) and installed to a
+# dedicated keg-style prefix, because Homebrew only ships libpqxx 8.x which
+# requires C++20 <source_location> — unavailable in AppleClang 14 on macOS 13.
+# Override HERMES_LIBPQXX_ROOT at configure time if installed elsewhere.
+set(HERMES_LIBPQXX_ROOT "/usr/local/opt/libpqxx"
+    CACHE PATH "Root of a manually-installed libpqxx (7.x, C++17)")
+find_library(PQXX_LIB pqxx
+    HINTS "${HERMES_LIBPQXX_ROOT}/lib")
+find_path(PQXX_INCLUDE_DIR pqxx/pqxx
+    HINTS "${HERMES_LIBPQXX_ROOT}/include")
 
 # ---------------------------------------------------------------------------
 # Source files. Uncomment each entry as the corresponding Part is built.
-# Currently implemented: Part 1 (build system) + Part 2 (EngineConfig).
+# Currently implemented: Parts 1-6 (build system, config, features, ONNX,
+# market-data feed, order executor).
 # ---------------------------------------------------------------------------
 set(HERMES_SOURCES
     src/main.cpp
     src/config/EngineConfig.cpp
     src/engine/FeatureCalculator.cpp    # Part 3
     # src/engine/HermesEngine.cpp       # Part 8
-    # src/feed/MarketDataFeed.cpp       # Part 5
-    # src/execution/OrderExecutor.cpp   # Part 6
     # src/logging/TradeLogger.cpp       # Part 7
 )
 
@@ -129,6 +157,31 @@ set(HERMES_SOURCES
 # (it includes the ONNX Runtime headers).
 if(HERMES_HAVE_ONNX)
     list(APPEND HERMES_SOURCES src/inference/ONNXModel.cpp)
+endif()
+
+# Parts 5-6 — market-data feed and order executor. Both depend on OpenSSL
+# (TLS for WSS / HTTPS). The shared Alpaca JSON parsing layer comes with them.
+# The feed additionally needs an Asio transport for websocketpp; standalone
+# Asio is fetched below (HERMES_HAVE_ASIO).
+if(OpenSSL_FOUND)
+    list(APPEND HERMES_SOURCES
+        src/alpaca/AlpacaJson.cpp
+        src/execution/OrderExecutor.cpp)   # Part 6
+    if(HERMES_HAVE_ASIO)
+        list(APPEND HERMES_SOURCES src/feed/MarketDataFeed.cpp)  # Part 5
+    endif()
+endif()
+
+# Part 7 — TradeLogger. Needs libpqxx (+ libpq); skipped if not installed
+# (install with `brew install libpqxx`). pqxx stays behind a PIMPL, so the rest
+# of the engine still builds when libpqxx is absent.
+if(PostgreSQL_FOUND AND PQXX_LIB AND PQXX_INCLUDE_DIR)
+    set(HERMES_HAVE_PQXX ON)
+    list(APPEND HERMES_SOURCES src/logging/TradeLogger.cpp)
+    message(STATUS "Hermes: libpqxx found — building TradeLogger (Part 7)")
+else()
+    set(HERMES_HAVE_PQXX OFF)
+    message(WARNING "Hermes: libpqxx not found — building without TradeLogger (Part 7). Install with `brew install libpqxx`.")
 endif()
 
 add_executable(hermes ${HERMES_SOURCES})
@@ -154,9 +207,22 @@ if(HERMES_HAVE_ONNX)
         BUILD_RPATH "${ONNXRUNTIME_ROOT}/lib")
 endif()
 
-# OpenSSL (when present)
+# OpenSSL (when present). Enables HTTPS in cpp-httplib (Part 6, OrderExecutor)
+# and TLS for the websocketpp feed (Part 5).
 if(OpenSSL_FOUND)
     target_link_libraries(hermes PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+    target_compile_definitions(hermes PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT=1)
+endif()
+
+# Standalone Asio for the websocketpp market-data feed (Part 5).
+if(HERMES_HAVE_ASIO)
+    target_include_directories(hermes PRIVATE "${ASIO_INCLUDE_DIR}")
+    target_compile_definitions(hermes PRIVATE
+        ASIO_STANDALONE=1
+        _WEBSOCKETPP_CPP11_STL_=1
+        # Asio 1.18.2 predates C++20's removal of std::result_of; force it onto
+        # std::invoke_result so co_spawn.hpp compiles under -std=c++20.
+        ASIO_HAS_STD_INVOKE_RESULT=1)
 endif()
 
 # PostgreSQL + libpqxx (when present)
@@ -204,4 +270,31 @@ if(HERMES_HAVE_ONNX)
              COMMAND test_inference
                  ${CMAKE_SOURCE_DIR}/tests/test_model.onnx
                  ${CMAKE_SOURCE_DIR}/tests/test_contract.json)
+endif()
+
+# Parts 5-6 — Alpaca JSON parsing (offline; no network). Covers bar-stream
+# parsing for the feed and account/position parsing for the executor.
+add_executable(test_alpaca_parse
+    tests/test_alpaca_parse.cpp
+    src/alpaca/AlpacaJson.cpp)
+target_include_directories(test_alpaca_parse PRIVATE src/)
+target_link_libraries(test_alpaca_parse PRIVATE
+    nlohmann_json::nlohmann_json
+    Threads::Threads)
+add_test(NAME alpaca_parse COMMAND test_alpaca_parse)
+
+# Part 7 — TradeLogger integration test. Requires a live database, so it is
+# registered with ctest only when -DHERMES_DB_TEST_DSN="postgresql://..." is
+# passed at configure time; otherwise the binary is built for manual runs.
+if(HERMES_HAVE_PQXX)
+    add_executable(test_logger
+        tests/test_logger.cpp
+        src/logging/TradeLogger.cpp)
+    target_include_directories(test_logger PRIVATE
+        src/ ${PostgreSQL_INCLUDE_DIRS} ${PQXX_INCLUDE_DIR})
+    target_link_libraries(test_logger PRIVATE
+        ${PQXX_LIB} ${PostgreSQL_LIBRARIES} Threads::Threads)
+    if(HERMES_DB_TEST_DSN)
+        add_test(NAME logger COMMAND test_logger ${HERMES_DB_TEST_DSN})
+    endif()
 endif()
