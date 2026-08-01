@@ -133,6 +133,28 @@ public class StrategyService {
                 .toList();
     }
 
+    // ── Deploy (flip EXPORTED → ACTIVE) ──────────────────────────────────────
+
+    private static final List<String> VALID_DEPLOY_MODES = List.of("paper", "live");
+
+    @Transactional
+    public ApiDto.StrategyResponse deployStrategy(String name, String mode) {
+        if (mode == null || !VALID_DEPLOY_MODES.contains(mode)) {
+            throw new IllegalArgumentException("mode must be one of: paper, live");
+        }
+
+        Strategy strategy = strategyRepo.findByName(name)
+                .orElseThrow(() -> new NoSuchElementException("Strategy not found: " + name));
+
+        strategy.setStatus("ACTIVE");
+        strategy.setDeployMode(mode);
+        strategy.setUpdatedAt(Instant.now());
+        strategy = strategyRepo.save(strategy);
+
+        log.info("Strategy '{}' deployed (mode={})", name, mode);
+        return toStrategyResponse(strategy);
+    }
+
     // ── All backtest runs for a strategy ─────────────────────────────────────
 
     @Transactional(readOnly = true)

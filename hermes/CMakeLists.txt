@@ -248,6 +248,46 @@ if(PQXX_LIB AND PQXX_INCLUDE_DIR)
 endif()
 
 # ---------------------------------------------------------------------------
+# Backtest driver — offline replay of historical bars through the real engine
+# (simulated fills) -> performance stats JSON for the frontend. Needs the full
+# engine, so it is gated on the same deps.
+# ---------------------------------------------------------------------------
+if(HERMES_HAVE_ENGINE)
+    set(BACKTEST_SOURCES ${HERMES_SOURCES})
+    list(REMOVE_ITEM BACKTEST_SOURCES src/main.cpp)
+    list(APPEND BACKTEST_SOURCES tools/backtest_main.cpp)
+    add_executable(hermes_backtest ${BACKTEST_SOURCES})
+    target_include_directories(hermes_backtest PRIVATE
+        src/
+        ${websocketpp_SOURCE_DIR}
+        "${ONNXRUNTIME_ROOT}/include"
+        "${ASIO_INCLUDE_DIR}")
+    target_link_directories(hermes_backtest PRIVATE "${ONNXRUNTIME_ROOT}/lib")
+    target_link_libraries(hermes_backtest PRIVATE
+        nlohmann_json::nlohmann_json
+        httplib::httplib
+        Threads::Threads
+        onnxruntime
+        OpenSSL::SSL OpenSSL::Crypto)
+    target_compile_definitions(hermes_backtest PRIVATE
+        HERMES_HAVE_ONNX=1
+        CPPHTTPLIB_OPENSSL_SUPPORT=1
+        ASIO_STANDALONE=1
+        _WEBSOCKETPP_CPP11_STL_=1
+        ASIO_HAS_STD_INVOKE_RESULT=1)
+    if(PostgreSQL_FOUND)
+        target_include_directories(hermes_backtest PRIVATE ${PostgreSQL_INCLUDE_DIRS})
+        target_link_libraries(hermes_backtest PRIVATE ${PostgreSQL_LIBRARIES})
+    endif()
+    if(PQXX_LIB AND PQXX_INCLUDE_DIR)
+        target_include_directories(hermes_backtest PRIVATE ${PQXX_INCLUDE_DIR})
+        target_link_libraries(hermes_backtest PRIVATE ${PQXX_LIB})
+    endif()
+    set_target_properties(hermes_backtest PROPERTIES
+        BUILD_RPATH "${ONNXRUNTIME_ROOT}/lib")
+endif()
+
+# ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
 enable_testing()
@@ -262,6 +302,17 @@ target_link_libraries(test_features PRIVATE
     Threads::Threads)
 add_test(NAME features
          COMMAND test_features ${CMAKE_SOURCE_DIR}/tests/feature_fixture.json)
+
+# Part 3 (B4) — HMMRegime causal forward filter parity against numpy.
+add_executable(test_hmm
+    tests/test_hmm.cpp
+    src/engine/HMMRegime.cpp)
+target_include_directories(test_hmm PRIVATE src/)
+target_link_libraries(test_hmm PRIVATE
+    nlohmann_json::nlohmann_json
+    Threads::Threads)
+add_test(NAME hmm
+         COMMAND test_hmm ${CMAKE_SOURCE_DIR}/tests/hmm_fixture.json)
 
 # Part 4 — ONNXModel inference (only when the ONNX Runtime is available).
 if(HERMES_HAVE_ONNX)

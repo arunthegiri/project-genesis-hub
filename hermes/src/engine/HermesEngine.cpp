@@ -87,6 +87,25 @@ HermesEngine::HermesEngine(const EngineConfig& config)
         feed_.onBar(symbol,
                     [this, symbol](const Bar& bar) { onBar(symbol, bar); });
     }
+
+    // Cross-asset companion feeds (B3): the model's beta_spy/corr_spy/relstr_amd
+    // features need live SPY/AMD closes. Subscribe to any companion referenced
+    // by the feature set and route its bars into every calculator's companion
+    // intake — companions are fed but never traded.
+    auto featuresReference = [&](const char* token) {
+        for (const std::string& f : config_.features)
+            if (f.find(token) != std::string::npos) return true;
+        return false;
+    };
+    std::vector<std::string> companions;
+    if (featuresReference("spy")) companions.push_back("SPY");
+    if (featuresReference("amd")) companions.push_back("AMD");
+    for (const std::string& comp : companions) {
+        if (calculators_.count(comp)) continue;  // already a traded symbol
+        feed_.onBar(comp,
+                    [this, comp](const Bar& bar) { onCompanionBar(comp, bar); });
+    }
+
     if (simulate_fills_) {
         std::cout << "[engine] no Alpaca credentials — running with SIMULATED "
                      "fills (orders are not routed)\n";
@@ -117,6 +136,28 @@ void HermesEngine::onBar(const std::string& symbol, const Bar& bar) {
     last_price_[symbol] = bar.close;
     rollDailyStats(bar);
     processBar(symbol, bar);
+
+    // Record a mark-to-market equity point (realized capital + unrealized on
+    // any open positions) for the backtest equity curve.
+    double equity = current_capital_;
+    for (const auto& [sym, pos] : positions_) {
+        const auto lp = last_price_.find(sym);
+        const double price = lp != last_price_.end() ? lp->second : pos.entry_price;
+        equity += (price - pos.entry_price) * pos.quantity;
+    }
+    equity_curve_.emplace_back(bar.time, equity);
+}
+
+void HermesEngine::setRegime(int regime) {
+    std::lock_guard<std::mutex> lk(mutex_);
+    for (auto& [sym, calc] : calculators_) calc.setRegime(regime);
+}
+
+void HermesEngine::onCompanionBar(const std::string& symbol, const Bar& bar) {
+    std::lock_guard<std::mutex> lk(mutex_);
+    // Fold the companion close into every calculator; only the ones with
+    // cross-asset features actually consume it.
+    for (auto& [sym, calc] : calculators_) calc.updateCompanion(symbol, bar);
 }
 
 void HermesEngine::processBar(const std::string& symbol, const Bar& bar) {
@@ -286,6 +327,7 @@ void HermesEngine::exitPosition(const std::string& symbol, const Bar& bar,
     trade.win           = pnl > 0.0;
     trade.exit_reason   = reason;
     logger_.logTrade(trade);
+    completed_trades_.push_back(trade);
 
     std::cout << "[" << symbol << "] Exited long: " << pos.quantity
               << " shares at " << exit_price << " (" << reason

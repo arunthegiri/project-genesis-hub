@@ -1,4 +1,4 @@
-Metadata-Version: 2.4
+Metadata-Version: 2.1
 Name: ananke
 Version: 0.1.0
 Summary: Python SDK for the Ananke Quant Trading Platform
@@ -10,7 +10,4 @@ Requires-Dist: matplotlib>=3.6.0
 Requires-Dist: requests>=2.28.0
 Requires-Dist: sqlalchemy>=2.0.0
 Requires-Dist: psycopg2-binary>=2.9.0
-Dynamic: author
-Dynamic: requires-dist
-Dynamic: requires-python
-Dynamic: summary
+Requires-Dist: tqdm>=4.64.0

@@ -65,11 +65,20 @@ public class GlobalExceptionHandler {
                 .body(new ApiDto.ErrorResponse(ex.getMessage(), 400));
     }
 
+    @ExceptionHandler(UnsupportedOperationException.class)
+    public ResponseEntity<ApiDto.ErrorResponse> handleUnsupported(UnsupportedOperationException ex) {
+        log.warn("Strategy cannot be re-run: {}", ex.getMessage());
+        return ResponseEntity
+                .unprocessableEntity()
+                .body(new ApiDto.ErrorResponse(ex.getMessage(), 422));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiDto.ErrorResponse> handleGeneric(Exception ex) {
         log.error("Unhandled exception: {}", ex.getMessage(), ex);
+        String detail = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
         return ResponseEntity
                 .internalServerError()
-                .body(new ApiDto.ErrorResponse("Internal server error", 500));
+                .body(new ApiDto.ErrorResponse("Internal server error: " + detail, 500));
     }
 }

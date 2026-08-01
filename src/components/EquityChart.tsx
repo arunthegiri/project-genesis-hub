@@ -1,28 +1,11 @@
 import { useEffect, useRef } from "react";
 import {
-  createChart,
   LineStyle,
-  type IChartApi,
   type ISeriesApi,
-  type UTCTimestamp,
   type Time,
 } from "lightweight-charts";
 import type { EquityPoint } from "@/lib/api/strategies";
-
-const CHART_OPTIONS = {
-  autoSize: true,
-  layout: {
-    background: { color: "transparent" },
-    textColor: "#9ca3af",
-    fontFamily: "JetBrains Mono, ui-monospace, monospace",
-  },
-  grid: {
-    vertLines: { color: "rgba(255,255,255,0.04)" },
-    horzLines: { color: "rgba(255,255,255,0.04)" },
-  },
-  rightPriceScale: { borderColor: "rgba(255,255,255,0.06)" },
-  timeScale: { borderColor: "rgba(255,255,255,0.06)", timeVisible: true, secondsVisible: false },
-} as const;
+import { useChartBase, toTs } from "@/hooks/useChartBase";
 
 interface Props {
   equityCurve: EquityPoint[];
@@ -32,14 +15,15 @@ interface Props {
 
 export function EquityChart({ equityCurve, buyHoldCurve, height = 200 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const chartRef     = useRef<IChartApi | null>(null);
+  const { chartRef } = useChartBase(containerRef);
   const seriesRef    = useRef<ISeriesApi<"Line"> | null>(null);
   const zeroRef      = useRef<ISeriesApi<"Line"> | null>(null);
   const bahRef       = useRef<ISeriesApi<"Line"> | null>(null);
 
+  // Create series once on mount (chart created by useChartBase)
   useEffect(() => {
-    if (!containerRef.current) return;
-    const chart = createChart(containerRef.current, CHART_OPTIONS);
+    const chart = chartRef.current;
+    if (!chart) return;
 
     seriesRef.current = chart.addLineSeries({
       color: "#60a5fa",
@@ -64,15 +48,12 @@ export function EquityChart({ equityCurve, buyHoldCurve, height = 200 }: Props) 
       title: "Buy & Hold",
     });
 
-    chartRef.current = chart;
     return () => {
-      chart.remove();
-      chartRef.current = null;
       seriesRef.current = null;
       zeroRef.current = null;
       bahRef.current = null;
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Strategy equity curve
   useEffect(() => {
@@ -139,9 +120,6 @@ export function EquityChart({ equityCurve, buyHoldCurve, height = 200 }: Props) 
 
 function toChartData(curve: EquityPoint[]): { time: Time; value: number }[] {
   return curve
-    .map(p => ({
-      time: Math.floor(new Date(p.time).getTime() / 1000) as UTCTimestamp,
-      value: p.cumulative_pnl,
-    }))
+    .map(p => ({ time: toTs(p.time) as Time, value: p.cumulative_pnl }))
     .sort((a, b) => (a.time as number) - (b.time as number));
 }

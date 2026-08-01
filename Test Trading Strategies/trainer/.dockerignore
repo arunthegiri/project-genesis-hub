@@ -1,0 +1,14 @@
+# Build context is trainer/. Keep the image to just the Python package —
+# exclude notebooks, caches, docs, shell scripts, and the Docker files
+# themselves. Only *.py + requirements-lock.txt need to land in the image.
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+*.ipynb
+*.md
+*.sh
+Dockerfile
+.dockerignore
+.last_image
+requirements.txt
+*.egg-info/

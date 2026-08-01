@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueries } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { ChevronDown, ChevronUp, Loader2, Plus, X } from "lucide-react";
+import { ChevronDown, ChevronUp, GripHorizontal, Loader2, Plus, X } from "lucide-react";
 
 import { PriceChart, type IndicatorConfig, type ChartType } from "@/components/PriceChart";
 import { ChartScrollbar } from "@/components/ChartScrollbar";
@@ -48,6 +48,20 @@ const CHART_TYPES: { value: ChartType; label: string }[] = [
 ];
 const COMPARE_COLORS = ["#f59e0b", "#a78bfa", "#34d399", "#f472b6", "#fb923c"];
 
+// Chart+data region sizing. The vertical height is drag-resizable and persisted
+// in localStorage; the horizontal chart/data split is drag-resizable too.
+const CHART_HEIGHT_KEY    = "quant.chartPanel.height";
+const MIN_CHART_HEIGHT    = 300;
+const DEFAULT_CHART_HEIGHT = 520;
+const DEFAULT_DATA_PCT    = 40;   // data panel width when open (~60/40 split)
+const MIN_DATA_PCT        = 15;
+const MAX_DATA_PCT        = 70;
+
+const maxChartHeight = () =>
+  typeof window === "undefined" ? 900 : Math.round(window.innerHeight * 0.9);
+const clampHeight = (h: number) =>
+  Math.min(maxChartHeight(), Math.max(MIN_CHART_HEIGHT, h));
+
 function loadSession(key: string | undefined): Record<string, unknown> {
   if (!key) return {};
   try {
@@ -69,13 +83,11 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
   const [selectedSymbol, setSelectedSymbol] = useState<string>(initialSymbol);
   const [startDate, setStartDate]     = useState<string>(initialRange.startDate);
   const [endDate, setEndDate]         = useState<string>(initialRange.endDate);
-  const [interval, setInterval]       = useState<Interval>(initialInterval);
+  const [interval, updateInterval]       = useState<Interval>(initialInterval);
   const [rangePreset, setRangePreset] = useState<ChartRangePreset>("5D");
   const [chartType, setChartType]     = useState<ChartType>("candlestick");
   const [compareSymbols, setCompareSymbols] = useState<string[]>([]);
   const [compareInput, setCompareInput]     = useState("");
-  const [chartHeight, setChartHeight] = useState<number>(420);
-  const [dataWidth, setDataWidth]     = useState<number>(288);
   const [showData, setShowData]       = useState<boolean>(false);
   const [showSMA,  setShowSMA]        = useState<boolean>(true);
   const [showEMA,  setShowEMA]        = useState<boolean>(false);
@@ -84,19 +96,26 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
   const [showMACD, setShowMACD]       = useState<boolean>(false);
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
 
+  // Layout: vertical height of the whole chart+data region (drag handle at the
+  // bottom edge) and the horizontal chart/data split ratio. `dragging` disables
+  // the layout CSS transition so panels track the cursor 1:1 while dragging.
+  const [chartHeight, setChartHeight]   = useState<number>(DEFAULT_CHART_HEIGHT);
+  const [dataPanelPct, setDataPanelPct] = useState<number>(DEFAULT_DATA_PCT);
+  const [dragging, setDragging]         = useState<null | "h" | "v">(null);
+  const chartRowRef = useRef<HTMLDivElement>(null);
+
   // Restore persisted state after mount (client only, post-hydration).
   useEffect(() => {
     const s = loadSession(persistKey);
     if (typeof s.symbol === "string") setSelectedSymbol(s.symbol);
     if (typeof s.startDate === "string") setStartDate(s.startDate);
     if (typeof s.endDate === "string") setEndDate(s.endDate);
-    if (typeof s.interval === "string") setInterval(s.interval as Interval);
+    if (typeof s.interval === "string") updateInterval(s.interval as Interval);
     if (typeof s.rangePreset === "string") setRangePreset(s.rangePreset as ChartRangePreset);
     if (typeof s.chartType === "string") setChartType(s.chartType as ChartType);
     if (Array.isArray(s.compareSymbols)) setCompareSymbols(s.compareSymbols as string[]);
-    if (typeof s.chartHeight === "number") setChartHeight(s.chartHeight);
-    if (typeof s.dataWidth === "number") setDataWidth(s.dataWidth);
     if (typeof s.showData === "boolean") setShowData(s.showData);
+    if (typeof s.dataPanelPct === "number") setDataPanelPct(s.dataPanelPct);
     if (typeof s.showSMA === "boolean") setShowSMA(s.showSMA);
     if (typeof s.showEMA === "boolean") setShowEMA(s.showEMA);
     if (typeof s.showBB === "boolean") setShowBB(s.showBB);
@@ -106,16 +125,82 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Restore the persisted vertical height from localStorage after mount.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(CHART_HEIGHT_KEY);
+      if (raw != null) {
+        const n = Number(raw);
+        if (Number.isFinite(n)) setChartHeight(clampHeight(n));
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   // Auto-pick interval whenever the date range changes
   useEffect(() => {
     const days = (new Date(endDate).getTime() - new Date(startDate).getTime()) / 86_400_000;
-    setInterval(intervalForSpan(days));
+    updateInterval(intervalForSpan(days));
   }, [startDate, endDate]);
 
-  const handleAutoInterval = useCallback((i: Interval) => setInterval(i), []);
+  const handleAutoInterval = useCallback((i: Interval) => updateInterval(i), []);
 
   const [visibleRange, setVisibleRange] = useState<{ from: number; to: number } | null>(null);
   const handleRangeChange = useCallback((from: number, to: number) => setVisibleRange({ from, to }), []);
+
+  // Horizontal splitter — drag to adjust the chart/data width ratio.
+  const startHDrag = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const row = chartRowRef.current;
+    if (!row) return;
+    const rowWidth = row.getBoundingClientRect().width;
+    const startX = e.clientX;
+    const startPct = dataPanelPct;
+    setDragging("h");
+    const onMove = (ev: MouseEvent) => {
+      // Dragging left widens the data panel.
+      const delta = ((startX - ev.clientX) / rowWidth) * 100;
+      setDataPanelPct(Math.min(MAX_DATA_PCT, Math.max(MIN_DATA_PCT, startPct + delta)));
+    };
+    const onUp = () => {
+      setDragging(null);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      window.dispatchEvent(new Event("resize")); // reflow the chart canvas
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [dataPanelPct]);
+
+  // Vertical handle — drag the bottom edge to grow/shrink the whole region.
+  const startVDrag = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = chartHeight;
+    let current = startH;
+    setDragging("v");
+    const onMove = (ev: MouseEvent) => {
+      current = clampHeight(startH + (ev.clientY - startY));
+      setChartHeight(current);
+    };
+    const onUp = () => {
+      setDragging(null);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      try { localStorage.setItem(CHART_HEIGHT_KEY, String(current)); } catch { /* ignore */ }
+      window.dispatchEvent(new Event("resize")); // reflow the chart canvas
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [chartHeight]);
+
+  // The chart uses autoSize (ResizeObserver) so it follows its container during
+  // the open/close transition — but nudge a resize once the transition settles
+  // to guarantee a final crisp reflow at the new width.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const id = window.setTimeout(() => window.dispatchEvent(new Event("resize")), 230);
+    return () => window.clearTimeout(id);
+  }, [showData]);
 
   // Persist configuration so state survives tab navigation. Skip the first run
   // (mount, before the restore effect has applied) so we don't overwrite saved
@@ -126,11 +211,11 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
     if (skipPersist.current) { skipPersist.current = false; return; }
     sessionStorage.setItem(persistKey, JSON.stringify({
       symbol: selectedSymbol, startDate, endDate, interval, rangePreset, chartType,
-      compareSymbols, chartHeight, dataWidth, showData,
+      compareSymbols, showData, dataPanelPct,
       showSMA, showEMA, showBB, showRSI, showMACD, strategy: selectedStrategy,
     }));
   }, [persistKey, selectedSymbol, startDate, endDate, interval, rangePreset, chartType,
-      compareSymbols, chartHeight, dataWidth, showData, showSMA, showEMA, showBB, showRSI, showMACD,
+      compareSymbols, showData, dataPanelPct, showSMA, showEMA, showBB, showRSI, showMACD,
       selectedStrategy]);
 
   const { data: strategyDetail } = useQuery({
@@ -144,41 +229,6 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
     : null;
   const strategyTrades = strategyDetail?.latestResults?.trades ?? [];
   const equityCurve    = capitalStats?.equityCurve ?? [];
-
-  const dragRef = useRef<{ startY: number; startH: number } | null>(null);
-  const onResizeStart = (e: React.MouseEvent) => {
-    e.preventDefault();
-    dragRef.current = { startY: e.clientY, startH: chartHeight };
-    const onMove = (ev: MouseEvent) => {
-      if (!dragRef.current) return;
-      setChartHeight(Math.max(200, Math.min(1400, dragRef.current.startH + ev.clientY - dragRef.current.startY)));
-    };
-    const onUp = () => {
-      dragRef.current = null;
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  };
-
-  const hDragRef = useRef<{ startX: number; startW: number } | null>(null);
-  const onHResizeStart = (e: React.MouseEvent) => {
-    e.preventDefault();
-    hDragRef.current = { startX: e.clientX, startW: dataWidth };
-    const onMove = (ev: MouseEvent) => {
-      if (!hDragRef.current) return;
-      // dragging left → panel grows; right → shrinks
-      setDataWidth(Math.max(180, Math.min(700, hDragRef.current.startW - (ev.clientX - hDragRef.current.startX))));
-    };
-    const onUp = () => {
-      hDragRef.current = null;
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  };
 
   const { from: fromApi, to: toApi } = useMemo(
     () => buildUtcApiRange(startDate, endDate),
@@ -334,7 +384,7 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
         </Field>
 
         <Field label="Interval">
-          <Select value={interval} onValueChange={v => setInterval(v as Interval)}>
+          <Select value={interval} onValueChange={v => updateInterval(v as Interval)}>
             <SelectTrigger className="h-8 w-[130px] text-xs">
               <SelectValue />
             </SelectTrigger>
@@ -407,106 +457,140 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
         </div>
       </div>
 
-      {/* Chart + side data panel */}
-      <div className="relative flex min-h-0">
-        {/* Chart column */}
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className="relative flex overflow-hidden" style={{ height: chartHeight }}>
-            {/* Chart content */}
-            <div className="relative flex-1 min-w-0">
-              {!selectedSymbol && <Empty>Select a symbol above to begin.</Empty>}
-              {selectedSymbol && isLoading && <Empty><Loader2 className="h-4 w-4 animate-spin" /> Loading…</Empty>}
-              {selectedSymbol && error && (
-                <Empty><span className="text-destructive">{(error as Error).message}</span></Empty>
-              )}
-              {selectedSymbol && !isLoading && !error && bars.length === 0 && (
-                <Empty>No data for {selectedSymbol} in this range.</Empty>
-              )}
-              {selectedSymbol && bars.length > 0 && (
-                <PriceChart
-                  bars={bars}
-                  indicators={indicators}
-                  height={chartHeight}
-                  chartType={chartType}
-                  compareData={compareData}
-                  trades={strategyTrades}
-                  onAutoInterval={handleAutoInterval}
-                  onRangeChange={handleRangeChange}
-                  visibleRange={visibleRange ?? undefined}
+      {/* Chart + data region.
+          A fixed-height wrapper (drag the bottom handle to resize, persisted in
+          localStorage) that also gives the chart a *definite* height to resolve
+          its canvas against. Inside, a horizontal flex split: the chart column
+          flex-grows while the data column's width animates open/closed and is
+          drag-adjustable via the splitter. */}
+      <div
+        className="relative flex flex-col"
+        style={{
+          height: chartHeight,
+          userSelect: dragging ? "none" : undefined,
+          cursor: dragging === "v" ? "row-resize" : dragging === "h" ? "col-resize" : undefined,
+        }}
+      >
+        <div ref={chartRowRef} className="flex min-h-0 flex-1 overflow-hidden">
+          {/* Chart column — grows to fill whatever the data column leaves free. */}
+          <div className="relative flex min-w-0 flex-1 flex-col">
+            <div className="relative flex flex-1 overflow-hidden">
+              {/* Chart content */}
+              <div className="relative flex-1 min-w-0">
+                {!selectedSymbol && <Empty>Select a symbol above to begin.</Empty>}
+                {selectedSymbol && isLoading && <Empty><Loader2 className="h-4 w-4 animate-spin" /> Loading…</Empty>}
+                {selectedSymbol && error && (
+                  <Empty><span className="text-destructive">{(error as Error).message}</span></Empty>
+                )}
+                {selectedSymbol && !isLoading && !error && bars.length === 0 && (
+                  <Empty>No data for {selectedSymbol} in this range.</Empty>
+                )}
+                {selectedSymbol && bars.length > 0 && (
+                  <PriceChart
+                    bars={bars}
+                    indicators={indicators}
+                    height="100%"
+                    chartType={chartType}
+                    compareData={compareData}
+                    trades={strategyTrades}
+                    onAutoInterval={handleAutoInterval}
+                    onRangeChange={handleRangeChange}
+                    visibleRange={visibleRange ?? undefined}
+                  />
+                )}
+                {isFetching && selectedSymbol && (
+                  <div className="absolute right-3 top-3 flex items-center gap-1 text-[10px] text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" /> refreshing
+                  </div>
+                )}
+              </div>
+
+              {/* Vertical scrollbar on right */}
+              {bars.length > 0 && visibleRange && (
+                <ChartScrollbar
+                  totalBars={bars.length}
+                  from={visibleRange.from}
+                  to={visibleRange.to}
+                  onRangeChange={(f, t) => setVisibleRange({ from: f, to: t })}
                 />
               )}
-              {isFetching && selectedSymbol && (
-                <div className="absolute right-3 top-3 flex items-center gap-1 text-[10px] text-muted-foreground">
-                  <Loader2 className="h-3 w-3 animate-spin" /> refreshing
-                </div>
-              )}
             </div>
-
-            {/* Vertical scrollbar on right */}
-            {bars.length > 0 && visibleRange && (
-              <ChartScrollbar
-                totalBars={bars.length}
-                from={visibleRange.from}
-                to={visibleRange.to}
-                onRangeChange={(f, t) => setVisibleRange({ from: f, to: t })}
-              />
-            )}
           </div>
 
-          {/* Resize handle */}
+          {/* Draggable horizontal splitter (only when the data panel is open). */}
+          {showData && (
+            <div
+              onMouseDown={startHDrag}
+              role="separator"
+              aria-orientation="vertical"
+              title="Drag to resize"
+              className="flex w-1.5 shrink-0 cursor-col-resize items-center justify-center bg-border/20 transition-colors hover:bg-border/60 active:bg-primary/40"
+            />
+          )}
+
+          {/* Data column — width animates on open/close and tracks the splitter. */}
           <div
-            className="flex cursor-row-resize items-center justify-center py-1 opacity-30 transition-opacity hover:opacity-80"
-            onMouseDown={onResizeStart}
-            title="Drag to resize"
+            className="flex min-w-0 flex-col overflow-hidden border-l border-border"
+            style={{
+              flexGrow: 0,
+              flexShrink: 0,
+              flexBasis: showData ? `${dataPanelPct}%` : "0%",
+              opacity: showData ? 1 : 0,
+              pointerEvents: showData ? undefined : "none",
+              transition: dragging === "h"
+                ? "none"
+                : "flex-basis 200ms ease, opacity 200ms ease",
+            }}
           >
-            <div className="h-1 w-20 rounded-full bg-border" />
+            {showData && (
+              <>
+                <div className="overflow-auto flex-1">
+                  <table className="tabular w-full text-[11px]">
+                    <thead className="sticky top-0 bg-card text-muted-foreground">
+                      <tr>
+                        {["time", "O", "H", "L", "C", "V"].map(h => (
+                          <th key={h} className="px-2 py-1.5 text-left font-medium">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bars.slice(0, 200).map((b, i) => (
+                        <tr key={`${b.time}-${i}`} className="border-t border-border/50">
+                          <td className="px-2 py-1 text-muted-foreground">{format(new Date(b.time), "MM/dd/yy HH:mm")}</td>
+                          <td className="px-2 py-1">{b.open.toFixed(2)}</td>
+                          <td className="px-2 py-1 text-bull">{b.high.toFixed(2)}</td>
+                          <td className="px-2 py-1 text-bear">{b.low.toFixed(2)}</td>
+                          <td className="px-2 py-1">{b.close.toFixed(2)}</td>
+                          <td className="px-2 py-1 text-muted-foreground">{b.volume.toLocaleString()}</td>
+                        </tr>
+                      ))}
+                      {bars.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">No data</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="shrink-0 border-t border-border p-2">
+                  <PythonExport code={pythonCode} filename={`${selectedSymbol || "query"}_${interval}.py`} />
+                </div>
+              </>
+            )}
           </div>
         </div>
 
-        {/* Side data panel */}
-        {showData && (
-          <>
-            {/* Drag divider */}
-            <div
-              className="flex w-1.5 shrink-0 cursor-col-resize items-center justify-center bg-border/20 transition-colors hover:bg-border/60 active:bg-primary/40"
-              style={{ height: chartHeight }}
-              onMouseDown={onHResizeStart}
-            />
-            <div className="flex shrink-0 flex-col" style={{ height: chartHeight, width: dataWidth }}>
-            <div className="overflow-auto flex-1">
-              <table className="tabular w-full text-[11px]">
-                <thead className="sticky top-0 bg-card text-muted-foreground">
-                  <tr>
-                    {["time", "O", "H", "L", "C", "V"].map(h => (
-                      <th key={h} className="px-2 py-1.5 text-left font-medium">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {bars.slice(0, 200).map((b, i) => (
-                    <tr key={`${b.time}-${i}`} className="border-t border-border/50">
-                      <td className="px-2 py-1 text-muted-foreground">{format(new Date(b.time), "MM/dd/yy HH:mm")}</td>
-                      <td className="px-2 py-1">{b.open.toFixed(2)}</td>
-                      <td className="px-2 py-1 text-bull">{b.high.toFixed(2)}</td>
-                      <td className="px-2 py-1 text-bear">{b.low.toFixed(2)}</td>
-                      <td className="px-2 py-1">{b.close.toFixed(2)}</td>
-                      <td className="px-2 py-1 text-muted-foreground">{b.volume.toLocaleString()}</td>
-                    </tr>
-                  ))}
-                  {bars.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">No data</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <div className="shrink-0 border-t border-border p-2">
-              <PythonExport code={pythonCode} filename={`${selectedSymbol || "query"}_${interval}.py`} />
-            </div>
-          </div>
-          </>
-        )}
+        {/* Vertical resize handle at the bottom edge — drag to change the
+            region's height (clamped 300px … 90vh, persisted in localStorage). */}
+        <div
+          onMouseDown={startVDrag}
+          role="separator"
+          aria-orientation="horizontal"
+          title="Drag to resize height"
+          className="group flex h-2 shrink-0 cursor-row-resize items-center justify-center border-t border-border bg-border/10 transition-colors hover:bg-border/40 active:bg-primary/30"
+        >
+          <GripHorizontal className="h-3 w-3 text-muted-foreground/50 group-hover:text-muted-foreground" />
+        </div>
       </div>
       {/* Strategy stats panel */}
       {selectedStrategy && capitalStats && (

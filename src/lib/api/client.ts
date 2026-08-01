@@ -51,6 +51,8 @@ export async function apiFetch<T>(path: string, opts: RequestOptions = {}): Prom
     );
   }
 
+  if (res.status === 204) return null as T;
+
   const text = await res.text();
   const parsed = text ? safeJson(text) : null;
 

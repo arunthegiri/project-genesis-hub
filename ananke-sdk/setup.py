@@ -14,5 +14,6 @@ setup(
         'requests>=2.28.0',
         'sqlalchemy>=2.0.0',
         'psycopg2-binary>=2.9.0',
+        'tqdm>=4.64.0',
     ],
 )

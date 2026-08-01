@@ -1,12 +1,7 @@
-import { useEffect, useRef } from "react";
-import {
-  createChart,
-  CrosshairMode,
-  type IChartApi,
-  type ISeriesApi,
-  type UTCTimestamp,
-} from "lightweight-charts";
+import { useEffect, useMemo, useRef } from "react";
+import { type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
 import type { PriceBar, Trade } from "@/lib/api/types";
+import { useChartBase, toTs } from "@/hooks/useChartBase";
 
 interface Props {
   bars: PriceBar[];
@@ -16,49 +11,41 @@ interface Props {
   visibleRange?: { from: number; to: number };
 }
 
-const CHART_OPTIONS = {
-  autoSize: true,
-  layout: {
-    background: { color: "transparent" },
-    textColor: "#9ca3af",
-    fontFamily: "JetBrains Mono, ui-monospace, monospace",
-  },
-  grid: {
-    vertLines: { color: "rgba(255,255,255,0.04)" },
-    horzLines: { color: "rgba(255,255,255,0.04)" },
-  },
-  crosshair: { mode: CrosshairMode.Normal },
-  rightPriceScale: { borderColor: "rgba(255,255,255,0.06)" },
-  timeScale: {
-    borderColor: "rgba(255,255,255,0.06)",
-    timeVisible: true,
-    secondsVisible: false,
-  },
-} as const;
-
-function toTs(iso: string): UTCTimestamp {
-  return Math.floor(new Date(iso).getTime() / 1000) as UTCTimestamp;
-}
-
 function toBar(b: PriceBar) {
   return { time: toTs(b.time), open: b.open, high: b.high, low: b.low, close: b.close };
 }
 
-function buildMarkers(trades: Trade[], bars: PriceBar[]) {
-  if (!bars.length || !trades.length) return [];
+/**
+ * Index of the entry in an ascending array nearest to `targetMs`, via binary
+ * search — O(log n) per lookup instead of a full O(n) scan. Ties resolve to the
+ * earlier bar, matching the previous linear-scan behaviour.
+ */
+function findNearestMs(targetMs: number, sortedMs: number[]): number {
+  let lo = 0;
+  let hi = sortedMs.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (sortedMs[mid] < targetMs) lo = mid + 1;
+    else hi = mid;
+  }
+  // `lo` is the first index >= target; the nearest is either it or its predecessor.
+  if (lo > 0 && Math.abs(sortedMs[lo - 1] - targetMs) <= Math.abs(sortedMs[lo] - targetMs)) {
+    return sortedMs[lo - 1];
+  }
+  return sortedMs[lo];
+}
 
-  // Build a lookup of bar timestamps for snapping trade times to valid bar times
-  const barTimes = bars.map(b => ({ ms: new Date(b.time).getTime(), ts: toTs(b.time) }));
-  const lastMs = barTimes[barTimes.length - 1].ms;
+function buildMarkers(trades: Trade[], sortedBarMs: number[]) {
+  if (!sortedBarMs.length || !trades.length) return [];
 
+  const lastMs = sortedBarMs[sortedBarMs.length - 1];
+
+  // Snap a trade time to the nearest bar. Bars are ascending (lightweight-charts
+  // requires it for setData), so a binary search is valid here.
   function snap(iso: string): UTCTimestamp | null {
     const target = new Date(iso).getTime();
     if (target > lastMs) return null;
-    let best = barTimes[0];
-    for (const bt of barTimes) {
-      if (Math.abs(bt.ms - target) < Math.abs(best.ms - target)) best = bt;
-    }
-    return best.ts;
+    return Math.floor(findNearestMs(target, sortedBarMs) / 1000) as UTCTimestamp;
   }
 
   const markers: Array<{
@@ -99,17 +86,21 @@ function buildMarkers(trades: Trade[], bars: PriceBar[]) {
 
 export function BacktestingChart({ bars, trades, height = "100%", onRangeChange, visibleRange }: Props) {
   const containerRef    = useRef<HTMLDivElement>(null);
-  const chartRef        = useRef<IChartApi | null>(null);
+  const { chartRef }    = useChartBase(containerRef);
   const seriesRef       = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const prevLenRef      = useRef(0);
   const prevFirstTime   = useRef("");
   const onRangeChangeRef = useRef(onRangeChange);
   useEffect(() => { onRangeChangeRef.current = onRangeChange; }, [onRangeChange]);
 
-  // Create chart + series once on mount
+  // Ascending bar times (ms), rebuilt only when bars change. Marker snapping
+  // binary-searches this instead of scanning all bars per trade on every tick.
+  const barTimesMs = useMemo(() => bars.map(b => new Date(b.time).getTime()), [bars]);
+
+  // Create candlestick series once on mount (chart created by useChartBase)
   useEffect(() => {
-    if (!containerRef.current) return;
-    const chart = createChart(containerRef.current, CHART_OPTIONS);
+    const chart = chartRef.current;
+    if (!chart) return;
     const series = chart.addCandlestickSeries({
       upColor: "#22c55e",
       downColor: "#ef4444",
@@ -117,16 +108,13 @@ export function BacktestingChart({ bars, trades, height = "100%", onRangeChange,
       wickUpColor: "#22c55e",
       wickDownColor: "#ef4444",
     });
-    chartRef.current = chart;
     seriesRef.current = series;
     return () => {
-      chart.remove();
-      chartRef.current = null;
       seriesRef.current = null;
       prevLenRef.current = 0;
       prevFirstTime.current = "";
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Emit logical range for scrollbar
   useEffect(() => {
@@ -189,8 +177,8 @@ export function BacktestingChart({ bars, trades, height = "100%", onRangeChange,
 
   // Update trade markers whenever visible trades or bars change
   useEffect(() => {
-    seriesRef.current?.setMarkers(buildMarkers(trades, bars));
-  }, [trades, bars]);
+    seriesRef.current?.setMarkers(buildMarkers(trades, barTimesMs));
+  }, [trades, barTimesMs]);
 
   return <div ref={containerRef} style={{ height }} className="w-full" />;
 }

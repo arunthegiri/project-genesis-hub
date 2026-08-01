@@ -54,6 +54,26 @@ public:
     // future replay harness can all drive the engine the same way.
     void onBar(const std::string& symbol, const Bar& bar);
 
+    // Companion (cross-asset) bar entry point — SPY/AMD bars are routed here,
+    // folded into every calculator's cross-asset buffers, and never traded.
+    void onCompanionBar(const std::string& symbol, const Bar& bar);
+
+    // Broadcast the current HMM regime to every calculator. Live, the engine
+    // would compute this per trading day; the backtest driver sets it from the
+    // precomputed daily regimes at each day boundary. Thread-safe.
+    void setRegime(int regime);
+
+    // Backtest accessors — completed trades and the per-bar mark-to-market
+    // equity curve, collected in-memory alongside the TradeLogger DB writes so
+    // an offline driver can compute stats without querying the database.
+    const std::vector<CompletedTrade>& completedTrades() const {
+        return completed_trades_;
+    }
+    const std::vector<std::pair<std::chrono::system_clock::time_point, double>>&
+    equityCurve() const {
+        return equity_curve_;
+    }
+
 private:
     // Main decision flow for one bar (caller holds mutex_).
     void processBar(const std::string& symbol, const Bar& bar);
@@ -101,6 +121,11 @@ private:
     double                              daily_pnl_   = 0.0;
     int                                 trades_today_ = 0;
     int                                 current_day_key_ = 0;  // ET yyyymmdd
+
+    // Backtest collectors (populated in exitPosition / onBar).
+    std::vector<CompletedTrade> completed_trades_;
+    std::vector<std::pair<std::chrono::system_clock::time_point, double>>
+        equity_curve_;
 
     bool              simulate_fills_;  // no Alpaca creds -> fill locally
     std::atomic<bool> running_{false};

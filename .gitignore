@@ -58,3 +58,12 @@ __pycache__/
 
 # Large/regenerable Python caches — never commit (exceeds GitHub 100MB limit)
 *.pkl
+
+# Notebook checkpoints and Python packaging artifacts
+.ipynb_checkpoints/
+*.egg-info/
+
+# Manual backups / scratch workspaces — not for the repo
+Java backend copy/
+Java backend copy.zip
+pipelinefix/

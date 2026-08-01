@@ -48,5 +48,24 @@ services:
     ports:
       - "3000:5173"
 
+  jupyter:
+    image: jupyter/scipy-notebook:latest
+    container_name: jupyter
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./Test Trading Strategies:/home/jovyan/strategies
+      - ./ananke-sdk:/home/jovyan/ananke-sdk
+    environment:
+      JUPYTER_ENABLE_LAB: "yes"
+      ANANKE_API_URL: "http://stock-tracker:8080"
+      TIMESCALE_URL: "postgresql+psycopg2://postgres:postgres@timescaledb:5432/stockdb"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    command: >
+      bash -c "pip install -e /home/jovyan/ananke-sdk &&
+               start-notebook.sh --NotebookApp.token='' --NotebookApp.password=''"
+
 volumes:
   timescale_data:

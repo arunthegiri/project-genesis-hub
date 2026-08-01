@@ -87,4 +87,20 @@ public class StrategyController {
     public List<ApiDto.BacktestResultResponse> results(@PathVariable String name) {
         return strategyService.getBacktestResults(name);
     }
+
+    /**
+     * POST /api/strategies/{name}/deploy
+     * Flips an EXPORTED strategy to ACTIVE with the given deploy mode
+     * (paper/live), so it appears in the Live page Active Strategies table.
+     */
+    @PostMapping("/{name}/deploy")
+    public ApiDto.StrategyResponse deploy(
+            @PathVariable String name,
+            @RequestBody DeployRequest req) {
+        return strategyService.deployStrategy(name, req.mode());
+    }
+
+    /** Request body for POST /api/strategies/{name}/deploy */
+    public record DeployRequest(String mode) {
+    }
 }

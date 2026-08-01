@@ -22,6 +22,19 @@ import java.util.Optional;
 @Service
 public class StockPriceService {
 
+    /**
+     * Two consecutive stored bars more than this many hours apart are treated as
+     * the boundary between two contiguous coverage blocks (i.e. a gap worth
+     * backfilling). 96h (4 days) clears the longest real market closure — a
+     * holiday long weekend (Fri close → Tue open ≈ 88h) — while staying below the
+     * smallest gap actually worth detecting (a missing trading week ≈ 6+ days).
+     *
+     * Tunable in ONE place. See {@code getCoverageBlocks}. Note the documented V1
+     * limitation: any threshold that ignores weekends also necessarily ignores a
+     * single isolated missing midweek day (~41h) — that hole is not detected.
+     */
+    public static final int COVERAGE_GAP_THRESHOLD_HOURS = 96;
+
     private final StockPriceRepository   priceRepo;
     private final SymbolCoverageRepository coverageRepo;
     private final AlpacaClient           alpacaClient;
@@ -86,6 +99,82 @@ public class StockPriceService {
                 .stream()
                 .map(this::toResponse)
                 .toList();
+    }
+
+    // ── Pure read (no auto-fill) — backs GET /{symbol}/raw ───────────────────
+
+    /**
+     * Returns stored 1-minute bars for the range, ordered by time. PURE READ:
+     * unlike {@link #getRange}, it never calls {@link #fillGaps}, never triggers
+     * an Alpaca fetch, and never writes. Used by the SDK's {@code get_data()},
+     * which does its own scan-based gap detection and explicit backfill and would
+     * fight a read that silently span-fills.
+     */
+    @Transactional(readOnly = true)
+    public List<ApiDto.PriceResponse> getRaw(String symbol, Instant from, Instant to) {
+        return priceRepo.findBySymbolAndTimeBetweenOrderByTimeAsc(symbol.toUpperCase(), from, to)
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    // ── Scan-based gap detection — backs GET /{symbol}/coverage-blocks ───────
+
+    /**
+     * Scans {@code stock_prices} for the symbol within [from, to] ordered by time
+     * and returns the contiguous covered blocks, splitting wherever consecutive
+     * bars are more than {@link #COVERAGE_GAP_THRESHOLD_HOURS} apart.
+     *
+     * <p>PURE READ: never reads {@code symbol_coverage}, never triggers an Alpaca
+     * fetch. The break detection and grouping are done entirely in SQL with
+     * window functions ({@code LAG} + a running sum of break markers), so only the
+     * block boundaries — not millions of rows — come back to the JVM.
+     *
+     * <p>An empty list means no bars in range; the SDK then treats the entire
+     * requested range as one gap.
+     */
+    @Transactional(readOnly = true)
+    public List<ApiDto.CoverageBlock> getCoverageBlocks(String symbol, Instant from, Instant to) {
+        String sql = """
+                WITH ordered AS (
+                    SELECT time,
+                           LAG(time) OVER (ORDER BY time) AS prev_time
+                    FROM stock_prices
+                    WHERE symbol = ?
+                      AND time >= ?
+                      AND time <= ?
+                ),
+                marked AS (
+                    SELECT time,
+                           CASE
+                               WHEN prev_time IS NULL
+                                 OR time - prev_time > make_interval(hours => ?)
+                               THEN 1 ELSE 0
+                           END AS is_break
+                    FROM ordered
+                ),
+                grouped AS (
+                    SELECT time,
+                           SUM(is_break) OVER (ORDER BY time) AS block_id
+                    FROM marked
+                )
+                SELECT MIN(time) AS from_time,
+                       MAX(time) AS to_time,
+                       COUNT(*)  AS bar_count
+                FROM grouped
+                GROUP BY block_id
+                ORDER BY from_time
+                """;
+
+        return jdbc.query(sql,
+                (rs, rowNum) -> new ApiDto.CoverageBlock(
+                        rs.getTimestamp("from_time").toInstant(),
+                        rs.getTimestamp("to_time").toInstant(),
+                        rs.getLong("bar_count")),
+                symbol.toUpperCase(),
+                Timestamp.from(from),
+                Timestamp.from(to),
+                COVERAGE_GAP_THRESHOLD_HOURS);
     }
 
     // ── Admin backfill ────────────────────────────────────────────────────────

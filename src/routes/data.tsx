@@ -50,7 +50,7 @@ function DataPage() {
   const [to, setTo] = useState("2024-01-08T16:00");
   const [fromError, setFromError] = useState("");
   const [toError, setToError] = useState("");
-  const [interval, setInterval] = useState<Interval>("1Hour");
+  const [barInterval, setBarInterval] = useState<Interval>("1Hour");
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -93,10 +93,10 @@ function DataPage() {
         symbol: symbol || "AAPL",
         from: fromApi,
         to: toApi,
-        interval,
+        interval: barInterval,
         columns: ALL_COLUMNS.filter((c) => enabledCols.has(c.key as string)).map((c) => c.sql),
       }),
-    [symbol, fromApi, toApi, interval, enabledCols],
+    [symbol, fromApi, toApi, barInterval, enabledCols],
   );
 
   return (
@@ -131,8 +131,8 @@ function DataPage() {
           </Field>
           <Field label="Interval">
             <select
-              value={interval}
-              onChange={(e) => setInterval(e.target.value as Interval)}
+              value={barInterval}
+              onChange={(e) => setBarInterval(e.target.value as Interval)}
               className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground"
             >
               {INTERVALS.map((i) => (

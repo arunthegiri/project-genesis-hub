@@ -1,0 +1,35 @@
+# Fully-pinned dependency set for the FirstRRC Batch 4 (rf_v1) custom Vertex
+# training container. Every version here is the EXACT release validated in the
+# local conda env `ananke-train313` (Python 3.13.5) by the clean dry run
+# (trainer/RUN_ERRORS.md, "Run 2"). Do NOT loosen these — the whole reason the
+# prebuilt Python-3.7 Vertex image was abandoned is that unpinned deps resolved
+# to newer/older releases than what was tested. The container base is
+# python:3.13-slim so these wheels install cleanly with no ancient preinstalls
+# to fight (unlike scikit-learn-cpu.0-23).
+#
+# Regenerate after any local env change with:
+#   conda run -n ananke-train313 python - <<'PY'
+#   import importlib.metadata as m
+#   for p in ["scikit-learn","scipy","numpy","pandas","joblib","lightgbm",
+#             "optuna","shap","imbalanced-learn","hmmlearn","ta","skl2onnx",
+#             "onnx","onnxruntime","gcsfs","pyarrow","tqdm"]:
+#       print(f"{p}=={m.version(p)}")
+#   PY
+
+scikit-learn==1.8.0
+scipy==1.17.1
+numpy==2.3.5
+pandas==3.0.2
+joblib==1.5.3
+lightgbm==4.6.0
+optuna==4.9.0
+shap==0.52.0
+imbalanced-learn==0.14.1
+hmmlearn==0.3.3
+ta==0.11.0
+skl2onnx==1.20.0
+onnx==1.21.0
+onnxruntime==1.23.2
+gcsfs==2026.7.0
+pyarrow==24.0.0
+tqdm==4.68.4

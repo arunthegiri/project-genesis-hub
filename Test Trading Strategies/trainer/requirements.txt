@@ -1,0 +1,16 @@
+scikit-learn>=1.0.2,<1.1
+scipy>=1.5.0
+numpy>=1.21.6
+joblib>=1.1.1,<1.3
+lightgbm
+optuna
+shap
+imbalanced-learn==0.9.1
+hmmlearn
+ta
+tqdm
+skl2onnx
+onnx
+onnxruntime
+gcsfs
+pyarrow

@@ -13,13 +13,14 @@ import {
   Pause,
   Play,
   RotateCcw,
-  Trash2,
 } from "lucide-react";
 
 import { BacktestingChart } from "@/components/BacktestingChart";
-import { BacktestStatsPanel } from "@/components/BacktestStatsPanel";
 import { ChartScrollbar } from "@/components/ChartScrollbar";
-import { EquityChart } from "@/components/EquityChart";
+import { TradeLog, StrategyTradeLog } from "@/components/backtesting/TradeLog";
+import { RunHistory } from "@/components/backtesting/RunHistory";
+import { HermesModelPanel } from "@/components/backtesting/HermesModelPanel";
+import type { RunRecord } from "@/components/backtesting/RunHistory";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -35,27 +36,12 @@ import { tradesApi } from "@/lib/api/trades";
 import type { BacktestTrade, BacktestResults } from "@/lib/api/strategies";
 import type { PriceBar, Trade } from "@/lib/api/types";
 import { applyCapitalConstraints, calcBuyHold } from "@/lib/backtest-capital";
-import type { CapitalStats, BuyHoldStats } from "@/lib/backtest-capital";
 import { cn } from "@/lib/utils";
 
 const SPEEDS = [0.5, 1, 2, 5, 10, 25, 50] as const;
 type Speed = (typeof SPEEDS)[number];
 type Tab = "data" | "strategies" | "results" | "models";
 type TradeFilter = "all" | "winning" | "losing";
-
-interface RunRecord {
-  id: string;
-  strategyName: string;
-  symbol: string;
-  from: string;
-  to: string;
-  startingCapital: number;
-  capitalStats: CapitalStats;
-  buyHold: BuyHoldStats | null;
-  runResults: BacktestResults;
-  stratBarsSnapshot: PriceBar[];
-  timestamp: Date;
-}
 
 const DEFAULT_FROM          = "2026-05-12T00:00";
 const DEFAULT_TO            = "2026-05-17T00:00";
@@ -95,11 +81,6 @@ function formatTs(iso: string) {
 
 function formatPnl(pnl: number) {
   return `${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}`;
-}
-
-function fmtDateShort(local: string) {
-  try { return new Date(local).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "2-digit" }); }
-  catch { return local; }
 }
 
 const SESSION_KEY = "backtesting-state";
@@ -824,236 +805,20 @@ function BacktestingPage() {
       )}
 
       {/* ══ RESULTS TAB ═══════════════════════════════════════════════════════ */}
-      {activeTab === "results" && (() => {
-        const selectedRecord = runHistory.find(r => r.id === selectedRecordId) ?? null;
-        return (
-          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
-            <div className="flex items-center justify-between px-1">
-              <span className="text-xs text-muted-foreground">
-                {runHistory.length === 0
-                  ? "No runs yet — run a strategy to see results here."
-                  : `${runHistory.length} run${runHistory.length > 1 ? "s" : ""} this session · click a row to inspect`}
-              </span>
-              {runHistory.length > 0 && (
-                <button
-                  onClick={() => { setRunHistory([]); setSelectedRecordId(null); }}
-                  className="flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-red-400"
-                >
-                  <Trash2 className="h-3 w-3" /> Clear History
-                </button>
-              )}
-            </div>
-
-            {runHistory.length > 0 && (
-              <div className={cn("overflow-auto rounded-md border border-border", selectedRecord ? "max-h-48 shrink-0" : "min-h-0 flex-1")}>
-                <table className="w-full text-xs">
-                  <thead className="sticky top-0 bg-card">
-                    <tr className="border-b border-border text-[10px] uppercase tracking-wider text-muted-foreground">
-                      <th className="px-3 py-2 text-left font-normal">Strategy</th>
-                      <th className="px-3 py-2 text-left font-normal">Symbol</th>
-                      <th className="px-3 py-2 text-left font-normal">From</th>
-                      <th className="px-3 py-2 text-left font-normal">To</th>
-                      <th className="px-3 py-2 text-right font-normal">Capital</th>
-                      <th className="px-3 py-2 text-right font-normal">End Capital</th>
-                      <th className="px-3 py-2 text-right font-normal">ROC %</th>
-                      <th className="px-3 py-2 text-right font-normal">Win Rate</th>
-                      <th className="px-3 py-2 text-right font-normal">Trades</th>
-                      <th className="px-3 py-2 text-right font-normal">Profit F.</th>
-                      <th className="px-3 py-2 text-right font-normal">Drawdown</th>
-                      <th className="px-3 py-2 text-right font-normal">Sharpe</th>
-                      <th className="px-3 py-2 text-right font-normal">B&H Ret %</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/50">
-                    {runHistory.map(record => {
-                      const cs = record.capitalStats;
-                      const bh = record.buyHold;
-                      const stratBeatsBH = bh ? cs.returnOnCapital > bh.totalPnlPct : null;
-                      const isSelected = record.id === selectedRecordId;
-                      return (
-                        <tr
-                          key={record.id}
-                          onClick={() => setSelectedRecordId(isSelected ? null : record.id)}
-                          className={cn(
-                            "cursor-pointer transition-colors hover:bg-muted/40",
-                            isSelected && "bg-primary/10",
-                          )}
-                        >
-                          <td className="px-3 py-2 font-mono text-foreground">{record.strategyName}</td>
-                          <td className="px-3 py-2 font-mono text-foreground">{record.symbol}</td>
-                          <td className="px-3 py-2 text-muted-foreground">{fmtDateShort(record.from)}</td>
-                          <td className="px-3 py-2 text-muted-foreground">{fmtDateShort(record.to)}</td>
-                          <td className="px-3 py-2 text-right font-mono text-muted-foreground">
-                            ${cs.startingCapital.toLocaleString("en-US")}
-                          </td>
-                          <td className="px-3 py-2 text-right font-mono">
-                            ${cs.endingCapital.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                          </td>
-                          <td className={cn("px-3 py-2 text-right font-mono font-medium", cs.returnOnCapital >= 0 ? "text-green-400" : "text-red-400")}>
-                            {cs.returnOnCapital >= 0 ? "+" : ""}{cs.returnOnCapital.toFixed(2)}%
-                          </td>
-                          <td className={cn("px-3 py-2 text-right font-mono", cs.winRate >= 50 ? "text-green-400" : "text-red-400")}>
-                            {cs.winRate.toFixed(1)}%
-                          </td>
-                          <td className="px-3 py-2 text-right font-mono text-muted-foreground">{cs.totalTrades}</td>
-                          <td className={cn("px-3 py-2 text-right font-mono", cs.profitFactor >= 1 ? "text-green-400" : "text-red-400")}>
-                            {cs.profitFactor >= 99 ? "∞" : cs.profitFactor.toFixed(2)}
-                          </td>
-                          <td className="px-3 py-2 text-right font-mono text-amber-400">{cs.maxDrawdown.toFixed(1)}%</td>
-                          <td className={cn("px-3 py-2 text-right font-mono", cs.sharpeRatio >= 1 ? "text-green-400" : cs.sharpeRatio >= 0 ? "text-amber-400" : "text-red-400")}>
-                            {cs.sharpeRatio.toFixed(2)}
-                          </td>
-                          <td className={cn("px-3 py-2 text-right font-mono", bh == null ? "text-muted-foreground" : stratBeatsBH ? "text-green-400" : "text-red-400")}>
-                            {bh == null ? "—" : `${bh.totalPnlPct >= 0 ? "+" : ""}${bh.totalPnlPct.toFixed(2)}%`}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {/* Detail panel — full stats + B&H comparison + equity curve */}
-            {selectedRecord && (
-              <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border bg-card">
-                <div className="flex items-center justify-between border-b border-border px-3 py-2">
-                  <span className="text-xs font-medium text-foreground">
-                    {selectedRecord.strategyName} · {selectedRecord.symbol} · ${selectedRecord.startingCapital.toLocaleString("en-US")}
-                  </span>
-                  <button
-                    onClick={() => loadRecord(selectedRecord)}
-                    className="rounded border border-primary/40 bg-primary/10 px-2.5 py-1 text-xs text-primary transition-colors hover:bg-primary/20"
-                  >
-                    Load into Strategies →
-                  </button>
-                </div>
-                <BacktestStatsPanel
-                  capitalStats={selectedRecord.capitalStats}
-                  strategyName={selectedRecord.strategyName}
-                  buyHold={selectedRecord.buyHold}
-                />
-                {(selectedRecord.capitalStats.equityCurve.length > 0 || (selectedRecord.buyHold?.equityCurve?.length ?? 0) > 0) && (
-                  <EquityChart
-                    equityCurve={selectedRecord.capitalStats.equityCurve}
-                    buyHoldCurve={selectedRecord.buyHold?.equityCurve}
-                    height={180}
-                  />
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })()}
+      {activeTab === "results" && (
+        <RunHistory
+          runHistory={runHistory}
+          selectedRecordId={selectedRecordId}
+          onSelectRecord={setSelectedRecordId}
+          onClearHistory={() => { setRunHistory([]); setSelectedRecordId(null); }}
+          onLoadRecord={loadRecord}
+        />
+      )}
 
       {/* ══ MODELS TAB ════════════════════════════════════════════════════════ */}
-      {activeTab === "models" && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-          <p className="text-sm text-muted-foreground">No models exported yet.</p>
-          <p className="text-xs text-muted-foreground/60">
-            Train a model in Jupyter and call <span className="font-mono">model.export()</span> to see it here.
-          </p>
-        </div>
-      )}
+      {activeTab === "models" && <HermesModelPanel />}
     </div>
   );
 }
 
-// ── Sub-components ────────────────────────────────────────────────────────────
-
-function TradeLog({ trades }: { trades: Trade[] }) {
-  return (
-    <div className="flex flex-col overflow-hidden rounded-md border border-border bg-card">
-      <div className="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Trade Log {trades.length > 0 && <span className="ml-1 text-foreground">{trades.length}</span>}
-      </div>
-      <div className="flex-1 overflow-y-auto">
-        {trades.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-xs text-muted-foreground">No trades yet</div>
-        ) : (
-          <ul className="divide-y divide-border">
-            {[...trades].reverse().map((t, i) => (
-              <li key={i} className="flex flex-col gap-0.5 px-3 py-2">
-                <div className="flex items-center justify-between">
-                  <span className={cn("text-xs font-semibold", t.side === "LONG" ? "text-green-400" : "text-red-400")}>{t.side}</span>
-                  <span className={cn("font-mono text-xs", t.pnl >= 0 ? "text-green-400" : "text-red-400")}>{formatPnl(t.pnl)}</span>
-                </div>
-                <div className="font-mono text-[10px] text-muted-foreground">In: {formatTs(t.entryTime)} @ {t.entryPrice.toFixed(2)}</div>
-                <div className="font-mono text-[10px] text-muted-foreground">Out: {formatTs(t.exitTime)} @ {t.exitPrice.toFixed(2)}</div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-      {trades.length > 0 && (
-        <div className="border-t border-border px-3 py-2">
-          {(() => {
-            const total = trades.reduce((s, t) => s + t.pnl, 0);
-            const wins  = trades.filter(t => t.pnl >= 0).length;
-            return (
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Win rate {Math.round((wins / trades.length) * 100)}%</span>
-                <span className={cn("font-mono font-semibold", total >= 0 ? "text-green-400" : "text-red-400")}>{formatPnl(total)}</span>
-              </div>
-            );
-          })()}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function StrategyTradeLog({ trades, filter }: { trades: BacktestTrade[]; filter: TradeFilter }) {
-  return (
-    <div className="flex flex-col overflow-hidden rounded-md border border-border bg-card">
-      <div className="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {filter === "all" ? "All Trades" : filter === "winning" ? "Winning Trades" : "Losing Trades"}
-        {trades.length > 0 && <span className="ml-1 text-foreground">{trades.length}</span>}
-      </div>
-      <div className="flex-1 overflow-y-auto">
-        {trades.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-            {filter === "all" ? "No trades" : `No ${filter} trades`}
-          </div>
-        ) : (
-          <ul className="divide-y divide-border">
-            {[...trades].reverse().map((t, i) => (
-              <li key={i} className="flex flex-col gap-0.5 px-3 py-2">
-                <div className="flex items-center justify-between">
-                  <span className={cn("text-xs font-semibold capitalize", t.direction === "long" ? "text-green-400" : "text-red-400")}>
-                    {t.direction}
-                  </span>
-                  <span className={cn("font-mono text-xs", (t.pnl ?? 0) >= 0 ? "text-green-400" : "text-red-400")}>
-                    {formatPnl(t.pnl ?? 0)}
-                  </span>
-                </div>
-                <div className="font-mono text-[10px] text-muted-foreground">
-                  In: {t.entry_time ? formatTs(t.entry_time) : "—"} @ {t.entry_price.toFixed(2)}
-                </div>
-                {t.exit_time && t.exit_price != null && (
-                  <div className="font-mono text-[10px] text-muted-foreground">
-                    Out: {formatTs(t.exit_time)} @ {t.exit_price.toFixed(2)}
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-      {trades.length > 0 && (
-        <div className="border-t border-border px-3 py-2">
-          {(() => {
-            const total = trades.reduce((s, t) => s + (t.pnl ?? 0), 0);
-            const wins  = trades.filter(t => t.win === true).length;
-            return (
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Win rate {trades.length > 0 ? Math.round((wins / trades.length) * 100) : 0}%</span>
-                <span className={cn("font-mono font-semibold", total >= 0 ? "text-green-400" : "text-red-400")}>{formatPnl(total)}</span>
-              </div>
-            );
-          })()}
-        </div>
-      )}
-    </div>
-  );
-}
+// ── Sub-components moved to src/components/backtesting/ ──────────────────────

@@ -313,3 +313,114 @@ def vwap(df):
     cumulative_vol = df['volume'].groupby(date_key).cumsum()
 
     return cumulative_tp_vol / cumulative_vol
+
+
+def rolling_ols_beta(y, x, period):
+    """
+    Rolling OLS hedge ratio (beta) of y on x over a trailing window.
+
+    For each bar, fits ``y = alpha + beta * x`` by ordinary least squares
+    using only the trailing ``period`` observations *ending at and including*
+    the current bar (no future data). Returns the slope ``beta`` at each bar.
+    The intercept is not returned — in pairs trading it is absorbed by the
+    rolling mean of the spread (see :func:`zscore`).
+
+    beta is computed with the centred-sum identity::
+
+        Sxy = sum(x*y) - sum(x)*sum(y)/period
+        Sxx = sum(x*x) - sum(x)*sum(x)/period
+        beta = Sxy / Sxx
+
+    which is algebraically the OLS slope and is expressed identically on the
+    Java re-run side (BacktestEngineService / TechnicalIndicators) so the two
+    engines agree bar-for-bar.
+
+    Parameters
+    ----------
+    y : pd.Series
+        Dependent variable, typically ``log(primary_close)`` (e.g. NVDA).
+    x : pd.Series
+        Independent variable, typically ``log(peer_close)`` (e.g. AMD).
+        Must share the same index as ``y``.
+    period : int
+        Trailing window length. Must be >= 2.
+
+    Returns
+    -------
+    pd.Series
+        beta aligned to the input index.
+
+    Notes
+    -----
+    Warm-up: the first ``period - 1`` bars are NaN (the window is not yet
+    full). No partial-window betas are ever produced — before the window
+    fills the value is NaN, exactly matching the Java implementation.
+    """
+    sx  = x.rolling(window=period).sum()
+    sy  = y.rolling(window=period).sum()
+    sxy = (x * y).rolling(window=period).sum()
+    sxx = (x * x).rolling(window=period).sum()
+
+    cov = sxy - sx * sy / period
+    var = sxx - sx * sx / period
+    return cov / var
+
+
+def spread(y, x, beta):
+    """
+    Log-price spread between two legs given a hedge ratio.
+
+    Computes ``s = y - beta * x`` element-wise. With ``y = log(primary)`` and
+    ``x = log(peer)`` this is the residual of the primary leg after hedging
+    out the peer leg. Where ``beta`` is NaN (warm-up) the spread is NaN.
+
+    Parameters
+    ----------
+    y : pd.Series
+        Primary log-price series (e.g. ``log(NVDA close)``).
+    x : pd.Series
+        Peer log-price series (e.g. ``log(AMD close)``).
+    beta : pd.Series
+        Hedge ratio aligned to ``y``/``x``, e.g. from :func:`rolling_ols_beta`.
+
+    Returns
+    -------
+    pd.Series
+        The spread aligned to the input index.
+    """
+    return y - beta * x
+
+
+def zscore(series, period):
+    """
+    Rolling z-score of a series over a trailing window.
+
+    ``z = (s - mean(s, period)) / std(s, period)`` where the mean and the
+    sample standard deviation (ddof=1, the pandas default — matching
+    :func:`bollinger`) are taken over the trailing ``period`` observations
+    ending at and including the current bar.
+
+    Parameters
+    ----------
+    series : pd.Series
+        Input series, typically the output of :func:`spread`.
+    period : int
+        Trailing window length. Must be >= 2.
+
+    Returns
+    -------
+    pd.Series
+        The z-score aligned to the input index.
+
+    Notes
+    -----
+    Warm-up: because NaN propagates through ``rolling`` (default
+    ``min_periods == period``), the z-score is NaN until ``period`` *non-NaN*
+    values are available. When fed a spread that already has a ``beta_period``
+    warm-up, the first finite z-score therefore appears at bar
+    ``beta_period + z_period - 2`` (zero-indexed). No partial-window values
+    are ever produced. The Java side applies the identical convention.
+    """
+    mean = series.rolling(window=period).mean()
+    std  = series.rolling(window=period).std()  # ddof=1 (sample)
+    return (series - mean) / std

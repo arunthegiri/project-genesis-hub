@@ -48,6 +48,34 @@ public class PriceController {
     }
 
     /**
+     * GET /api/prices/{symbol}/raw?from=...&to=...
+     * Pure read of stored 1-minute bars — never triggers fillGaps or an Alpaca
+     * fetch (contrast with /range). Backs the SDK's get_data() read step.
+     */
+    @GetMapping("/{symbol}/raw")
+    public ApiDto.PagedResponse<ApiDto.PriceResponse> getRaw(
+            @PathVariable String symbol,
+            @RequestParam Instant from,
+            @RequestParam Instant to) {
+        return new ApiDto.PagedResponse<>(stockPriceService.getRaw(symbol, from, to));
+    }
+
+    /**
+     * GET /api/prices/{symbol}/coverage-blocks?from=...&to=...
+     * Scan-based gap detection: returns the contiguous covered blocks of stored
+     * bars within the range (split on holes &gt; 96h). Pure read — never reads
+     * symbol_coverage and never triggers a fetch. The SDK subtracts these blocks
+     * from the requested range to compute the gaps it needs to backfill.
+     */
+    @GetMapping("/{symbol}/coverage-blocks")
+    public List<ApiDto.CoverageBlock> getCoverageBlocks(
+            @PathVariable String symbol,
+            @RequestParam Instant from,
+            @RequestParam Instant to) {
+        return stockPriceService.getCoverageBlocks(symbol, from, to);
+    }
+
+    /**
      * POST /api/prices/{symbol}/fetch
      * Immediately triggers a price fetch for all enabled symbols (admin / manual trigger).
      */

@@ -1,4 +1,3 @@
-import { API_BASE_URL } from "./config";
 import { apiFetch } from "./client";
 
 export interface AccountData {
@@ -41,14 +40,7 @@ export interface ActiveStrategy {
 
 export const liveApi = {
   /** Returns null when trading keys are not configured (204 response). */
-  account: async (): Promise<AccountData | null> => {
-    const res = await fetch(`${API_BASE_URL}/api/account`, {
-      headers: { Accept: "application/json" },
-    });
-    if (res.status === 204) return null;
-    if (!res.ok) return null;
-    return res.json() as Promise<AccountData>;
-  },
+  account: () => apiFetch<AccountData | null>("/api/account"),
 
   /** Returns [] when trading keys are not configured. */
   positions: () => apiFetch<PositionData[]>("/api/positions"),

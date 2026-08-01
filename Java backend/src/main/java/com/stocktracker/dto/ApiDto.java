@@ -172,6 +172,21 @@ public class ApiDto {
         private Instant        currentChunkTo;
     }
 
+    /**
+     * One contiguous block of stored bars, as detected by the scan-based
+     * gap-detection endpoint ({@code GET /api/prices/{symbol}/coverage-blocks}).
+     * A block runs from the first to the last stored bar before the next
+     * &gt; COVERAGE_GAP_THRESHOLD_HOURS hole. The SDK subtracts these blocks from
+     * the requested range to compute the gaps it needs to backfill.
+     */
+    @Data
+    @AllArgsConstructor
+    public static class CoverageBlock {
+        private Instant fromTime;
+        private Instant toTime;
+        private long    barCount;
+    }
+
     /** Request body for re-running a strategy on a different symbol/range */
     @Data
     public static class RunBacktestRequest {

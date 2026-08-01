@@ -1,7 +1,11 @@
+README.md
 setup.py
 ananke/__init__.py
+ananke/client.py
+ananke/data.py
 ananke/indicators.py
 ananke/kairos.py
+ananke/results.py
 ananke/trade.py
 ananke.egg-info/PKG-INFO
 ananke.egg-info/SOURCES.txt
