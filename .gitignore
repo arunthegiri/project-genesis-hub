@@ -43,6 +43,8 @@ Resources/APIkeys.txt.bak
 # Private dev notes and notebooks
 Dev-notes/
 MLmodels/
+ananke_business_plan.txt
+ananke_master_vision.md
 
 # Maven build output
 Java backend/target/
