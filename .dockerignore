@@ -7,3 +7,19 @@ dist
 .wrangler
 *.local
 .DS_Store
+
+# Keep the frontend build context small — none of this is needed in the image
+.git
+Test Trading Strategies/
+hermes/build/
+hermes/backtest_data/
+Java backend/
+Java backend copy/
+pipelinefix/
+project-genesis-hub/
+Dev-notes/
+Resources/
+ananke-sdk/
+*.pkl
+*.ipynb
+.ipynb_checkpoints/

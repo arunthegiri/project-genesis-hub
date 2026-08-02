@@ -37,6 +37,8 @@ services:
       - "8080:8080"
 
   frontend:
+    profiles:
+      - full
     build:
       context: .
       args:

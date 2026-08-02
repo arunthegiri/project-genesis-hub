@@ -2,9 +2,9 @@
 FROM maven:3.9-eclipse-temurin-17 AS build
 WORKDIR /app
 COPY pom.xml .
-RUN mvn dependency:go-offline -q
+RUN --mount=type=cache,target=/root/.m2 mvn dependency:go-offline -q
 COPY src ./src
-RUN mvn package -DskipTests -q
+RUN --mount=type=cache,target=/root/.m2 mvn package -DskipTests -q
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
 FROM eclipse-temurin:17-jre-jammy
