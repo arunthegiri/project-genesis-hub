@@ -40,10 +40,10 @@ You can find your keys at [app.alpaca.markets](https://app.alpaca.markets) → *
 ### 3. Run
 
 ```bash
-docker compose up --build
+docker compose --profile full up -d --build
 ```
 
-First run takes 2–3 minutes to build the images. Subsequent starts are instant.
+The frontend container lives behind the `full` profile — plain `docker compose up -d` starts only TimescaleDB, the backend, and Jupyter (see **Daily development** below). First cold build takes 5–10 minutes (Maven + npm); subsequent builds reuse Docker layer and BuildKit caches and are much faster.
 
 ### 4. Open the app
 
@@ -51,7 +51,21 @@ First run takes 2–3 minutes to build the images. Subsequent starts are instant
 |---|---|
 | **Frontend** | http://localhost:3000 |
 | **Backend API** | http://localhost:8080/api |
+| **JupyterLab** | http://localhost:8888 (no token; `ananke-sdk` pre-installed) |
 | **TimescaleDB** | localhost:5432 (user: `postgres`, db: `stockdb`) |
+
+---
+
+## Daily development (recommended)
+
+Running the frontend in Docker means an image rebuild for every UI change. For day-to-day work, run only the data services in Docker and the frontend on your host:
+
+```bash
+docker compose up -d                          # timescaledb + backend + jupyter
+VITE_API_BASE_URL=http://localhost:8080 npm run dev   # frontend with instant HMR
+```
+
+Use `docker compose --profile full up -d` when you want the whole stack containerized (e.g. testing the production-like setup).
 
 ---
 
@@ -66,29 +80,29 @@ First run takes 2–3 minutes to build the images. Subsequent starts are instant
 
 ## Managing containers
 
-All commands must be run from the **repo root** (`Ananke/`) where `docker-compose.yml` lives:
+All commands must be run from the **repo root** (`Ananke/`) where `docker-compose.yml` lives. Remember the frontend is behind the `full` profile — add `--profile full` to any command that should include it:
 ```bash
 cd /path/to/Ananke
 ```
 
 **Stop and restart with no changes (preserves all data):**
 ```bash
-docker compose down
-docker compose up -d
+docker compose --profile full down
+docker compose --profile full up -d
 ```
 Stops and removes the containers but keeps the database volume. Use this when you just want to turn the app off and back on — no code changes, no data loss.
 
 **Stop, rebuild, restart (after code changes):**
 ```bash
-docker compose down
-docker compose up -d --build
+docker compose --profile full down
+docker compose --profile full up -d --build
 ```
-Same as above but rebuilds the Docker images from source first. Use this any time you edit backend or frontend code.
+Same as above but rebuilds the Docker images from source first. Use this any time you edit backend code, or frontend code when running the containerized frontend. Builds use BuildKit cache mounts for npm and Maven, so dependency downloads persist across rebuilds.
 
 **Wipe the database and start fresh:**
 ```bash
-docker compose down -v
-docker compose up -d --build
+docker compose --profile full down -v
+docker compose --profile full up -d --build
 ```
 The `-v` flag deletes the volume along with the containers. TimescaleDB starts completely empty and all stored price history is gone.
 
@@ -167,4 +181,4 @@ Ananke/
 | Frontend | React 19, TanStack Router, TanStack Query, Vite |
 | Charts | lightweight-charts (candlestick + RSI/MACD sub-panes) |
 | UI components | shadcn/ui + Tailwind CSS v4 |
-| Containers | Docker Compose, nginx (frontend), Eclipse Temurin JRE (backend) |
+| Containers | Docker Compose (frontend behind `full` profile), Eclipse Temurin JRE (backend) |

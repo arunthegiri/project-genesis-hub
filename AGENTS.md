@@ -17,6 +17,21 @@ To run against the Spring Boot backend:
 VITE_API_BASE_URL=http://localhost:8080 npm run dev
 ```
 
+### Docker
+
+The full stack (TimescaleDB, Spring backend, Jupyter, frontend) runs via the root `docker-compose.yml`. **The frontend container is behind the `full` profile**:
+
+```bash
+docker compose up -d                          # db + backend + jupyter only (daily dev; run frontend on host)
+docker compose --profile full up -d --build   # entire stack containerized
+docker compose --profile full down            # stop everything (keeps db volume)
+```
+
+Notes:
+- Builds use BuildKit cache mounts (npm + Maven) and a slim `.dockerignore` context — don't remove the `RUN --mount=type=cache` lines from the Dockerfiles.
+- For frontend work, prefer host `npm run dev` over rebuilding the frontend image.
+- Explicitly targeting a service (`docker compose up -d --build frontend`) works without the profile flag.
+
 ## Architecture
 
 This is a **desktop-first dark trading terminal** — a TanStack Start SSR app (NOT a plain SPA) that visualises and explores OHLCV market data stored in a Spring Boot + TimescaleDB backend (the `stock-tracker` repo).
