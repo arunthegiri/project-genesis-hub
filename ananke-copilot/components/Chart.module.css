@@ -1,0 +1,68 @@
+.container {
+  width: 100%;
+  font-family: var(--font-family-base);
+  font-size: 0.75rem;
+}
+
+/* Recharts injects inline SVG; align its chrome with the archival palette. */
+.container :global(.recharts-cartesian-grid line) {
+  stroke: var(--border);
+}
+
+.container :global(.recharts-cartesian-axis-line),
+.container :global(.recharts-cartesian-axis-tick-line) {
+  stroke: var(--border);
+}
+
+.container :global(.recharts-cartesian-axis-tick-value) {
+  fill: var(--muted-foreground);
+  font-family: var(--font-family-monospace);
+  font-size: 0.6875rem;
+}
+
+.container :global(.recharts-curve.recharts-tooltip-cursor) {
+  stroke: var(--muted-foreground);
+}
+
+.tooltip {
+  min-width: 8rem;
+  padding: var(--spacing-2) var(--spacing-3);
+  background: var(--popup);
+  color: var(--popup-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+
+.tooltipLabel {
+  margin-bottom: var(--spacing-1);
+  color: var(--muted-foreground);
+  font-family: var(--font-family-monospace);
+  font-size: 0.6875rem;
+}
+
+.tooltipRow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.tooltipSwatch {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.tooltipName {
+  color: var(--muted-foreground);
+}
+
+.tooltipValue {
+  margin-left: auto;
+  font-family: var(--font-family-monospace);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}

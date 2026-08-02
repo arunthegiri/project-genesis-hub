@@ -1,0 +1,436 @@
+.layout {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-family-base);
+}
+
+/* Sidebar */
+.sidebar {
+  width: 280px;
+  flex-shrink: 0;
+  background-color: var(--sidebar);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebarHeader {
+  padding: var(--spacing-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.newChatBtn {
+  width: 100%;
+  justify-content: flex-start;
+  font-weight: 500;
+  background-color: var(--surface);
+}
+
+.historyList {
+  padding: var(--spacing-4);
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+}
+
+.historyLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: var(--spacing-3);
+  padding-left: var(--spacing-2);
+}
+
+.historyItem {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  width: 100%;
+  padding: var(--spacing-2) var(--spacing-3);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--sidebar-foreground);
+  font-family: var(--font-family-base);
+  font-size: 0.875rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--animation-duration-fast) ease;
+}
+
+.historyItem:hover {
+  background-color: color-mix(in srgb, var(--primary) 5%, transparent);
+}
+
+.historyItemActive {
+  background-color: color-mix(in srgb, var(--primary) 10%, transparent);
+  color: var(--primary);
+  font-weight: 500;
+}
+
+.historyIcon {
+  color: var(--muted-foreground);
+  flex-shrink: 0;
+}
+
+.historyItemActive .historyIcon {
+  color: var(--primary);
+}
+
+.historyTitle {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Main Area */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0; /* needed for flex children text truncation */
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--spacing-6);
+  height: 4rem;
+  border-bottom: 1px solid var(--border);
+  background-color: var(--surface);
+  flex-shrink: 0;
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+
+.headerTitle {
+  font-family: var(--font-family-display);
+  font-size: 1.25rem;
+  font-weight: 500;
+  color: var(--primary);
+  margin: 0;
+}
+
+.backBtn {
+  color: var(--muted-foreground);
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+}
+
+/* Chat Thread */
+.chatThread {
+  flex: 1;
+  overflow-y: auto;
+  position: relative;
+}
+
+.chatContainer {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: var(--spacing-8) var(--spacing-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+}
+
+.messageWrapper {
+  display: flex;
+  width: 100%;
+}
+
+.wrapperUser {
+  justify-content: flex-end;
+}
+
+.wrapperAi {
+  justify-content: flex-start;
+  gap: var(--spacing-4);
+}
+
+.avatarAi {
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-sm);
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-family-display);
+  font-size: 1.125rem;
+  flex-shrink: 0;
+}
+
+.messageBubble {
+  max-width: 85%;
+}
+
+.bubbleUser {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  padding: var(--spacing-3) var(--spacing-4);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
+}
+
+.bubbleAi {
+  width: 100%;
+}
+
+.assistantContent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+/* Message Content Styles */
+.userText {
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--foreground);
+}
+
+.markdownText {
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--foreground);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+
+.markdownText p {
+  margin: 0;
+}
+
+.markdownText h1,
+.markdownText h2,
+.markdownText h3 {
+  margin: var(--spacing-2) 0 var(--spacing-1) 0;
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.markdownText li {
+  margin-bottom: var(--spacing-1);
+}
+
+.markdownText strong {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* Code Block */
+.codeCard {
+  background-color: #1A1A1A; /* Hardcoded dark for code regardless of theme */
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin-bottom: var(--spacing-4);
+  margin-top: var(--spacing-2);
+}
+
+.codeHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-4);
+  background-color: #0B132B;
+  color: #F9F8F6;
+  font-size: 0.75rem;
+  font-family: var(--font-family-monospace);
+}
+
+.codeBlock {
+  margin: 0;
+  padding: var(--spacing-4);
+  overflow-x: auto;
+}
+
+.codeBlock code {
+  font-family: var(--font-family-monospace);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: #E2E4E9;
+  white-space: pre;
+}
+
+/* Empty State */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: var(--spacing-8);
+  text-align: center;
+}
+
+.emptyTitle {
+  font-family: var(--font-family-display);
+  font-size: 2.5rem;
+  font-weight: 500;
+  color: var(--primary);
+  margin: 0 0 var(--spacing-2) 0;
+}
+
+.emptySubtitle {
+  font-size: 1.125rem;
+  color: var(--muted-foreground);
+  margin: 0 0 var(--spacing-8) 0;
+}
+
+.suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-3);
+  justify-content: center;
+  max-width: 600px;
+}
+
+.suggestionChip {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: var(--spacing-2) var(--spacing-4);
+  font-size: 0.875rem;
+  color: var(--foreground);
+  cursor: pointer;
+  transition: all var(--animation-duration-fast) ease;
+  box-shadow: var(--shadow);
+}
+
+.suggestionChip:hover {
+  background-color: var(--muted);
+  border-color: var(--muted-foreground);
+}
+
+/* Streaming & Errors */
+.blinkingCursor {
+  display: inline-block;
+  width: 8px;
+  height: 1rem;
+  background-color: var(--primary);
+  vertical-align: middle;
+  margin-left: 4px;
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Typing indicator */
+.typingBubble {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  padding: var(--spacing-3) var(--spacing-4);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
+}
+
+.typingDot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background-color: var(--muted-foreground);
+  animation: typingBounce 1.2s ease-in-out infinite;
+}
+
+.typingDot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.typingDot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes typingBounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+.errorBanner {
+  background-color: var(--error);
+  color: var(--error-foreground);
+  padding: var(--spacing-2) var(--spacing-4);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  margin: 0 auto var(--spacing-4);
+  max-width: 800px;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+
+/* Input Area */
+.inputArea {
+  padding: var(--spacing-4) var(--spacing-6);
+  background-color: var(--surface);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.inputForm {
+  max-width: 800px;
+  margin: 0 auto;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.chatInput {
+  height: 3.5rem;
+  border-radius: var(--radius-md);
+  padding-right: 3.5rem;
+  font-size: 1rem;
+  box-shadow: var(--shadow);
+}
+
+.sendBtn {
+  position: absolute;
+  right: var(--spacing-2);
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.inputFooter {
+  max-width: 800px;
+  margin: var(--spacing-2) auto 0;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .sidebar {
+    display: none; /* In a real app, this would be behind a hamburger menu */
+  }
+}

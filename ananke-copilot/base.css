@@ -1,0 +1,204 @@
+
+@import url(https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900;1,100;1,300;1,400;1,500;1,700;1,900&display=swap);
+@import url(https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900;1,100;1,300;1,400;1,500;1,700;1,900&display=swap);
+@import url(https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900;1,100;1,300;1,400;1,500;1,700;1,900&display=swap);
+:root {
+  /* Overlay layers */
+  --z-overlay: 400;
+
+  --z-spotlight: 1000; /* Tutorial spotlights/guided help */
+
+  /* System layers */
+  --z-critical: 2000; /* Critical system notifications */
+
+  /* spacing */
+  --spacing-1: 0.25rem;
+  --spacing-2: 0.5rem;
+  --spacing-3: 0.75rem;
+  --spacing-4: 1rem;
+  --spacing-6: 1.5rem;
+  --spacing-8: 2rem;
+  --spacing-12: 3rem;
+  --spacing-16: 4rem;
+  --spacing-20: 5rem;
+}
+
+:root {
+  /* Timeless Archival - Light Mode (Warm Paper & Deep Ink) */
+  --background: #F9F8F6;
+  --foreground: #1A1A1A;
+
+  --surface: #FFFFFF;
+  --surface-foreground: #1A1A1A;
+  
+  --sidebar: #F2EFE9;
+  --sidebar-foreground: #1A1A1A;
+  
+  --card: #FFFFFF;
+  --card-foreground: #1A1A1A;
+  
+  --popup: #FFFFFF;
+  --popup-foreground: #1A1A1A;
+  
+  /* Deep Oxford Ink */
+  --primary: #0B132B;
+  --primary-foreground: #F9F8F6;
+  
+  /* Structured Slate */
+  --secondary: #E2E4E9;
+  --secondary-foreground: #0B132B;
+  
+  /* Muted Terracotta */
+  --accent: #8B3A3A;
+  --accent-foreground: #FFFFFF;
+  
+  --muted: #EAE7E0;
+  --muted-foreground: #6B6A68;
+  
+  --success: #2C5545;
+  --success-foreground: #FFFFFF;
+  
+  --error: #8B3A3A;
+  --error-foreground: #FFFFFF;
+  
+  --warning: #B87A3D;
+  --warning-foreground: #FFFFFF;
+  
+  --info: #3A5A78;
+  --info-foreground: #FFFFFF;
+  --info-hover: #2D465E;
+  --info-active: #213447;
+
+  --border: #D6D3CD;
+
+  /* Font Families */
+  --font-family-base: "IBM Plex Sans", system-ui, sans-serif;
+  --font-family-display: "Newsreader", Georgia, serif;
+  --font-family-monospace: "IBM Plex Mono", monospace;
+  --font-family-cursive: "Newsreader", Georgia, serif;
+
+  /* Border Radius - Sharp, print-like */
+  --radius-sm: 0.125rem;
+  --radius: 0.125rem;
+  --radius-md: 0.25rem;
+  --radius-lg: 0.375rem;
+  --radius-full: 9999px;
+
+  /* Shadows - Tight, stacked paper effect */
+  --shadow: 0 1px 2px rgba(11, 19, 43, 0.06), 0 1px 3px rgba(11, 19, 43, 0.1);
+  --shadow-md: 0 2px 4px rgba(11, 19, 43, 0.06), 0 4px 6px rgba(11, 19, 43, 0.1);
+  --shadow-lg: 0 4px 6px rgba(11, 19, 43, 0.06), 0 10px 15px rgba(11, 19, 43, 0.1);
+  --shadow-focus: 0 0 0 2px var(--background), 0 0 0 4px var(--primary);
+
+  /* Animation */
+  --animation-duration-fast: 0.15s;
+  --animation-duration-normal: 0.25s;
+  --animation-duration-slow: 0.4s;
+
+  /* Chart colors - Archival tones */
+  --chart-color-1: #0B132B; /* Oxford */
+  --chart-color-2: #8B3A3A; /* Terracotta */
+  --chart-color-3: #B87A3D; /* Ochre */
+  --chart-color-4: #2C5545; /* Forest */
+  --chart-color-5: #5C6B73; /* Slate */
+}
+
+.dark {
+  /* Timeless Archival - Dark Mode (Slate & Soft Ash) */
+  --background: #121418;
+  --foreground: #EAEAEA;
+
+  --surface: #1A1D24;
+  --surface-foreground: #EAEAEA;
+  
+  --sidebar: #16191F;
+  --sidebar-foreground: #EAEAEA;
+  
+  --card: #1A1D24;
+  --card-foreground: #EAEAEA;
+  
+  --popup: #1A1D24;
+  --popup-foreground: #EAEAEA;
+  
+  /* Softened Slate/Blue */
+  --primary: #8CA3B8;
+  --primary-foreground: #0B132B;
+  
+  --secondary: #2A2F3A;
+  --secondary-foreground: #EAEAEA;
+  
+  /* Muted Rose/Terracotta */
+  --accent: #A8575E;
+  --accent-foreground: #FFFFFF;
+  
+  --muted: #2A2F3A;
+  --muted-foreground: #8B92A0;
+  
+  --success: #4A7B65;
+  --success-foreground: #FFFFFF;
+  
+  --error: #A8575E;
+  --error-foreground: #FFFFFF;
+  
+  --warning: #D49A5E;
+  --warning-foreground: #121418;
+  
+  --info: #5C82A6;
+  --info-foreground: #FFFFFF;
+  --info-hover: #7396B8;
+  --info-active: #8CA3B8;
+
+  --border: #2A2F3A;
+
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.3), 0 4px 6px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 4px 6px rgba(0, 0, 0, 0.3), 0 10px 15px rgba(0, 0, 0, 0.4);
+  --shadow-focus: 0 0 0 2px var(--background), 0 0 0 4px var(--primary);
+
+  --chart-color-1: #8CA3B8;
+  --chart-color-2: #A8575E;
+  --chart-color-3: #D49A5E;
+  --chart-color-4: #4A7B65;
+  --chart-color-5: #8B92A0;
+}
+@layer base {
+  ul {
+    list-style-type: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-family-base);
+  }
+
+  * {
+    box-sizing: border-box;
+    padding: 0;
+    margin: 0;
+  }
+
+
+  button {
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: inherit;
+    color: inherit;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  th, td {
+    display: table-cell!important;
+  }
+}
+.rbc-month-view {
+  overflow: visible !important;
+}
