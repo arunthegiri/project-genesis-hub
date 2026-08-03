@@ -61,6 +61,13 @@ GAP_THRESHOLD_HOURS = 96
 # Polling cadence while a backfill job runs.
 _POLL_INTERVAL_SECONDS = 1.5
 
+# Whole-operation progress phases: the bar lives for the entire get_data call
+# (create → coverage → backfill → fetch → build → close at 100%) so the user
+# always sees the wait — creating and closing a bar around only the coverage
+# check made it flash in/out and left the long raw-bars fetch with no feedback.
+_COVERAGE_DONE_PCT = 10.0
+_BACKFILL_BAND = (10.0, 90.0)
+
 # Convergence backstop (build doc 2d): an in-process memo of spans a recent
 # backfill completed with 0 bars (delisted ticker, pre-IPO, market-closed span
 # the threshold didn't catch). Before firing a backfill we skip any gap fully
@@ -192,29 +199,36 @@ def _make_progress_bar(desc: str):
     return bar
 
 
-def _poll_to_completion(job: dict, symbol: str, bar) -> dict:
+def _poll_to_completion(job: dict, symbol: str, bar, band: tuple = (0.0, 100.0)) -> dict:
     """
     Poll a backfill job to a terminal state, driving `bar` from progressPct.
 
     Polls *before* sleeping so a fast job (already running/done at submit time)
     fills the bar immediately instead of sitting at 0% for a full poll interval.
-    Sets the bar position absolutely from progressPct. Does NOT close `bar` — the
-    caller owns its lifecycle. Returns the final job dict; raises on FAILED/CANCELLED.
+    The bar position is set absolutely, mapped into `band` (lo, hi) so the
+    backfill phase can occupy a slice of the whole-operation bar. Does NOT
+    close `bar` — the caller owns its lifecycle. Returns the final job dict;
+    raises on FAILED/CANCELLED.
     """
+    lo, hi = band
+    span = hi - lo
+
+    def _drive(pct: float) -> None:
+        if bar is not None:
+            bar.n = lo + span * min(100.0, max(0.0, pct)) / 100.0
+            bar.refresh()
+
     job_id = job["jobId"]
     status = job.get("status")
     while True:
-        if bar is not None:
-            bar.n = min(100.0, max(0.0, float(job.get("progressPct") or 0.0)))
-            bar.refresh()
+        _drive(float(job.get("progressPct") or 0.0))
         if status in _TERMINAL_STATES:
             break
         time.sleep(_POLL_INTERVAL_SECONDS)
         job = client.get_job(job_id)
         status = job.get("status")
-    if bar is not None and status == "COMPLETED":
-        bar.n = 100.0
-        bar.refresh()
+    if status == "COMPLETED":
+        _drive(100.0)
 
     if status == "FAILED":
         raise RuntimeError(
@@ -250,7 +264,7 @@ def _run_backfill(symbol: str, span_from: datetime, span_to: datetime, bar) -> N
             f"Backfilling {symbol.upper()} "
             f"{_iso_z(span_from)[:10]}→{_iso_z(span_to)[:10]}"
         )
-    final = _poll_to_completion(job, symbol, bar)
+    final = _poll_to_completion(job, symbol, bar, band=_BACKFILL_BAND)
     if int(final.get("totalBars") or 0) == 0:
         _remember_zero_bar(symbol, span_from, span_to)
 
@@ -378,36 +392,48 @@ def get_data(
         raise ValueError(f"start ({start}) must be before end ({end}).")
     from_z, to_z = _iso_z(start_dt), _iso_z(end_dt)
 
-    if auto_backfill:
-        # Show the bar the instant the cell runs — before the coverage query —
-        # so there's immediate feedback during the scan + job submit. It then
-        # relabels into the backfill bar (see _run_backfill) or, if nothing is
-        # missing, is dropped quietly (leave=False) to avoid noise on the hot path.
-        bar = _make_progress_bar(f"{symbol.upper()}: checking coverage") if show_progress else None
-        try:
+    # One bar for the WHOLE call — coverage scan, any backfill, and the raw
+    # fetch (usually the longest phase). It closes at 100% only after the frame
+    # is built, so progress is visible from the instant the cell runs until the
+    # dataframe lands, instead of flashing in/out around the coverage check.
+    bar = _make_progress_bar(f"{symbol.upper()}: checking coverage") if show_progress else None
+
+    def _drive(pct: float, desc: str | None = None) -> None:
+        if bar is not None:
+            bar.n = pct
+            if desc is not None:
+                bar.set_description(desc)
+            bar.refresh()
+
+    try:
+        if auto_backfill:
             blocks = client.get_coverage_blocks(symbol, from_z, to_z)
             gaps = _significant_gaps(_compute_gaps(start_dt, end_dt, blocks))
             # Convergence backstop: drop gaps a recent backfill already returned 0 bars for.
             gaps = [g for g in gaps if not _is_memoized_zero_bar(symbol, g[0], g[1])]
+            _drive(_COVERAGE_DONE_PCT)
             if gaps:
                 span_from = min(g[0] for g in gaps)
                 span_to = max(g[1] for g in gaps)
                 _run_backfill(symbol, span_from, span_to, bar)
-            elif bar is not None:
-                bar.leave = False  # data already present — don't leave a stray bar
-        finally:
-            if bar is not None:
-                bar.close()
-    else:
-        blocks = client.get_coverage_blocks(symbol, from_z, to_z)
-        missing = _significant_gaps(_compute_gaps(start_dt, end_dt, blocks))
-        if missing:
-            total_hours = sum((t - f).total_seconds() for f, t in missing) / 3600
-            warnings.warn(
-                f"{len(missing)} gap(s) (~{total_hours:.0f}h) missing for "
-                f"{symbol.upper()} and auto_backfill=False — returning partial data.",
-                stacklevel=2,
-            )
+        else:
+            blocks = client.get_coverage_blocks(symbol, from_z, to_z)
+            missing = _significant_gaps(_compute_gaps(start_dt, end_dt, blocks))
+            _drive(_COVERAGE_DONE_PCT)
+            if missing:
+                total_hours = sum((t - f).total_seconds() for f, t in missing) / 3600
+                warnings.warn(
+                    f"{len(missing)} gap(s) (~{total_hours:.0f}h) missing for "
+                    f"{symbol.upper()} and auto_backfill=False — returning partial data.",
+                    stacklevel=2,
+                )
 
-    records = client.get_raw_bars(symbol, from_z, to_z)
-    return _build_frame(records, cols, interval, rule)
+        _drive(bar.n if bar is not None else _COVERAGE_DONE_PCT,
+              f"{symbol.upper()}: fetching bars")
+        records = client.get_raw_bars(symbol, from_z, to_z)
+        frame = _build_frame(records, cols, interval, rule)
+        _drive(100.0, f"{symbol.upper()}: {len(frame)} bars")
+        return frame
+    finally:
+        if bar is not None:
+            bar.close()
