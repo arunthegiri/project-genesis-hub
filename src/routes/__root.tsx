@@ -8,6 +8,7 @@ import appCss from "../styles.css?url";
 import type { RouterContext } from "../router";
 import { AppSidebar } from "@/components/AppSidebar";
 import { runHealthProbe } from "@/lib/api/health-probe";
+import { startLoafInstrumentation } from "@/lib/perf/loaf";
 
 function NotFoundComponent() {
   return (
@@ -65,6 +66,10 @@ function RootComponent() {
   useEffect(() => {
     runHealthProbe();
   }, []);
+
+  // Dev-only jank instrumentation (?perf=1) — the ruler for the build doc's
+  // perf budgets; no-ops in production and unsupported browsers.
+  useEffect(() => startLoafInstrumentation(), []);
 
   return (
     <QueryClientProvider client={queryClient}>
