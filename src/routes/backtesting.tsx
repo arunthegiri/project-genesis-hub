@@ -687,7 +687,7 @@ function BacktestingPage() {
                   C {stratBars[stratResolvedIdx].close.toFixed(2)}
                 </span>
               )}
-              <span className={cn("font-mono font-semibold", stratRunningPnl >= 0 ? "text-green-400" : "text-red-400")}>
+              <span className={cn("font-mono font-semibold", stratRunningPnl >= 0 ? "text-bull" : "text-bear")}>
                 P&L {formatPnl(stratRunningPnl)}
               </span>
               <span className="text-muted-foreground/60">{stratVisibleTrades.length} trades completed</span>
@@ -696,7 +696,7 @@ function BacktestingPage() {
 
           {/* Error banner */}
           {runError && (
-            <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+            <div className="rounded-md border border-bear/30 bg-red-500/10 px-3 py-2 text-xs text-bear">
               {runError.includes("cannot be re-run") || runError.includes("type")
                 ? <>Strategy needs re-exporting. Open <code className="bg-red-900/30 px-1 rounded">rsi_strategy.ipynb</code>, re-run all cells, then run the updated export cell with <code className="bg-red-900/30 px-1 rounded">params=</code>.</>
                 : runError}
@@ -738,8 +738,8 @@ function BacktestingPage() {
                     className={cn(
                       "rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors",
                       tradeFilter === f
-                        ? f === "winning" ? "bg-green-500/20 text-green-400"
-                          : f === "losing" ? "bg-red-500/20 text-red-400"
+                        ? f === "winning" ? "bg-bull/20 text-bull"
+                          : f === "losing" ? "bg-bear/20 text-bear"
                           : "bg-primary/20 text-primary"
                         : "text-muted-foreground hover:text-foreground",
                     )}
@@ -755,17 +755,17 @@ function BacktestingPage() {
           {capitalStats && (
             <div className="flex items-center gap-4 rounded-md border border-border bg-card px-3 py-1.5 text-xs">
               <span className="text-muted-foreground">Win Rate</span>
-              <span className={cn("font-mono font-medium", capitalStats.winRate >= 50 ? "text-green-400" : "text-red-400")}>
+              <span className={cn("font-mono font-medium", capitalStats.winRate >= 50 ? "text-bull" : "text-bear")}>
                 {capitalStats.winRate.toFixed(1)}%
               </span>
               <span className="text-border">|</span>
               <span className="text-muted-foreground">Total PnL</span>
-              <span className={cn("font-mono font-medium", capitalStats.totalPnl >= 0 ? "text-green-400" : "text-red-400")}>
+              <span className={cn("font-mono font-medium", capitalStats.totalPnl >= 0 ? "text-bull" : "text-bear")}>
                 {capitalStats.totalPnl >= 0 ? "+" : ""}${Math.abs(capitalStats.totalPnl).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
               <span className="text-border">|</span>
               <span className="text-muted-foreground">ROC</span>
-              <span className={cn("font-mono font-medium", capitalStats.returnOnCapital >= 0 ? "text-green-400" : "text-red-400")}>
+              <span className={cn("font-mono font-medium", capitalStats.returnOnCapital >= 0 ? "text-bull" : "text-bear")}>
                 {capitalStats.returnOnCapital >= 0 ? "+" : ""}{capitalStats.returnOnCapital.toFixed(2)}%
               </span>
               <span className="text-border">|</span>
@@ -774,7 +774,7 @@ function BacktestingPage() {
               {capitalStats.insufficientCapitalCount > 0 && (
                 <>
                   <span className="text-border">|</span>
-                  <span className="text-amber-400">{capitalStats.insufficientCapitalCount} skipped (cap)</span>
+                  <span className="text-neutral">{capitalStats.insufficientCapitalCount} skipped (cap)</span>
                 </>
               )}
               <span className="ml-auto text-[10px] text-muted-foreground/60">

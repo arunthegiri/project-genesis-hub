@@ -53,14 +53,14 @@ function pnlColor(value: string | number | null | undefined): string {
   if (value === null || value === undefined) return "";
   const n = typeof value === "string" ? parseFloat(value) : value;
   if (isNaN(n)) return "";
-  return n >= 0 ? "text-green-400" : "text-red-400";
+  return n >= 0 ? "text-bull" : "text-bear";
 }
 
 // ── Status badge (mirrors the Live page) ──────────────────────────────────────
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
-    ACTIVE:   "bg-green-500/20 text-green-400 border-green-500/30",
+    ACTIVE:   "bg-bull/20 text-bull border-bull/30",
     STANDBY:  "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
     STOPPED:  "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
     EXPORTED: "bg-blue-500/20 text-blue-400 border-blue-500/30",
@@ -237,7 +237,7 @@ function ModelDetailDrawer({
             {detailQ.isLoading ? (
               <p className="mt-6 text-sm text-muted-foreground">Loading model…</p>
             ) : detailQ.isError ? (
-              <p className="mt-6 text-sm text-red-400">
+              <p className="mt-6 text-sm text-bear">
                 {(detailQ.error as Error)?.message ?? "Failed to load model detail."}
               </p>
             ) : (
@@ -369,11 +369,11 @@ function ModelDetailDrawer({
                     </Button>
                   </div>
                   {deployM.isSuccess && (
-                    <p className="text-xs text-green-400">
+                    <p className="text-xs text-bull">
                       Deployed as {mode}. Now visible on the Live page.
                     </p>
                   )}
-                  {actionError && <p className="text-xs text-red-400">{actionError}</p>}
+                  {actionError && <p className="text-xs text-bear">{actionError}</p>}
                 </section>
               </div>
             )}
@@ -413,7 +413,7 @@ function ModelsPage() {
         {modelsQ.isLoading ? (
           <div className="text-sm text-muted-foreground">Loading models…</div>
         ) : modelsQ.isError ? (
-          <div className="rounded-lg border border-border bg-card/50 p-6 text-sm text-red-400">
+          <div className="rounded-lg border border-border bg-card/50 p-6 text-sm text-bear">
             {(modelsQ.error as Error)?.message ?? "Failed to load models."}
           </div>
         ) : (

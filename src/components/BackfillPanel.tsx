@@ -15,10 +15,10 @@ const DT_FMT_HINT = "YYYY-MM-DDTHH:MM";
 const ACTIVE_STATUSES: BackfillStatus[] = ["PENDING", "RUNNING"];
 
 const STATUS_STYLE: Record<BackfillStatus, string> = {
-  PENDING:   "text-amber-400 bg-amber-400/10",
+  PENDING:   "text-neutral bg-amber-400/10",
   RUNNING:   "text-blue-400 bg-blue-400/10",
   COMPLETED: "text-emerald-400 bg-emerald-400/10",
-  FAILED:    "text-red-400 bg-red-400/10",
+  FAILED:    "text-bear bg-bear/10",
   CANCELLED: "text-zinc-400 bg-zinc-400/10",
 };
 
@@ -223,7 +223,7 @@ function JobRow({
             onClick={onRetry}
             disabled={retrying}
             title="Retry from failed chunk"
-            className="text-muted-foreground hover:text-amber-400 disabled:opacity-40"
+            className="text-muted-foreground hover:text-neutral disabled:opacity-40"
           >
             {retrying ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
           </button>
@@ -259,7 +259,7 @@ function JobRow({
 
       {/* Error message */}
       {job.errorMessage && (
-        <p className="mt-1 text-[10px] text-red-400 break-all">{job.errorMessage}</p>
+        <p className="mt-1 text-[10px] text-bear break-all">{job.errorMessage}</p>
       )}
 
       {/* Footer timestamps */}

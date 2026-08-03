@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
 import type { PriceBar, Trade } from "@/lib/api/types";
 import { useChartBase, toTs } from "@/hooks/useChartBase";
+import { CHART_COLORS } from "@/lib/chart-colors";
 
 interface Props {
   bars: PriceBar[];
@@ -62,7 +63,7 @@ function buildMarkers(trades: Trade[], sortedBarMs: number[]) {
       markers.push({
         time: entryTs,
         position: "belowBar",
-        color: trade.side === "LONG" ? "#22c55e" : "#ef4444",
+        color: trade.side === "LONG" ? CHART_COLORS.bull : CHART_COLORS.bear,
         shape: trade.side === "LONG" ? "arrowUp" : "arrowDown",
         text: trade.side === "LONG" ? "L" : "S",
       });
@@ -73,7 +74,7 @@ function buildMarkers(trades: Trade[], sortedBarMs: number[]) {
       markers.push({
         time: exitTs,
         position: "aboveBar",
-        color: trade.pnl >= 0 ? "#22c55e" : "#ef4444",
+        color: trade.pnl >= 0 ? CHART_COLORS.bull : CHART_COLORS.bear,
         shape: "circle",
         text: trade.pnl >= 0 ? "+" : "−",
       });
@@ -102,11 +103,11 @@ export function BacktestingChart({ bars, trades, height = "100%", onRangeChange,
     const chart = chartRef.current;
     if (!chart) return;
     const series = chart.addCandlestickSeries({
-      upColor: "#22c55e",
-      downColor: "#ef4444",
+      upColor: CHART_COLORS.bull,
+      downColor: CHART_COLORS.bear,
       borderVisible: false,
-      wickUpColor: "#22c55e",
-      wickDownColor: "#ef4444",
+      wickUpColor: CHART_COLORS.bull,
+      wickDownColor: CHART_COLORS.bear,
     });
     seriesRef.current = series;
     return () => {

@@ -6,6 +6,7 @@ import {
 } from "lightweight-charts";
 import type { EquityPoint } from "@/lib/api/strategies";
 import { useChartBase, toTs } from "@/hooks/useChartBase";
+import { CHART_COLORS } from "@/lib/chart-colors";
 
 interface Props {
   equityCurve: EquityPoint[];
@@ -26,7 +27,7 @@ export function EquityChart({ equityCurve, buyHoldCurve, height = 200 }: Props) 
     if (!chart) return;
 
     seriesRef.current = chart.addLineSeries({
-      color: "#60a5fa",
+      color: CHART_COLORS.accent,
       lineWidth: 2,
       priceLineVisible: false,
       title: "Strategy",

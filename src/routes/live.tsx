@@ -36,18 +36,18 @@ function fmtPct(value: string | null | undefined, multiply100 = false): string {
 
 function pnlColor(value: string | null | undefined): string {
   if (!value) return "text-muted-foreground";
-  return parseFloat(value) >= 0 ? "text-green-400" : "text-red-400";
+  return parseFloat(value) >= 0 ? "text-bull" : "text-bear";
 }
 
 // ── Status badge ─────────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
-    ACTIVE:   "bg-green-500/20 text-green-400 border-green-500/30",
+    ACTIVE:   "bg-bull/20 text-bull border-bull/30",
     STANDBY:  "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
     STOPPED:  "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
     EXPORTED: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-    ACTIVE_ACCOUNT: "bg-green-500/20 text-green-400 border-green-500/30",
+    ACTIVE_ACCOUNT: "bg-bull/20 text-bull border-bull/30",
   };
   const cls = map[status] ?? "bg-zinc-500/20 text-zinc-400 border-zinc-500/30";
   return (
@@ -177,7 +177,7 @@ function PositionsTable({ positions }: { positions: PositionData[] }) {
             <tr key={p.symbol} className="border-b border-border/50 hover:bg-muted/10">
               <td className="px-3 py-2 font-medium">{p.symbol}</td>
               <td className="px-3 py-2 text-right">
-                <span className={p.side === "long" ? "text-green-400" : "text-red-400"}>
+                <span className={p.side === "long" ? "text-bull" : "text-bear"}>
                   {p.side?.toUpperCase()}
                 </span>
               </td>

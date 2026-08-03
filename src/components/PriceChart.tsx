@@ -11,6 +11,7 @@ import type { BacktestTrade } from "@/lib/api/strategies";
 import { sma, ema, bollinger, rsi, macd } from "@/lib/indicators";
 import { intervalForSpan } from "@/lib/price-bars";
 import { useChartBase, toTs, CHART_OPTIONS } from "@/hooks/useChartBase";
+import { CHART_COLORS } from "@/lib/chart-colors";
 
 export type ChartType = "candlestick" | "line" | "bar" | "area";
 
@@ -48,9 +49,6 @@ interface Props {
   /** Fired on user pan/zoom gestures (wheel / pointer) — never on programmatic range changes. */
   onViewportGesture?: () => void;
 }
-
-const INDICATOR_COLORS = ["#60a5fa", "#f59e0b", "#a78bfa", "#34d399", "#f472b6", "#fb923c"];
-const COMPARE_COLORS  = ["#f59e0b", "#a78bfa", "#34d399", "#f472b6", "#fb923c"];
 
 type LinePoint = { time: Time; value: number };
 type HistPoint = { time: Time; value: number; color: string };
@@ -151,9 +149,9 @@ export function PriceChart({
       });
     };
     indicators.sma?.forEach(p =>
-      pushLine(`sma-${p}`, `SMA ${p}`, sma(closes, p), INDICATOR_COLORS[ci++ % INDICATOR_COLORS.length]));
+      pushLine(`sma-${p}`, `SMA ${p}`, sma(closes, p), CHART_COLORS.indicator[ci++ % CHART_COLORS.indicator.length]));
     indicators.ema?.forEach(p =>
-      pushLine(`ema-${p}`, `EMA ${p}`, ema(closes, p), INDICATOR_COLORS[ci++ % INDICATOR_COLORS.length]));
+      pushLine(`ema-${p}`, `EMA ${p}`, ema(closes, p), CHART_COLORS.indicator[ci++ % CHART_COLORS.indicator.length]));
     if (indicators.bollinger) {
       const bb = bollinger(closes, indicators.bollinger.period, indicators.bollinger.stdDev);
       pushLine("bb-upper", "BB upper", bb.upper, "#94a3b8");
@@ -177,7 +175,7 @@ export function PriceChart({
       macd: m.macd.map((v, i) => ({ time: times[i] as Time, value: v })).filter(d => !isNaN(d.value)),
       signal: m.signal.map((v, i) => ({ time: times[i] as Time, value: v })).filter(d => !isNaN(d.value)),
       hist: m.histogram
-        .map((v, i) => ({ time: times[i] as Time, value: v, color: v >= 0 ? "rgba(34,197,94,0.6)" : "rgba(239,68,68,0.6)" }))
+        .map((v, i) => ({ time: times[i] as Time, value: v, color: v >= 0 ? CHART_COLORS.bullDim : CHART_COLORS.bearDim }))
         .filter(d => !isNaN(d.value)),
     };
   }, [bars.length, times, closes, indicators.macd, isComparing]);
@@ -252,13 +250,13 @@ export function PriceChart({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let main: ISeriesApi<any>;
     if (isComparing || chartType === "line") {
-      main = chart.addLineSeries({ color: "#60a5fa", lineWidth: 2, priceLineVisible: false, lastValueVisible: true });
+      main = chart.addLineSeries({ color: CHART_COLORS.accent, lineWidth: 2, priceLineVisible: false, lastValueVisible: true });
     } else if (chartType === "area") {
-      main = chart.addAreaSeries({ lineColor: "#60a5fa", topColor: "rgba(96,165,250,0.25)", bottomColor: "rgba(96,165,250,0)", lineWidth: 2 });
+      main = chart.addAreaSeries({ lineColor: CHART_COLORS.accent, topColor: "rgba(96,165,250,0.25)", bottomColor: "rgba(96,165,250,0)", lineWidth: 2 });
     } else if (chartType === "bar") {
-      main = chart.addBarSeries({ upColor: "#22c55e", downColor: "#ef4444" });
+      main = chart.addBarSeries({ upColor: CHART_COLORS.bull, downColor: CHART_COLORS.bear });
     } else {
-      main = chart.addCandlestickSeries({ upColor: "#22c55e", downColor: "#ef4444", borderVisible: false, wickUpColor: "#22c55e", wickDownColor: "#ef4444" });
+      main = chart.addCandlestickSeries({ upColor: CHART_COLORS.bull, downColor: CHART_COLORS.bear, borderVisible: false, wickUpColor: CHART_COLORS.bull, wickDownColor: CHART_COLORS.bear });
     }
     mainSeriesRef.current = main;
 
@@ -340,7 +338,7 @@ export function PriceChart({
       const fc = cb[0].close;
       const ct = cb.map(b => toTs(b.time));
       const s = chart.addLineSeries({
-        color: COMPARE_COLORS[idx % COMPARE_COLORS.length],
+        color: CHART_COLORS.compare[idx % CHART_COLORS.compare.length],
         lineWidth: 2,
         title: symbol,
         priceLineVisible: false,
@@ -387,7 +385,7 @@ export function PriceChart({
       div.style.borderTop = "1px solid rgba(255,255,255,0.06)";
       parent.appendChild(div);
       const chart = createChart(div, CHART_OPTIONS);
-      const lineMacd   = chart.addLineSeries({ color: "#60a5fa", lineWidth: 2, title: "MACD" });
+      const lineMacd   = chart.addLineSeries({ color: CHART_COLORS.accent, lineWidth: 2, title: "MACD" });
       const lineSignal = chart.addLineSeries({ color: "#f59e0b", lineWidth: 2, title: "Signal" });
       const hist       = chart.addHistogramSeries({ color: "#475569" });
       macdSubRef.current = { chart, lineMacd, lineSignal, hist, container: div };
@@ -425,7 +423,7 @@ export function PriceChart({
       markers.push({
         time: toTs(t.entry_time) as Time,
         position: isLong ? "belowBar" : "aboveBar",
-        color: isLong ? "#22c55e" : "#ef4444",
+        color: isLong ? CHART_COLORS.bull : CHART_COLORS.bear,
         shape: isLong ? "arrowUp" : "arrowDown",
         text: isLong ? "L" : "S",
       });
@@ -433,7 +431,7 @@ export function PriceChart({
         markers.push({
           time: toTs(t.exit_time) as Time,
           position: isLong ? "aboveBar" : "belowBar",
-          color: t.win ? "#22c55e" : "#ef4444",
+          color: t.win ? CHART_COLORS.bull : CHART_COLORS.bear,
           shape: "circle",
           text: t.win ? "+" : "-",
         });

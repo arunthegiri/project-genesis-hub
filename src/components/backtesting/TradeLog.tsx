@@ -29,8 +29,8 @@ export function TradeLog({ trades }: { trades: Trade[] }) {
             {[...trades].reverse().map((t, i) => (
               <li key={i} className="flex flex-col gap-0.5 px-3 py-2">
                 <div className="flex items-center justify-between">
-                  <span className={cn("text-xs font-semibold", t.side === "LONG" ? "text-green-400" : "text-red-400")}>{t.side}</span>
-                  <span className={cn("font-mono text-xs", t.pnl >= 0 ? "text-green-400" : "text-red-400")}>{formatPnl(t.pnl)}</span>
+                  <span className={cn("text-xs font-semibold", t.side === "LONG" ? "text-bull" : "text-bear")}>{t.side}</span>
+                  <span className={cn("font-mono text-xs", t.pnl >= 0 ? "text-bull" : "text-bear")}>{formatPnl(t.pnl)}</span>
                 </div>
                 <div className="font-mono text-[10px] text-muted-foreground">In: {formatTs(t.entryTime)} @ {t.entryPrice.toFixed(2)}</div>
                 <div className="font-mono text-[10px] text-muted-foreground">Out: {formatTs(t.exitTime)} @ {t.exitPrice.toFixed(2)}</div>
@@ -47,7 +47,7 @@ export function TradeLog({ trades }: { trades: Trade[] }) {
             return (
               <div className="flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">Win rate {Math.round((wins / trades.length) * 100)}%</span>
-                <span className={cn("font-mono font-semibold", total >= 0 ? "text-green-400" : "text-red-400")}>{formatPnl(total)}</span>
+                <span className={cn("font-mono font-semibold", total >= 0 ? "text-bull" : "text-bear")}>{formatPnl(total)}</span>
               </div>
             );
           })()}
@@ -74,10 +74,10 @@ export function StrategyTradeLog({ trades, filter }: { trades: BacktestTrade[]; 
             {[...trades].reverse().map((t, i) => (
               <li key={i} className="flex flex-col gap-0.5 px-3 py-2">
                 <div className="flex items-center justify-between">
-                  <span className={cn("text-xs font-semibold capitalize", t.direction === "long" ? "text-green-400" : "text-red-400")}>
+                  <span className={cn("text-xs font-semibold capitalize", t.direction === "long" ? "text-bull" : "text-bear")}>
                     {t.direction}
                   </span>
-                  <span className={cn("font-mono text-xs", (t.pnl ?? 0) >= 0 ? "text-green-400" : "text-red-400")}>
+                  <span className={cn("font-mono text-xs", (t.pnl ?? 0) >= 0 ? "text-bull" : "text-bear")}>
                     {formatPnl(t.pnl ?? 0)}
                   </span>
                 </div>
@@ -102,7 +102,7 @@ export function StrategyTradeLog({ trades, filter }: { trades: BacktestTrade[]; 
             return (
               <div className="flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">Win rate {trades.length > 0 ? Math.round((wins / trades.length) * 100) : 0}%</span>
-                <span className={cn("font-mono font-semibold", total >= 0 ? "text-green-400" : "text-red-400")}>{formatPnl(total)}</span>
+                <span className={cn("font-mono font-semibold", total >= 0 ? "text-bull" : "text-bear")}>{formatPnl(total)}</span>
               </div>
             );
           })()}

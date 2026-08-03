@@ -81,7 +81,7 @@ export function HermesModelPanel() {
   if (error || !data) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
-        <p className="text-sm text-red-400">Failed to load Hermes backtest.</p>
+        <p className="text-sm text-bear">Failed to load Hermes backtest.</p>
         <p className="text-xs text-muted-foreground/60">{error?.message}</p>
       </div>
     );
@@ -92,48 +92,48 @@ export function HermesModelPanel() {
 
   const metrics: { label: string; value: string; color?: string }[] = [
     { label: "Total Trades", value: String(perf.totalTrades) },
-    { label: "Winning", value: String(perf.winningTrades), color: "text-green-400" },
-    { label: "Losing", value: String(perf.losingTrades), color: "text-red-400" },
+    { label: "Winning", value: String(perf.winningTrades), color: "text-bull" },
+    { label: "Losing", value: String(perf.losingTrades), color: "text-bear" },
     {
       label: "Win Rate",
       value: `${winRatePct.toFixed(1)}%`,
-      color: winRatePct >= 50 ? "text-green-400" : "text-red-400",
+      color: winRatePct >= 50 ? "text-bull" : "text-bear",
     },
     {
       label: "Total PnL",
       value: fmtDollar(perf.totalPnl),
-      color: perf.totalPnl >= 0 ? "text-green-400" : "text-red-400",
+      color: perf.totalPnl >= 0 ? "text-bull" : "text-bear",
     },
     {
       label: "Total PnL %",
       value: `${perf.totalPnlPct >= 0 ? "+" : ""}${perf.totalPnlPct.toFixed(2)}%`,
-      color: perf.totalPnlPct >= 0 ? "text-green-400" : "text-red-400",
+      color: perf.totalPnlPct >= 0 ? "text-bull" : "text-bear",
     },
     {
       label: "Profit Factor",
       value: perf.profitFactor >= 99 ? "∞" : perf.profitFactor.toFixed(2),
-      color: perf.profitFactor >= 1 ? "text-green-400" : "text-red-400",
+      color: perf.profitFactor >= 1 ? "text-bull" : "text-bear",
     },
-    { label: "Max Drawdown", value: `${perf.maxDrawdown.toFixed(2)}%`, color: "text-amber-400" },
+    { label: "Max Drawdown", value: `${perf.maxDrawdown.toFixed(2)}%`, color: "text-neutral" },
     {
       label: "Sharpe Ratio",
       value: perf.sharpeRatio.toFixed(2),
       color:
         perf.sharpeRatio >= 1
-          ? "text-green-400"
+          ? "text-bull"
           : perf.sharpeRatio >= 0
-            ? "text-amber-400"
-            : "text-red-400",
+            ? "text-neutral"
+            : "text-bear",
     },
-    { label: "Avg Win", value: fmtDollar(perf.avgWin), color: "text-green-400" },
-    { label: "Avg Loss", value: fmtDollar(perf.avgLoss), color: "text-red-400" },
-    { label: "Largest Win", value: fmtDollar(perf.largestWin), color: "text-green-400" },
-    { label: "Largest Loss", value: fmtDollar(perf.largestLoss), color: "text-red-400" },
+    { label: "Avg Win", value: fmtDollar(perf.avgWin), color: "text-bull" },
+    { label: "Avg Loss", value: fmtDollar(perf.avgLoss), color: "text-bear" },
+    { label: "Largest Win", value: fmtDollar(perf.largestWin), color: "text-bull" },
+    { label: "Largest Loss", value: fmtDollar(perf.largestLoss), color: "text-bear" },
     { label: "Starting Capital", value: fmtCapital(perf.startingCapital) },
     {
       label: "Ending Capital",
       value: fmtCapital(perf.endingCapital),
-      color: perf.endingCapital >= perf.startingCapital ? "text-green-400" : "text-red-400",
+      color: perf.endingCapital >= perf.startingCapital ? "text-bull" : "text-bear",
     },
   ];
 
@@ -152,7 +152,7 @@ export function HermesModelPanel() {
             {model.status}
           </span>
           {data._sample && (
-            <span className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-400">
+            <span className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-neutral">
               SAMPLE DATA — awaiting real C++ run
             </span>
           )}
@@ -241,7 +241,7 @@ function TradesTable({ trades }: { trades: HermesTrade[] }) {
               <td
                 className={cn(
                   "px-3 py-1.5 text-right font-mono",
-                  t.pnl >= 0 ? "text-green-400" : "text-red-400",
+                  t.pnl >= 0 ? "text-bull" : "text-bear",
                 )}
               >
                 {fmtDollar(t.pnl)}
@@ -249,7 +249,7 @@ function TradesTable({ trades }: { trades: HermesTrade[] }) {
               <td
                 className={cn(
                   "px-3 py-1.5 text-right font-mono",
-                  t.pnlPct >= 0 ? "text-green-400" : "text-red-400",
+                  t.pnlPct >= 0 ? "text-bull" : "text-bear",
                 )}
               >
                 {t.pnlPct >= 0 ? "+" : ""}

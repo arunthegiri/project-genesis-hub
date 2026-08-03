@@ -31,6 +31,7 @@ import {
 } from "@/lib/date-range";
 import { aggregatePriceBars, intervalForSpan } from "@/lib/price-bars";
 import { intervalMs, snapRange } from "@/lib/interval-policy";
+import { CHART_COLORS } from "@/lib/chart-colors";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -47,7 +48,6 @@ const CHART_TYPES: { value: ChartType; label: string }[] = [
   { value: "line",        label: "Line"   },
   { value: "area",        label: "Area"   },
 ];
-const COMPARE_COLORS = ["#f59e0b", "#a78bfa", "#34d399", "#f472b6", "#fb923c"];
 
 // Chart+data region sizing. The vertical height is drag-resizable and persisted
 // in localStorage; the horizontal chart/data split is drag-resizable too.
@@ -476,7 +476,7 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
               <span
                 key={sym}
                 className="flex items-center gap-1 rounded px-2 py-0.5 text-xs font-mono"
-                style={{ backgroundColor: `${COMPARE_COLORS[i % COMPARE_COLORS.length]}22`, color: COMPARE_COLORS[i % COMPARE_COLORS.length] }}
+                style={{ backgroundColor: `${CHART_COLORS.compare[i % CHART_COLORS.compare.length]}22`, color: CHART_COLORS.compare[i % CHART_COLORS.compare.length] }}
               >
                 {sym}
                 <button onClick={() => setCompareSymbols(prev => prev.filter(s => s !== sym))}>

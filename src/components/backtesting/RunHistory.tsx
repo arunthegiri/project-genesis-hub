@@ -47,7 +47,7 @@ export function RunHistory({ runHistory, selectedRecordId, onSelectRecord, onCle
         {runHistory.length > 0 && (
           <button
             onClick={onClearHistory}
-            className="flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-red-400"
+            className="flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-bear"
           >
             <Trash2 className="h-3 w-3" /> Clear History
           </button>
@@ -99,21 +99,21 @@ export function RunHistory({ runHistory, selectedRecordId, onSelectRecord, onCle
                     <td className="px-3 py-2 text-right font-mono">
                       ${cs.endingCapital.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                     </td>
-                    <td className={cn("px-3 py-2 text-right font-mono font-medium", cs.returnOnCapital >= 0 ? "text-green-400" : "text-red-400")}>
+                    <td className={cn("px-3 py-2 text-right font-mono font-medium", cs.returnOnCapital >= 0 ? "text-bull" : "text-bear")}>
                       {cs.returnOnCapital >= 0 ? "+" : ""}{cs.returnOnCapital.toFixed(2)}%
                     </td>
-                    <td className={cn("px-3 py-2 text-right font-mono", cs.winRate >= 50 ? "text-green-400" : "text-red-400")}>
+                    <td className={cn("px-3 py-2 text-right font-mono", cs.winRate >= 50 ? "text-bull" : "text-bear")}>
                       {cs.winRate.toFixed(1)}%
                     </td>
                     <td className="px-3 py-2 text-right font-mono text-muted-foreground">{cs.totalTrades}</td>
-                    <td className={cn("px-3 py-2 text-right font-mono", cs.profitFactor >= 1 ? "text-green-400" : "text-red-400")}>
+                    <td className={cn("px-3 py-2 text-right font-mono", cs.profitFactor >= 1 ? "text-bull" : "text-bear")}>
                       {cs.profitFactor >= 99 ? "∞" : cs.profitFactor.toFixed(2)}
                     </td>
-                    <td className="px-3 py-2 text-right font-mono text-amber-400">{cs.maxDrawdown.toFixed(1)}%</td>
-                    <td className={cn("px-3 py-2 text-right font-mono", cs.sharpeRatio >= 1 ? "text-green-400" : cs.sharpeRatio >= 0 ? "text-amber-400" : "text-red-400")}>
+                    <td className="px-3 py-2 text-right font-mono text-neutral">{cs.maxDrawdown.toFixed(1)}%</td>
+                    <td className={cn("px-3 py-2 text-right font-mono", cs.sharpeRatio >= 1 ? "text-bull" : cs.sharpeRatio >= 0 ? "text-neutral" : "text-bear")}>
                       {cs.sharpeRatio.toFixed(2)}
                     </td>
-                    <td className={cn("px-3 py-2 text-right font-mono", bh == null ? "text-muted-foreground" : stratBeatsBH ? "text-green-400" : "text-red-400")}>
+                    <td className={cn("px-3 py-2 text-right font-mono", bh == null ? "text-muted-foreground" : stratBeatsBH ? "text-bull" : "text-bear")}>
                       {bh == null ? "—" : `${bh.totalPnlPct >= 0 ? "+" : ""}${bh.totalPnlPct.toFixed(2)}%`}
                     </td>
                   </tr>

@@ -18,37 +18,37 @@ export function BacktestStatsPanel({ capitalStats: cs, strategyName, buyHold }: 
     {
       label: "Win Rate",
       value: `${fmt(cs.winRate)}%`,
-      color: (cs.winRate ?? 0) >= 50 ? "text-green-400" : "text-red-400",
+      color: (cs.winRate ?? 0) >= 50 ? "text-bull" : "text-bear",
     },
     {
       label: "Total PnL",
       value: fmtDollar(cs.totalPnl),
-      color: (cs.totalPnl ?? 0) >= 0 ? "text-green-400" : "text-red-400",
+      color: (cs.totalPnl ?? 0) >= 0 ? "text-bull" : "text-bear",
     },
     {
       label: "Total Return",
       value: `${(cs.totalPnlPct ?? 0) >= 0 ? "+" : ""}${fmt(cs.totalPnlPct)}%`,
-      color: (cs.totalPnlPct ?? 0) >= 0 ? "text-green-400" : "text-red-400",
+      color: (cs.totalPnlPct ?? 0) >= 0 ? "text-bull" : "text-bear",
     },
     {
       label: "Profit Factor",
       value: cs.profitFactor >= 99 ? "∞" : fmt(cs.profitFactor),
-      color: (cs.profitFactor ?? 0) >= 1 ? "text-green-400" : "text-red-400",
+      color: (cs.profitFactor ?? 0) >= 1 ? "text-bull" : "text-bear",
     },
     {
       label: "Max Drawdown",
       value: `${fmt(cs.maxDrawdown)}%`,
-      color: "text-amber-400",
+      color: "text-neutral",
     },
     {
       label: "Sharpe Ratio",
       value: fmt(cs.sharpeRatio),
       color:
         (cs.sharpeRatio ?? 0) >= 1
-          ? "text-green-400"
+          ? "text-bull"
           : (cs.sharpeRatio ?? 0) >= 0
-          ? "text-amber-400"
-          : "text-red-400",
+          ? "text-neutral"
+          : "text-bear",
     },
     {
       label: "Total Trades",
@@ -68,17 +68,17 @@ export function BacktestStatsPanel({ capitalStats: cs, strategyName, buyHold }: 
     {
       label: "Ending Capital",
       value: `$${cs.endingCapital.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      color: cs.endingCapital >= cs.startingCapital ? "text-green-400" : "text-red-400",
+      color: cs.endingCapital >= cs.startingCapital ? "text-bull" : "text-bear",
     },
     {
       label: "Return on Capital",
       value: `${cs.returnOnCapital >= 0 ? "+" : ""}${fmt(cs.returnOnCapital)}%`,
-      color: cs.returnOnCapital >= 0 ? "text-green-400" : "text-red-400",
+      color: cs.returnOnCapital >= 0 ? "text-bull" : "text-bear",
     },
     {
       label: "Annualized Ret",
       value: `${cs.annualizedReturn >= 0 ? "+" : ""}${fmt(cs.annualizedReturn)}%`,
-      color: cs.annualizedReturn >= 0 ? "text-green-400" : "text-red-400",
+      color: cs.annualizedReturn >= 0 ? "text-bull" : "text-bear",
     },
   ];
 
@@ -172,7 +172,7 @@ export function BacktestStatsPanel({ capitalStats: cs, strategyName, buyHold }: 
           {cs.totalTrades} trades · {cs.symbol ?? "—"}
         </span>
         {cs.insufficientCapitalCount > 0 && (
-          <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-400">
+          <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-neutral">
             {cs.insufficientCapitalCount} trade{cs.insufficientCapitalCount > 1 ? "s" : ""} skipped — insufficient capital
           </span>
         )}
@@ -237,7 +237,7 @@ export function BacktestStatsPanel({ capitalStats: cs, strategyName, buyHold }: 
                     <td
                       className={cn(
                         "py-0.5 text-right font-mono",
-                        stratBetter ? "text-green-400" : "text-foreground",
+                        stratBetter ? "text-bull" : "text-foreground",
                       )}
                     >
                       {row.stratFmt}
@@ -245,7 +245,7 @@ export function BacktestStatsPanel({ capitalStats: cs, strategyName, buyHold }: 
                     <td
                       className={cn(
                         "py-0.5 text-right font-mono",
-                        bahBetter ? "text-green-400" : "text-muted-foreground",
+                        bahBetter ? "text-bull" : "text-muted-foreground",
                       )}
                     >
                       {row.bahFmt}
