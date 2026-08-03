@@ -57,6 +57,11 @@ interface Props {
   // SSR-correct arrangement from the / route loader (ui.charts cookie).
   initialChartHeight?: number;
   onSymbolChange?: (symbol: string) => void;
+  // §18 URL-as-state: a URL-sourced symbol/interval beats this panel's
+  // cookie (URL beats cookie beats defaults); interval changes are reported
+  // back so the / route can mirror them into the URL.
+  initialInterval?: Interval;
+  onIntervalChange?: (interval: Interval) => void;
 }
 
 const RANGE_PRESETS: Exclude<ChartRangePreset, "CUSTOM">[] = ["1D", "5D", "1M", "3M", "6M", "1Y"];
@@ -93,7 +98,7 @@ interface PanelUiCookie {
   strategy?: string;
 }
 
-export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey, initialChartHeight, onSymbolChange }: Props) {
+export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey, initialChartHeight, onSymbolChange, initialInterval: urlInterval, onIntervalChange }: Props) {
   const initialRange = getPresetRange("5D");
 
   const initialInterval = intervalForSpan(
@@ -152,10 +157,19 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
   const restoredRef = useRef(false);
   useEffect(() => {
     const s = (persistKey ? readUiCookieJson<PanelUiCookie>(panelUiCookie(persistKey)) : null) ?? {};
-    if (typeof s.symbol === "string") setSelectedSymbol(s.symbol);
+    // §18 precedence — URL beats cookie: an initialSymbol/initialInterval
+    // handed down from the / route's search params wins over the panel cookie.
+    if (!initialSymbol && typeof s.symbol === "string") setSelectedSymbol(s.symbol);
     if (typeof s.startDate === "string") setStartDate(s.startDate);
     if (typeof s.endDate === "string") setEndDate(s.endDate);
-    if (typeof s.interval === "string") updateInterval(s.interval);
+    if (urlInterval) {
+      // A shared interval pins the §5 policy so the auto-derive effect (and
+      // later range restores) can't silently override it.
+      updateInterval(urlInterval);
+      setIntervalMode("pinned");
+    } else if (typeof s.interval === "string") {
+      updateInterval(s.interval);
+    }
     if (typeof s.rangePreset === "string") setRangePreset(s.rangePreset);
     if (typeof s.chartType === "string") setChartType(s.chartType);
     if (Array.isArray(s.compareSymbols)) setCompareSymbols(s.compareSymbols);
@@ -173,12 +187,27 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
   }, []);
 
   // Auto-pick interval whenever the date range changes — but only in auto
-  // mode; a pinned (manually selected) interval survives range nudges.
+  // mode; a pinned (manually selected) interval survives range nudges. The
+  // mount-time run is skipped: its derivation duplicates the initial state,
+  // and running it would override a URL-pinned interval queued by the
+  // restore effect above in the same commit (stale "auto" closure).
+  const autoIntervalSkipRef = useRef(true);
   useEffect(() => {
+    if (autoIntervalSkipRef.current) {
+      autoIntervalSkipRef.current = false;
+      return;
+    }
     if (intervalMode !== "auto") return;
     const days = (new Date(endDate).getTime() - new Date(startDate).getTime()) / 86_400_000;
     updateInterval(intervalForSpan(days));
   }, [startDate, endDate, intervalMode]);
+
+  // §18: report interval changes upward so the / route can mirror them into
+  // the URL (write-back uses replace — no history entries).
+  useEffect(() => {
+    if (mounted) onIntervalChange?.(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted, interval]);
 
   // Zoom-driven suggestion (from PriceChart's span-table boundary crossings):
   // applies only in auto mode, and only when it actually changes the bucket.

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -20,6 +20,15 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/models")({
+  // §18: ?m=<name|strategyName>&v=<version>&tab=<tab> deep-links a model
+  // version's detail sheet (e.g. /models?m=rf_v1&v=3). All optional — absent
+  // means the plain registry list. `tab` is parsed and round-tripped for the
+  // future tabbed sheet; the current drawer has no tabs to consume it.
+  validateSearch: (search: Record<string, unknown>) => ({
+    m:   typeof search.m === "string" && search.m ? search.m : undefined,
+    v:   typeof search.v === "string" && search.v ? search.v : undefined,
+    tab: typeof search.tab === "string" && search.tab ? search.tab : undefined,
+  }),
   head: () => ({ meta: [{ title: "Models — Ananke Trading" }] }),
   component: ModelsPage,
 });
@@ -414,8 +423,13 @@ function ModelDetailDrawer({
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 function ModelsPage() {
+  const { m, v } = Route.useSearch();
+  const navigate = Route.useNavigate();
   const [selected, setSelected] = useState<ModelSummary | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // Deep-link matching is attempted once per m|v pair so closing the sheet
+  // (which also clears the params) never re-triggers it.
+  const deepLinkTriedRef = useRef<string | null>(null);
 
   const modelsQ = useQuery({
     queryKey: ["models", "list"],
@@ -424,9 +438,44 @@ function ModelsPage() {
     retry: false,
   });
 
-  const openDetail = (m: ModelSummary) => {
-    setSelected(m);
+  // §18: a deep-linked ?m=&v= opens that version's sheet once the registry
+  // list arrives. m matches the base name or the full strategy name; v
+  // compares digit-wise so "3" and "v3" mean the same version. No match (or
+  // a list error) just leaves the plain list — the URL stays truthful.
+  useEffect(() => {
+    if (!m || !modelsQ.data) return;
+    const key = `${m}|${v ?? ""}`;
+    if (deepLinkTriedRef.current === key) return;
+    deepLinkTriedRef.current = key;
+    const normV = (s: string) => s.replace(/^v/i, "");
+    const match = modelsQ.data.find(x =>
+      (x.name === m || x.strategyName === m) && (!v || normV(x.version) === normV(v)));
+    if (match) {
+      setSelected(match);
+      setDrawerOpen(true);
+    }
+  }, [m, v, modelsQ.data]);
+
+  const openDetail = (model: ModelSummary) => {
+    setSelected(model);
     setDrawerOpen(true);
+    // §18 write-back (replace — no history spam): the URL deep-links the
+    // open sheet, so copying it reproduces the view.
+    navigate({
+      search: (prev) => ({ ...prev, m: model.name, v: model.version }),
+      replace: true,
+    });
+  };
+
+  const handleDrawerOpenChange = (open: boolean) => {
+    setDrawerOpen(open);
+    if (!open) {
+      // Closing the sheet clears the deep-link so the URL matches the view.
+      navigate({
+        search: (prev) => ({ ...prev, m: undefined, v: undefined }),
+        replace: true,
+      });
+    }
   };
 
   return (
@@ -448,7 +497,7 @@ function ModelsPage() {
         )}
       </div>
 
-      <ModelDetailDrawer selected={selected} open={drawerOpen} onOpenChange={setDrawerOpen} />
+      <ModelDetailDrawer selected={selected} open={drawerOpen} onOpenChange={handleDrawerOpenChange} />
     </div>
   );
 }
