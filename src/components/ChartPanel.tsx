@@ -165,7 +165,6 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
       setDragging(null);
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
-      window.dispatchEvent(new Event("resize")); // reflow the chart canvas
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -187,20 +186,10 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
       try { localStorage.setItem(CHART_HEIGHT_KEY, String(current)); } catch { /* ignore */ }
-      window.dispatchEvent(new Event("resize")); // reflow the chart canvas
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   }, [chartHeight]);
-
-  // The chart uses autoSize (ResizeObserver) so it follows its container during
-  // the open/close transition — but nudge a resize once the transition settles
-  // to guarantee a final crisp reflow at the new width.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const id = window.setTimeout(() => window.dispatchEvent(new Event("resize")), 230);
-    return () => window.clearTimeout(id);
-  }, [showData]);
 
   // Persist configuration so state survives tab navigation. Skip the first run
   // (mount, before the restore effect has applied) so we don't overwrite saved
@@ -258,13 +247,17 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
     })),
   });
 
+  // TanStack Query's structural sharing keeps unchanged query data
+  // referentially stable, so a dataUpdatedAt join is a faithful,
+  // fixed-length invalidation key (no variable-length dep array).
+  const compareDataKey = compareQueries.map((q) => q.dataUpdatedAt).join("|");
   const compareData = useMemo(
     () => compareSymbols.map((symbol, i) => ({
       symbol,
       bars: aggregatePriceBars(compareQueries[i]?.data ?? [], interval),
     })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [compareSymbols, interval, ...compareQueries.map(q => q.data)],
+    [compareSymbols, interval, compareDataKey],
   );
 
   const indicators: IndicatorConfig = useMemo(() => ({

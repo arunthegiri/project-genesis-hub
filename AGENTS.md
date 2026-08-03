@@ -64,7 +64,7 @@ src/
   lib/python-export.ts ← generates pandas + SQLAlchemy snippets mirroring the UI query
   components/
     PriceChart.tsx  ← lightweight-charts wrapper; main chart + sub-panes (RSI, MACD)
-    ChartPanel.tsx  ← chart panel with controls, indicator toggles, data panel (react-resizable-panels)
+    ChartPanel.tsx  ← chart panel with controls, indicator toggles, data panel (hand-rolled drag splitters — react-resizable-panels v4 migration planned)
     BacktestingChart.tsx ← candlestick chart for backtesting replay
     EquityChart.tsx ← equity curve chart
     SymbolPicker.tsx
@@ -90,6 +90,7 @@ src/
 - This is TanStack Start SSR — any state that reads the DOM or storage must be read after mount (use `useEffect` or `mounted` flag, not direct `useState` init from sessionStorage)
 - SSR hydration guards exist in ChartPanel and the Charts page (`skipPersist` refs)
 - `lightweight-charts` is pinned at 4.2.0 — do not upgrade
+- Unused shadcn scaffold deps (`embla-carousel-react`, `vaul`, `input-otp`) are accepted scaffold — leave installed; removing them risks shadcn regen churn for zero runtime win
 
 ### Chart architecture
 

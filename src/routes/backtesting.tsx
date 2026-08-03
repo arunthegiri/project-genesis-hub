@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { addDays, format } from "date-fns";
 import {
   useCallback,
   useEffect,
@@ -43,8 +44,14 @@ type Speed = (typeof SPEEDS)[number];
 type Tab = "data" | "strategies" | "results" | "models";
 type TradeFilter = "all" | "winning" | "losing";
 
-const DEFAULT_FROM          = "2026-05-12T00:00";
-const DEFAULT_TO            = "2026-05-17T00:00";
+// Date defaults resolve relative to *now* — never constants — so a clean URL
+// opens on a range ending today. Explicit from/to in the URL still override.
+function defaultFrom(): string {
+  return format(addDays(new Date(), -5), "yyyy-MM-dd'T'HH:mm");
+}
+function defaultTo(): string {
+  return format(new Date(), "yyyy-MM-dd'T'HH:mm");
+}
 const DEFAULT_CAPITAL       = 10_000;
 const MIN_CAPITAL           = 100;
 const MAX_CAPITAL           = 10_000_000;
@@ -52,8 +59,8 @@ const MAX_CAPITAL           = 10_000_000;
 export const Route = createFileRoute("/backtesting")({
   validateSearch: (search: Record<string, unknown>) => ({
     symbol:            (search.symbol  as string | undefined) ?? "",
-    from:              (search.from    as string | undefined) ?? DEFAULT_FROM,
-    to:                (search.to      as string | undefined) ?? DEFAULT_TO,
+    from:              (search.from    as string | undefined) ?? defaultFrom(),
+    to:                (search.to      as string | undefined) ?? defaultTo(),
     speed:             (Number(search.speed ?? 1)) as Speed,
     loaded:            search.loaded === "true" || search.loaded === true,
     startingCapital:   clampCapital(Number(search.startingCapital ?? DEFAULT_CAPITAL)),
@@ -186,8 +193,8 @@ function BacktestingPage() {
 
   // Strategies tab has its own independent data controls
   const [stratSymbol, setStratSymbol] = useState("");
-  const [stratFrom,   setStratFrom]   = useState(DEFAULT_FROM);
-  const [stratTo,     setStratTo]     = useState(DEFAULT_TO);
+  const [stratFrom,   setStratFrom]   = useState<string>(defaultFrom);
+  const [stratTo,     setStratTo]     = useState<string>(defaultTo);
   const [stratLoaded, setStratLoaded] = useState(false);
 
   // Replay state for Strategies tab
