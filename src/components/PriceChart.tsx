@@ -88,14 +88,15 @@ export function PriceChart({
   const overlaysRef    = useRef<ISeriesApi<"Line">[]>([]);
   const overlayKeysRef = useRef<string[]>([]);
   const compareSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
-  const rsiSubRef  = useRef<{ chart: IChartApi; series: ISeriesApi<"Line">; container: HTMLDivElement } | null>(null);
+  const rsiSubRef  = useRef<{ chart: IChartApi; series: ISeriesApi<"Line"> } | null>(null);
   const macdSubRef = useRef<{
     chart: IChartApi;
     lineMacd: ISeriesApi<"Line">;
     lineSignal: ISeriesApi<"Line">;
     hist: ISeriesApi<"Histogram">;
-    container: HTMLDivElement;
   } | null>(null);
+  const rsiPaneRef  = useRef<HTMLDivElement>(null);
+  const macdPaneRef = useRef<HTMLDivElement>(null);
   const hostRef          = useRef<HTMLDivElement>(null);
   const volumeSeriesRef  = useRef<ISeriesApi<"Histogram"> | null>(null);
   const legendRef        = useRef<ChartLegendHandle>(null);
@@ -252,14 +253,13 @@ export function PriceChart({
     return () => chart.unsubscribeCrosshairMove(handler);
   }, [interactionStore, pushLegend]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Cleanup series refs and sub-panes on unmount (chart itself cleaned up by useChartBase)
+  // Cleanup series refs on unmount (charts themselves are cleaned up by
+  // useChartBase and the sub-pane lifecycle effects' cleanup functions)
   useEffect(() => () => {
     mainSeriesRef.current = null;
     overlaysRef.current = [];
     overlayKeysRef.current = [];
     compareSeriesRef.current = [];
-    if (rsiSubRef.current)  { rsiSubRef.current.chart.remove();  rsiSubRef.current.container.remove();  rsiSubRef.current = null; }
-    if (macdSubRef.current) { macdSubRef.current.chart.remove(); macdSubRef.current.container.remove(); macdSubRef.current = null; }
   }, []);
 
   // ── Interaction store wiring (§7) ────────────────────────────────────────
@@ -493,24 +493,18 @@ export function PriceChart({
     });
   }, [compareData, isComparing]);
 
-  // ── RSI sub-pane lifecycle — create/destroy only on enable toggle.
+  // ── RSI sub-pane lifecycle — create/destroy against the React-rendered pane
+  // div (§10a). Idempotent pair: cleanup destroys exactly what this run made.
   useEffect(() => {
-    const parent = hostRef.current;
-    if (!parent) return;
-    if (rsiEnabled && !rsiSubRef.current) {
-      const div = document.createElement("div");
-      div.style.height = "120px";
-      div.style.width  = "100%";
-      div.style.borderTop = "1px solid rgba(255,255,255,0.06)";
-      parent.appendChild(div);
-      const chart = createChart(div, CHART_OPTIONS);
-      const series = chart.addLineSeries({ color: "#a78bfa", lineWidth: 2, title: "RSI" });
-      rsiSubRef.current = { chart, series, container: div };
-    } else if (!rsiEnabled && rsiSubRef.current) {
-      rsiSubRef.current.chart.remove();
-      rsiSubRef.current.container.remove();
+    const pane = rsiPaneRef.current;
+    if (!rsiEnabled || !pane) return;
+    const chart = createChart(pane, CHART_OPTIONS);
+    const series = chart.addLineSeries({ color: "#a78bfa", lineWidth: 2, title: "RSI" });
+    rsiSubRef.current = { chart, series };
+    return () => {
+      chart.remove();
       rsiSubRef.current = null;
-    }
+    };
   }, [rsiEnabled]);
 
   // RSI data
@@ -518,26 +512,20 @@ export function PriceChart({
     rsiSubRef.current?.series.setData(rsiData);
   }, [rsiData]);
 
-  // ── MACD sub-pane lifecycle — create/destroy only on enable toggle.
+  // ── MACD sub-pane lifecycle — create/destroy against the React-rendered
+  // pane div (§10a). Idempotent pair: cleanup destroys exactly what this run made.
   useEffect(() => {
-    const parent = hostRef.current;
-    if (!parent) return;
-    if (macdEnabled && !macdSubRef.current) {
-      const div = document.createElement("div");
-      div.style.height = "140px";
-      div.style.width  = "100%";
-      div.style.borderTop = "1px solid rgba(255,255,255,0.06)";
-      parent.appendChild(div);
-      const chart = createChart(div, CHART_OPTIONS);
-      const lineMacd   = chart.addLineSeries({ color: CHART_COLORS.accent, lineWidth: 2, title: "MACD" });
-      const lineSignal = chart.addLineSeries({ color: "#f59e0b", lineWidth: 2, title: "Signal" });
-      const hist       = chart.addHistogramSeries({ color: "#475569" });
-      macdSubRef.current = { chart, lineMacd, lineSignal, hist, container: div };
-    } else if (!macdEnabled && macdSubRef.current) {
-      macdSubRef.current.chart.remove();
-      macdSubRef.current.container.remove();
+    const pane = macdPaneRef.current;
+    if (!macdEnabled || !pane) return;
+    const chart = createChart(pane, CHART_OPTIONS);
+    const lineMacd   = chart.addLineSeries({ color: CHART_COLORS.accent, lineWidth: 2, title: "MACD" });
+    const lineSignal = chart.addLineSeries({ color: "#f59e0b", lineWidth: 2, title: "Signal" });
+    const hist       = chart.addHistogramSeries({ color: "#475569" });
+    macdSubRef.current = { chart, lineMacd, lineSignal, hist };
+    return () => {
+      chart.remove();
       macdSubRef.current = null;
-    }
+    };
   }, [macdEnabled]);
 
   // MACD data
@@ -613,6 +601,20 @@ export function PriceChart({
           </div>
         )}
       </div>
+      {rsiEnabled && (
+        <div
+          ref={rsiPaneRef}
+          className="w-full shrink-0"
+          style={{ height: 120, borderTop: "1px solid rgba(255,255,255,0.06)" }}
+        />
+      )}
+      {macdEnabled && (
+        <div
+          ref={macdPaneRef}
+          className="w-full shrink-0"
+          style={{ height: 140, borderTop: "1px solid rgba(255,255,255,0.06)" }}
+        />
+      )}
     </div>
   );
 }
