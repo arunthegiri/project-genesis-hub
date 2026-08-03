@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useQuery, useQueries } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueries } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { ChevronDown, ChevronUp, GripHorizontal, Loader2, Plus, X } from "lucide-react";
 
@@ -30,6 +30,7 @@ import {
   type ChartRangePreset,
 } from "@/lib/date-range";
 import { aggregatePriceBars, intervalForSpan } from "@/lib/price-bars";
+import { intervalMs, snapRange } from "@/lib/interval-policy";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -227,23 +228,39 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
   const { data: symbolsData } = useQuery({ queryKey: ["symbols"], queryFn: symbolsApi.list });
   const symbols = normalizeSymbols(symbolsData);
 
-  const { data: rawBars = [], isLoading, error, isFetching } = useQuery({
+  // Snap the API range outward to stable bucket boundaries so overlapping pans
+  // hit the cache — only bucket-boundary crossings mint a new query key (§4).
+  const { snappedFrom, snappedTo } = useMemo(
+    () => snapRange(fromApi, toApi, interval),
+    [fromApi, toApi, interval],
+  );
+
+  const {
+    data: rawBars = [],
+    error,
+    isFetching,
+    isPending,
+    isPlaceholderData,
+  } = useQuery({
     enabled: !!selectedSymbol,
-    queryKey: ["prices", selectedSymbol, fromApi, toApi],
-    queryFn: () => pricesApi.range(selectedSymbol, fromApi, toApi),
-    staleTime: 5 * 60 * 1000,
-    gcTime:   30 * 60 * 1000,
+    queryKey: ["prices", selectedSymbol, interval, snappedFrom, snappedTo],
+    queryFn: () => pricesApi.range(selectedSymbol, snappedFrom, snappedTo),
+    placeholderData: keepPreviousData,
+    staleTime: intervalMs(interval),
+    gcTime:   3 * 60_000,
   });
+  const isInitialLoad = isPending && !isPlaceholderData;
 
   const bars = useMemo(() => aggregatePriceBars(rawBars, interval), [rawBars, interval]);
 
   const compareQueries = useQueries({
     queries: compareSymbols.map(sym => ({
-      queryKey: ["prices", sym, fromApi, toApi],
-      queryFn: () => pricesApi.range(sym, fromApi, toApi),
+      queryKey: ["prices", sym, interval, snappedFrom, snappedTo],
+      queryFn: () => pricesApi.range(sym, snappedFrom, snappedTo),
       enabled: !!sym,
-      staleTime: 5 * 60 * 1000,
-      gcTime:   30 * 60 * 1000,
+      placeholderData: keepPreviousData,
+      staleTime: intervalMs(interval),
+      gcTime:   3 * 60_000,
     })),
   });
 
@@ -471,11 +488,11 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
               {/* Chart content */}
               <div className="relative flex-1 min-w-0">
                 {!selectedSymbol && <Empty>Select a symbol above to begin.</Empty>}
-                {selectedSymbol && isLoading && <Empty><Loader2 className="h-4 w-4 animate-spin" /> Loading…</Empty>}
+                {selectedSymbol && isInitialLoad && <Empty><Loader2 className="h-4 w-4 animate-spin" /> Loading…</Empty>}
                 {selectedSymbol && error && (
                   <Empty><span className="text-destructive">{(error as Error).message}</span></Empty>
                 )}
-                {selectedSymbol && !isLoading && !error && bars.length === 0 && (
+                {selectedSymbol && !isInitialLoad && !error && bars.length === 0 && (
                   <Empty>No data for {selectedSymbol} in this range.</Empty>
                 )}
                 {selectedSymbol && bars.length > 0 && (
@@ -493,7 +510,7 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
                 )}
                 {isFetching && selectedSymbol && (
                   <div className="absolute right-3 top-3 flex items-center gap-1 text-[10px] text-muted-foreground">
-                    <Loader2 className="h-3 w-3 animate-spin" /> refreshing
+                    <Loader2 className="h-3 w-3 animate-spin" /> {isPlaceholderData ? "refining…" : "refreshing"}
                   </div>
                 )}
               </div>

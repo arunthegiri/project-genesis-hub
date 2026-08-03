@@ -1,11 +1,10 @@
 import type { Interval, PriceBar } from './api/types';
+import { intervalForSpanDays } from './interval-policy';
 
+// Policy lives in interval-policy.ts (single registry) — this export keeps
+// existing call sites working.
 export function intervalForSpan(days: number): Interval {
-  if (days > 365) return '1Day';
-  if (days > 90)  return '1Hour';
-  if (days > 14)  return '15Min';
-  if (days > 3)   return '5Min';
-  return '1Min';
+  return intervalForSpanDays(days);
 }
 
 const INTERVAL_TO_MS: Record<Interval, number> = {
