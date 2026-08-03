@@ -6,6 +6,13 @@ import { CHART_COLORS } from "@/lib/chart-colors";
 
 interface Props {
   bars: PriceBar[];
+  /**
+   * How many leading bars of `bars` are visible. The parent passes the full
+   * stable array plus a cursor instead of a per-tick slice: stepping forward
+   * emits only delta bars via series.update(), seeking backward is one
+   * setData of bars.slice(0, visibleCount) (allocation fine at seek frequency).
+   */
+  visibleCount: number;
   trades: Trade[];
   height?: number | string;
   onRangeChange?: (from: number, to: number) => void;
@@ -36,10 +43,10 @@ function findNearestMs(targetMs: number, sortedMs: number[]): number {
   return sortedMs[lo];
 }
 
-function buildMarkers(trades: Trade[], sortedBarMs: number[]) {
+function buildMarkers(trades: Trade[], sortedBarMs: number[], lastVisibleMs: number) {
   if (!sortedBarMs.length || !trades.length) return [];
 
-  const lastMs = sortedBarMs[sortedBarMs.length - 1];
+  const lastMs = lastVisibleMs;
 
   // Snap a trade time to the nearest bar. Bars are ascending (lightweight-charts
   // requires it for setData), so a binary search is valid here.
@@ -85,7 +92,7 @@ function buildMarkers(trades: Trade[], sortedBarMs: number[]) {
   return markers.sort((a, b) => (a.time as number) - (b.time as number));
 }
 
-export function BacktestingChart({ bars, trades, height = "100%", onRangeChange, visibleRange }: Props) {
+export function BacktestingChart({ bars, visibleCount, trades, height = "100%", onRangeChange, visibleRange }: Props) {
   const containerRef    = useRef<HTMLDivElement>(null);
   const { chartRef }    = useChartBase(containerRef);
   const seriesRef       = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -94,9 +101,13 @@ export function BacktestingChart({ bars, trades, height = "100%", onRangeChange,
   const onRangeChangeRef = useRef(onRangeChange);
   useEffect(() => { onRangeChangeRef.current = onRangeChange; }, [onRangeChange]);
 
-  // Ascending bar times (ms), rebuilt only when bars change. Marker snapping
-  // binary-searches this instead of scanning all bars per trade on every tick.
+  // Ascending bar times (ms) for the FULL stable array — memo keys on the
+  // array reference, so replay ticks never rebuild it. Marker snapping
+  // binary-searches this; targets past the visible window are dropped.
   const barTimesMs = useMemo(() => bars.map(b => new Date(b.time).getTime()), [bars]);
+  const lastVisibleMs = visibleCount > 0 && visibleCount <= barTimesMs.length
+    ? barTimesMs[visibleCount - 1]
+    : -Infinity;
 
   // Create candlestick series once on mount (chart created by useChartBase)
   useEffect(() => {
@@ -137,13 +148,17 @@ export function BacktestingChart({ bars, trades, height = "100%", onRangeChange,
     ts.setVisibleLogicalRange(visibleRange);
   }, [visibleRange]);
 
-  // Update series — incremental update when playing, full reset on new data / jump back
+  // Update series — incremental delta updates when stepping forward, one full
+  // setData on new data / seek back. `visibleCount` is the replay cursor; the
+  // parent never slices per tick.
   useEffect(() => {
     const series = seriesRef.current;
     const chart  = chartRef.current;
     if (!series || !chart) return;
 
-    if (!bars.length) {
+    const visibleLen = Math.min(Math.max(0, visibleCount), bars.length);
+
+    if (visibleLen === 0) {
       series.setData([]);
       prevLenRef.current = 0;
       prevFirstTime.current = "";
@@ -152,10 +167,12 @@ export function BacktestingChart({ bars, trades, height = "100%", onRangeChange,
 
     const firstTime    = bars[0].time;
     const isNewDataset = firstTime !== prevFirstTime.current;
-    const isJumpBack   = bars.length < prevLenRef.current;
+    const isJumpBack   = visibleLen < prevLenRef.current;
 
     if (isNewDataset || isJumpBack || prevLenRef.current === 0) {
-      series.setData(bars.map(toBar));
+      // Seek / reset path — one setData of the window (allocation fine at
+      // seek frequency; it's the per-tick allocation that was the defect).
+      series.setData(bars.slice(0, visibleLen).map(toBar));
       if (isNewDataset || prevLenRef.current === 0) {
         // Fresh dataset — fit all bars so user sees the full range
         chart.timeScale().fitContent();
@@ -165,21 +182,21 @@ export function BacktestingChart({ bars, trades, height = "100%", onRangeChange,
         chart.timeScale().setVisibleLogicalRange({ from: -5, to: 120 });
       }
     } else {
-      // Incremental path — append new bars and scroll to keep latest in view
-      for (let i = prevLenRef.current; i < bars.length; i++) {
+      // Delta path — append only the new bars and scroll to keep latest in view
+      for (let i = prevLenRef.current; i < visibleLen; i++) {
         series.update(toBar(bars[i]));
       }
       chart.timeScale().scrollToPosition(0, false);
     }
 
-    prevLenRef.current = bars.length;
+    prevLenRef.current = visibleLen;
     prevFirstTime.current = firstTime;
-  }, [bars]);
+  }, [bars, visibleCount]);
 
   // Update trade markers whenever visible trades or bars change
   useEffect(() => {
-    seriesRef.current?.setMarkers(buildMarkers(trades, barTimesMs));
-  }, [trades, barTimesMs]);
+    seriesRef.current?.setMarkers(buildMarkers(trades, barTimesMs, lastVisibleMs));
+  }, [trades, barTimesMs, lastVisibleMs]);
 
   return <div ref={containerRef} style={{ height }} className="w-full" />;
 }

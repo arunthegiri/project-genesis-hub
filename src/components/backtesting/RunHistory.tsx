@@ -4,7 +4,6 @@ import { EquityChart } from "@/components/EquityChart";
 import { cn } from "@/lib/utils";
 import type { CapitalStats, BuyHoldStats } from "@/lib/backtest-capital";
 import type { BacktestResults } from "@/lib/api/strategies";
-import type { PriceBar } from "@/lib/api/types";
 
 export interface RunRecord {
   id: string;
@@ -16,7 +15,6 @@ export interface RunRecord {
   capitalStats: CapitalStats;
   buyHold: BuyHoldStats | null;
   runResults: BacktestResults;
-  stratBarsSnapshot: PriceBar[];
   timestamp: Date;
 }
 

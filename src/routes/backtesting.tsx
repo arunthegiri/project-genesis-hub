@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { addDays, format } from "date-fns";
 import {
   useCallback,
@@ -38,6 +38,7 @@ import { tradesApi, type TradesResult } from "@/lib/api/trades";
 import type { BacktestTrade, BacktestResults } from "@/lib/api/strategies";
 import type { PriceBar, Trade } from "@/lib/api/types";
 import { applyCapitalConstraints, calcBuyHold } from "@/lib/backtest-capital";
+import { useRafCoalescer } from "@/hooks/useRafCoalescer";
 import { cn } from "@/lib/utils";
 
 const SPEEDS = [0.5, 1, 2, 5, 10, 25, 50] as const;
@@ -103,8 +104,6 @@ function BacktestingPage() {
     [navigate],
   );
 
-  const queryClient = useQueryClient();
-
   // ── Run history (session only) ───────────────────────────────────────────────
   const [runHistory, setRunHistory] = useState<RunRecord[]>([]);
   // Set by loadRecord so the strategy-reset effect restores state instead of clearing it
@@ -114,7 +113,6 @@ function BacktestingPage() {
     stratFrom: string;
     stratTo: string;
     startingCapital: number;
-    stratBarsSnapshot: PriceBar[];
   } | null>(null);
   // Set in onSuccess so the capitalStats effect knows to add a history entry
   const pendingHistoryRef = useRef(false);
@@ -202,10 +200,20 @@ function BacktestingPage() {
   const [stratTo,     setStratTo]     = useState<string>(defaultTo);
   const [stratLoaded, setStratLoaded] = useState(false);
 
-  // Replay state for Strategies tab
+  // Replay state for Strategies tab — cursor only; the full stratBars array
+  // stays stable and is passed to the chart with a visibleCount. All cursor
+  // writes (interval ticks, seeks, resets) go through setStratCursor, which
+  // stores the authoritative value in a ref and coalesces React commits to
+  // one per animation frame (rAF coalescer, build doc §7/§11).
   const [stratIdx,     setStratIdx]   = useState(-1);
   const [stratPlaying, setStratPlaying] = useState(false);
-  const stratTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stratTimerRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stratCursorRef = useRef(-1);
+  const flushStratCursor = useRafCoalescer<number>(setStratIdx);
+  const setStratCursor = useCallback((v: number) => {
+    stratCursorRef.current = v;
+    flushStratCursor(v);
+  }, [flushStratCursor]);
 
   // Run mutation — calls POST /api/strategies/{name}/run
   const [runResults, setRunResults] = useState<import("@/lib/api/strategies").BacktestResults | null>(null);
@@ -218,7 +226,7 @@ function BacktestingPage() {
       new Date(stratFrom).toISOString(),
       new Date(stratTo).toISOString(),
     ),
-    onSuccess: (data) => { pendingHistoryRef.current = true; setRunResults(data); setRunError(null); setStratIdx(-1); setStratPlaying(false); toast.success(`Backtest complete — ${selectedStrategy} on ${stratSymbol}`); },
+    onSuccess: (data) => { pendingHistoryRef.current = true; setRunResults(data); setRunError(null); setStratCursor(-1); setStratPlaying(false); toast.success(`Backtest complete — ${selectedStrategy} on ${stratSymbol}`); },
     onError:   (err: Error) => { setRunError(err.message); toast.error(`Backtest failed: ${err.message}`); },
   });
 
@@ -233,15 +241,14 @@ function BacktestingPage() {
   // When strategy changes, reset — or restore a record loaded from history
   useEffect(() => {
     setRunError(null);
-    setStratIdx(-1);
+    setStratCursor(-1);
     setStratPlaying(false);
     if (pendingLoadRef.current) {
       const p = pendingLoadRef.current;
       pendingLoadRef.current = null;
-      // Seed query cache so stratBars loads instantly without a network fetch
-      const fromIso = new Date(p.stratFrom).toISOString();
-      const toIso   = new Date(p.stratTo).toISOString();
-      queryClient.setQueryData(["strat-bars", p.stratSymbol, fromIso, toIso], p.stratBarsSnapshot);
+      // Bars re-fetch through the React Query cache — the "strat-bars" key for
+      // this symbol/range was populated by the original run (staleTime:
+      // Infinity), so this is a cache hit in the common case.
       setStratSymbol(p.stratSymbol);
       setStratFrom(p.stratFrom);
       setStratTo(p.stratTo);
@@ -257,13 +264,13 @@ function BacktestingPage() {
 
   // Active results = run override ?? stored latest results
   const activeResults = runResults ?? strategyDetail?.latestResults ?? null;
-  const allStratTrades = activeResults?.trades ?? [];
+  const allStratTrades = useMemo(() => activeResults?.trades ?? [], [activeResults]);
 
-  const filteredStratTrades = allStratTrades.filter(t => {
+  const filteredStratTrades = useMemo(() => allStratTrades.filter(t => {
     if (tradeFilter === "winning") return t.win === true;
     if (tradeFilter === "losing")  return t.win === false;
     return true;
-  });
+  }), [allStratTrades, tradeFilter]);
 
   // Price bars for Strategies tab (own query)
   const stratFromIso = stratLoaded ? new Date(stratFrom).toISOString() : "";
@@ -302,7 +309,6 @@ function BacktestingPage() {
       capitalStats: { ...capitalStats },
       buyHold: buyHold ? { ...buyHold } : null,
       runResults: { ...runResults },
-      stratBarsSnapshot: [...stratBars],
       timestamp: new Date(),
     }, ...prev]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -317,7 +323,6 @@ function BacktestingPage() {
       stratFrom: record.from,
       stratTo: record.to,
       startingCapital: record.startingCapital,
-      stratBarsSnapshot: record.stratBarsSnapshot,
     };
     // Changing selectedStrategy fires the reset effect which reads pendingLoadRef
     setSelectedStrategy(record.strategyName);
@@ -334,24 +339,30 @@ function BacktestingPage() {
     if (!stratPlaying) { stopStratTimer(); return; }
     const ms = Math.max(16, Math.round(1000 / speed));
     stratTimerRef.current = setInterval(() => {
-      setStratIdx(prev => {
-        const cur = prev === -1 ? 0 : prev;
-        if (cur >= stratBars.length - 1) { setStratPlaying(false); return stratBars.length - 1; }
-        return cur + 1;
-      });
+      // The interval only advances the cursor ref; the rAF coalescer commits
+      // to React state at most once per frame regardless of tick rate.
+      const cur = stratCursorRef.current === -1 ? 0 : stratCursorRef.current;
+      if (cur >= stratBars.length - 1) {
+        setStratPlaying(false);
+        setStratCursor(stratBars.length - 1);
+        return;
+      }
+      setStratCursor(cur + 1);
     }, ms);
     return stopStratTimer;
-  }, [stratPlaying, speed, stratBars.length, stopStratTimer]);
+  }, [stratPlaying, speed, stratBars.length, stopStratTimer, setStratCursor]);
 
-  const stratResolvedIdx = stratIdx === -1 ? Math.max(0, stratBars.length - 1) : stratIdx;
-  const stratVisibleBars  = stratIdx === -1 ? stratBars : stratBars.slice(0, stratResolvedIdx + 1);
+  const stratResolvedIdx  = stratIdx === -1 ? Math.max(0, stratBars.length - 1) : stratIdx;
+  const stratVisibleCount = stratIdx === -1 ? stratBars.length : stratResolvedIdx + 1;
   const stratCurrentTime  = stratBars[stratResolvedIdx]?.time ?? "";
 
-  // Visible trades: trades whose exit_time is within the replay window
-  const stratVisibleTrades = filteredStratTrades.filter(t => {
+  // Visible trades: trades whose exit_time is within the replay window.
+  // Memo keys on the cursor — components below get the stable array, not a
+  // fresh slice per render.
+  const stratVisibleTrades = useMemo(() => filteredStratTrades.filter(t => {
     if (!t.exit_time) return false;
     return stratIdx === -1 || new Date(t.exit_time).getTime() <= new Date(stratCurrentTime).getTime();
-  });
+  }), [filteredStratTrades, stratIdx, stratCurrentTime]);
 
   // Only show markers when results are actually for the chart's symbol.
   // Stored results are for the original export symbol — don't overlay them on a different stock.
@@ -362,7 +373,7 @@ function BacktestingPage() {
     !resultsSymbol ||                               // stored result has no symbol tag
     stratSymbol === resultsSymbol;                  // symbols match
 
-  const strategyChartTrades: Trade[] = markersMatchSymbol
+  const strategyChartTrades: Trade[] = useMemo(() => markersMatchSymbol
     ? stratVisibleTrades
         .filter(t => t.status === "closed" && t.exit_time && t.exit_price != null)
         .map(t => ({
@@ -377,27 +388,40 @@ function BacktestingPage() {
           strategyName: selectedStrategy ?? "",
           modelVersion: "",
         }))
-    : [];
+    : [], [markersMatchSymbol, stratVisibleTrades, stratSymbol, selectedSymbol, selectedStrategy]);
 
   // Running P&L for replay status bar
-  const stratRunningPnl = stratVisibleTrades.reduce((s, t) => s + (t.pnl ?? 0), 0);
+  const stratRunningPnl = useMemo(
+    () => stratVisibleTrades.reduce((s, t) => s + (t.pnl ?? 0), 0),
+    [stratVisibleTrades],
+  );
 
   // ── Playback state ───────────────────────────────────────────────────────────
+  // Cursor-only replay state: the full allBars array stays stable; the chart
+  // receives it plus a visibleCount. All cursor writes (interval ticks, seeks,
+  // resets) go through setCursor — a ref holds the authoritative value and an
+  // rAF coalescer commits to React state at most once per frame.
   const [currentIdx, setCurrentIdx] = useState(-1);
   const [playing, setPlaying]       = useState(false);
   const [jumpTo, setJumpTo]         = useState("");
 
   const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevDataKey = useRef("");
+  const cursorRef   = useRef(-1);
+  const flushCursor = useRafCoalescer<number>(setCurrentIdx);
+  const setCursor   = useCallback((v: number) => {
+    cursorRef.current = v;
+    flushCursor(v);
+  }, [flushCursor]);
 
   useEffect(() => {
     const key = `${selectedSymbol}|${fromIso}|${toIso}`;
     if (key !== prevDataKey.current && loaded) {
-      setCurrentIdx(-1);
+      setCursor(-1);
       setPlaying(false);
       prevDataKey.current = key;
     }
-  }, [selectedSymbol, fromIso, toIso, loaded]);
+  }, [selectedSymbol, fromIso, toIso, loaded, setCursor]);
 
   const resolvedIdx = currentIdx === -1 ? Math.max(0, allBars.length - 1) : currentIdx;
 
@@ -409,27 +433,31 @@ function BacktestingPage() {
     if (!playing) { stopTimer(); return; }
     const ms = Math.max(16, Math.round(1000 / speed));
     timerRef.current = setInterval(() => {
-      setCurrentIdx(prev => {
-        const cur = prev === -1 ? 0 : prev;
-        if (cur >= allBars.length - 1) { setPlaying(false); return allBars.length - 1; }
-        return cur + 1;
-      });
+      // The interval only advances the cursor ref; the rAF coalescer commits
+      // to React state at most once per frame regardless of tick rate.
+      const cur = cursorRef.current === -1 ? 0 : cursorRef.current;
+      if (cur >= allBars.length - 1) {
+        setPlaying(false);
+        setCursor(allBars.length - 1);
+        return;
+      }
+      setCursor(cur + 1);
     }, ms);
     return stopTimer;
-  }, [playing, speed, allBars.length, stopTimer]);
+  }, [playing, speed, allBars.length, stopTimer, setCursor]);
 
   // ── Controls ─────────────────────────────────────────────────────────────────
   const handleLoad = () => {
     setPlaying(false);
-    setCurrentIdx(-1);
+    setCursor(-1);
     const next = { symbol: selectedSymbol, from, to, speed, loaded: true };
     setSearch(next);
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(next));
   };
 
-  const restart     = () => { setPlaying(false); setCurrentIdx(0); };
-  const stepBack    = () => { setPlaying(false); setCurrentIdx(i => Math.max(0, (i === -1 ? allBars.length - 1 : i) - 1)); };
-  const stepForward = () => { setPlaying(false); setCurrentIdx(i => Math.min(allBars.length - 1, (i === -1 ? allBars.length - 1 : i) + 1)); };
+  const restart     = () => { setPlaying(false); setCursor(0); };
+  const stepBack    = () => { setPlaying(false); setCursor(Math.max(0, (cursorRef.current === -1 ? allBars.length - 1 : cursorRef.current) - 1)); };
+  const stepForward = () => { setPlaying(false); setCursor(Math.min(allBars.length - 1, (cursorRef.current === -1 ? allBars.length - 1 : cursorRef.current) + 1)); };
   const togglePlay  = () => setPlaying(p => !p);
 
   const handleJump = () => {
@@ -441,15 +469,18 @@ function BacktestingPage() {
       if (diff < bestDiff) { bestDiff = diff; best = i; }
     }
     setPlaying(false);
-    setCurrentIdx(best);
+    setCursor(best);
   };
 
   // ── Derived ──────────────────────────────────────────────────────────────────
-  const visibleBars   = allBars.slice(0, resolvedIdx + 1);
+  const visibleCount  = currentIdx === -1 ? allBars.length : resolvedIdx + 1;
   const currentBar    = allBars[resolvedIdx];
   const currentTime   = currentBar?.time ?? "";
-  const visibleTrades = allTrades.filter(
-    t => new Date(t.exitTime).getTime() <= new Date(currentTime).getTime(),
+  const visibleTrades = useMemo(
+    () => allTrades.filter(
+      t => new Date(t.exitTime).getTime() <= new Date(currentTime).getTime(),
+    ),
+    [allTrades, currentTime],
   );
 
   // ── Chart scrollbar state ────────────────────────────────────────────────────
@@ -458,10 +489,6 @@ function BacktestingPage() {
 
   // Reset visible range when switching tabs so chart re-fits
   useEffect(() => { setVisibleRange(null); }, [activeTab]);
-
-  // ── Chart vars for the Data tab only ─────────────────────────────────────────
-  const chartBars   = visibleBars;
-  const chartTrades = visibleTrades;
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
@@ -562,11 +589,11 @@ function BacktestingPage() {
               ) : (
                 <>
                   <div className="min-w-0 flex-1">
-                    <BacktestingChart bars={visibleBars} trades={visibleTrades}
+                    <BacktestingChart bars={allBars} visibleCount={visibleCount} trades={visibleTrades}
                       onRangeChange={handleRangeChange} visibleRange={visibleRange ?? undefined} />
                   </div>
-                  {visibleBars.length > 0 && visibleRange && (
-                    <ChartScrollbar totalBars={visibleBars.length} from={visibleRange.from} to={visibleRange.to}
+                  {visibleCount > 0 && visibleRange && (
+                    <ChartScrollbar totalBars={visibleCount} from={visibleRange.from} to={visibleRange.to}
                       onRangeChange={(f, t) => setVisibleRange({ from: f, to: t })} />
                   )}
                 </>
@@ -667,12 +694,12 @@ function BacktestingPage() {
             {/* Replay controls (only when bars loaded) */}
             {stratBars.length > 0 && (
               <div className="ml-auto flex items-center gap-1">
-                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { setStratPlaying(false); setStratIdx(0); }}><RotateCcw className="h-4 w-4" /></Button>
-                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { setStratPlaying(false); setStratIdx(i => Math.max(0, (i === -1 ? stratBars.length - 1 : i) - 1)); }}><ChevronLeft className="h-4 w-4" /></Button>
+                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { setStratPlaying(false); setStratCursor(0); }}><RotateCcw className="h-4 w-4" /></Button>
+                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { setStratPlaying(false); setStratCursor(Math.max(0, (stratCursorRef.current === -1 ? stratBars.length - 1 : stratCursorRef.current) - 1)); }}><ChevronLeft className="h-4 w-4" /></Button>
                 <Button size="icon" variant="default" className="h-8 w-8" onClick={() => setStratPlaying(p => !p)}>
                   {stratPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                 </Button>
-                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { setStratPlaying(false); setStratIdx(i => Math.min(stratBars.length - 1, (i === -1 ? stratBars.length - 1 : i) + 1)); }}><ChevronRight className="h-4 w-4" /></Button>
+                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { setStratPlaying(false); setStratCursor(Math.min(stratBars.length - 1, (stratCursorRef.current === -1 ? stratBars.length - 1 : stratCursorRef.current) + 1)); }}><ChevronRight className="h-4 w-4" /></Button>
               </div>
             )}
           </div>
@@ -796,15 +823,16 @@ function BacktestingPage() {
                 <>
                   <div className="min-w-0 flex-1">
                     <BacktestingChart
-                      bars={stratVisibleBars}
+                      bars={stratBars}
+                      visibleCount={stratVisibleCount}
                       trades={strategyChartTrades}
                       onRangeChange={handleRangeChange}
                       visibleRange={visibleRange ?? undefined}
                     />
                   </div>
-                  {stratVisibleBars.length > 0 && visibleRange && (
+                  {stratVisibleCount > 0 && visibleRange && (
                     <ChartScrollbar
-                      totalBars={stratVisibleBars.length}
+                      totalBars={stratVisibleCount}
                       from={visibleRange.from}
                       to={visibleRange.to}
                       onRangeChange={(f, t) => setVisibleRange({ from: f, to: t })}
