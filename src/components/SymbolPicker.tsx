@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, X, RefreshCw, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { symbolsApi, normalizeSymbols, type AssetMatch } from "@/lib/api/symbols";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,16 +46,22 @@ export function SymbolPicker({ selected, onSelect, className }: Props) {
 
   const addMut = useMutation({
     mutationFn: (s: string) => symbolsApi.add(s.toUpperCase()),
-    onSuccess: () => {
+    onSuccess: (_data, s) => {
       setAdding("");
       setOpen(false);
       qc.invalidateQueries({ queryKey: ["symbols"] });
+      toast.success(`Symbol ${s.toUpperCase()} added`);
     },
+    onError: (e: Error, s) => toast.error(`Failed to add ${s.toUpperCase()}: ${e.message}`),
   });
 
   const removeMut = useMutation({
     mutationFn: (s: string) => symbolsApi.remove(s),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["symbols"] }),
+    onSuccess: (_data, s) => {
+      qc.invalidateQueries({ queryKey: ["symbols"] });
+      toast.success(`Symbol ${s} removed`);
+    },
+    onError: (e: Error, s) => toast.error(`Failed to remove ${s}: ${e.message}`),
   });
 
   // Close on outside click

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   modelsApi,
   type DeployMode,
@@ -191,8 +192,11 @@ function ModelDetailDrawer({
 
   const deployM = useMutation({
     mutationFn: () => modelsApi.deploy(selected!.name, selected!.version, mode),
-    onSuccess: invalidate,
-    onError: (e: Error) => setActionError(e.message),
+    onSuccess: () => {
+      invalidate();
+      toast.success(`Deployed ${selected!.name} v${selected!.version} (${mode})`);
+    },
+    onError: (e: Error) => { setActionError(e.message); toast.error(`Deploy failed: ${e.message}`); },
   });
 
   const archiveM = useMutation({
@@ -200,8 +204,9 @@ function ModelDetailDrawer({
     onSuccess: () => {
       invalidate();
       onOpenChange(false);
+      toast.success(`Archived ${selected!.name} v${selected!.version}`);
     },
-    onError: (e: Error) => setActionError(e.message),
+    onError: (e: Error) => { setActionError(e.message); toast.error(`Archive failed: ${e.message}`); },
   });
 
   const detail: ModelDetail | undefined = detailQ.data;

@@ -106,6 +106,17 @@
   --sidebar-accent-foreground: oklch(0.95 0.01 240);
   --sidebar-border: oklch(0.22 0.01 240);
   --sidebar-ring: oklch(0.72 0.16 230);
+
+  /* sonner toast tokens → mapped onto the panel palette */
+  --normal-bg: var(--panel);
+  --normal-border: var(--border);
+  --normal-text: var(--foreground);
+  --success-bg: var(--panel);
+  --success-border: var(--bull);
+  --success-text: var(--foreground);
+  --error-bg: var(--panel);
+  --error-border: var(--bear);
+  --error-text: var(--foreground);
 }
 
 @layer base {

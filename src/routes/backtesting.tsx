@@ -15,6 +15,7 @@ import {
   Play,
   RotateCcw,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import { BacktestingChart } from "@/components/BacktestingChart";
 import { ChartScrollbar } from "@/components/ChartScrollbar";
@@ -33,7 +34,7 @@ import {
 import { pricesApi } from "@/lib/api/prices";
 import { symbolsApi, normalizeSymbols } from "@/lib/api/symbols";
 import { strategiesApi } from "@/lib/api/strategies";
-import { tradesApi } from "@/lib/api/trades";
+import { tradesApi, type TradesResult } from "@/lib/api/trades";
 import type { BacktestTrade, BacktestResults } from "@/lib/api/strategies";
 import type { PriceBar, Trade } from "@/lib/api/types";
 import { applyCapitalConstraints, calcBuyHold } from "@/lib/backtest-capital";
@@ -174,13 +175,17 @@ function BacktestingPage() {
   });
 
   // ── Replay trades ────────────────────────────────────────────────────────────
-  const { data: allTrades = [] } = useQuery<Trade[]>({
+  // /api/trades/range is not implemented on the backend (Q10) — rangeSafe never
+  // throws; the Data tab renders the failure reason inline instead of an empty
+  // table that would read as "no trades."
+  const { data: tradesResult } = useQuery<TradesResult>({
     enabled: loaded && !!selectedSymbol,
     queryKey: ["backtesting-trades", selectedSymbol, fromIso, toIso],
-    queryFn: async () => { try { return await tradesApi.range(selectedSymbol, fromIso, toIso); } catch { return []; } },
+    queryFn: () => tradesApi.rangeSafe(selectedSymbol, fromIso, toIso),
     staleTime: Infinity,
     gcTime: 30 * 60 * 1000,
   });
+  const allTrades = tradesResult?.ok ? tradesResult.trades : [];
 
   // ── Strategies ───────────────────────────────────────────────────────────────
   const { data: strategyList = [] } = useQuery({
@@ -213,8 +218,8 @@ function BacktestingPage() {
       new Date(stratFrom).toISOString(),
       new Date(stratTo).toISOString(),
     ),
-    onSuccess: (data) => { pendingHistoryRef.current = true; setRunResults(data); setRunError(null); setStratIdx(-1); setStratPlaying(false); },
-    onError:   (err: Error) => setRunError(err.message),
+    onSuccess: (data) => { pendingHistoryRef.current = true; setRunResults(data); setRunError(null); setStratIdx(-1); setStratPlaying(false); toast.success(`Backtest complete — ${selectedStrategy} on ${stratSymbol}`); },
+    onError:   (err: Error) => { setRunError(err.message); toast.error(`Backtest failed: ${err.message}`); },
   });
 
   const { data: strategyDetail } = useQuery({
@@ -567,7 +572,15 @@ function BacktestingPage() {
                 </>
               )}
             </div>
-            <TradeLog trades={visibleTrades} />
+            {tradesResult && !tradesResult.ok ? (
+              <div className="flex w-[260px] shrink-0 items-center justify-center rounded-md border border-border bg-card p-3 text-center text-xs text-muted-foreground">
+                {tradesResult.reason === "endpoint-missing"
+                  ? "Trade data unavailable — /api/trades/range is not implemented on the backend."
+                  : "Trade data unavailable — could not reach the backend."}
+              </div>
+            ) : (
+              <TradeLog trades={visibleTrades} />
+            )}
           </div>
         </>
       )}

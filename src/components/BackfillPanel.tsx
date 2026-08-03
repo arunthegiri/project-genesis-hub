@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, subMonths } from "date-fns";
 import { ChevronDown, ChevronRight, Loader2, RotateCcw, X } from "lucide-react";
+import { toast } from "sonner";
 import { pricesApi } from "@/lib/api/prices";
 import type { BackfillJob, BackfillStatus } from "@/lib/api/types";
 import { Button } from "@/components/ui/button";
@@ -54,17 +55,20 @@ export function BackfillPanel({ symbol }: Props) {
       const toIso   = new Date(to).toISOString();
       return pricesApi.backfillAsync(symbol, fromIso, toIso);
     },
-    onSuccess: invalidate,
+    onSuccess: () => { invalidate(); toast.success(`Backfill started for ${symbol}`); },
+    onError: (e: Error) => toast.error(`Backfill failed: ${e.message}`),
   });
 
   const cancelMut = useMutation({
     mutationFn: (jobId: string) => pricesApi.cancelJob(jobId),
-    onSuccess: invalidate,
+    onSuccess: () => { invalidate(); toast.success("Backfill job cancelled"); },
+    onError: (e: Error) => toast.error(`Cancel failed: ${e.message}`),
   });
 
   const retryMut = useMutation({
     mutationFn: (jobId: string) => pricesApi.retryJob(jobId),
-    onSuccess: invalidate,
+    onSuccess: () => { invalidate(); toast.success("Backfill job retried"); },
+    onError: (e: Error) => toast.error(`Retry failed: ${e.message}`),
   });
 
   return (

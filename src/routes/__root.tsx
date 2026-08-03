@@ -1,10 +1,13 @@
 import { Outlet, createRootRouteWithContext, HeadContent, Scripts } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { useEffect } from "react";
+import { Toaster } from "sonner";
 
 import appCss from "../styles.css?url";
 import type { RouterContext } from "../router";
 import { AppSidebar } from "@/components/AppSidebar";
+import { runHealthProbe } from "@/lib/api/health-probe";
 
 function NotFoundComponent() {
   return (
@@ -56,6 +59,13 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+
+  // Boot-time endpoint health probe (client-only; results feed inline
+  // "endpoint missing" notices and, later, the status rail — never toasts).
+  useEffect(() => {
+    runHealthProbe();
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <div className="flex h-screen w-full overflow-hidden bg-background">
@@ -64,6 +74,7 @@ function RootComponent() {
           <Outlet />
         </main>
       </div>
+      <Toaster theme="dark" position="bottom-right" />
     </QueryClientProvider>
   );
 }
