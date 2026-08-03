@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createChart,
+  PriceLineSource,
+  PriceScaleMode,
   type IChartApi,
   type ISeriesApi,
+  type MouseEventParams,
   type SeriesMarker,
   type Time,
 } from "lightweight-charts";
@@ -14,6 +17,7 @@ import { useChartBase, toTs, CHART_OPTIONS } from "@/hooks/useChartBase";
 import { useRafCoalescer } from "@/hooks/useRafCoalescer";
 import type { InteractionStore } from "@/lib/stores/chart-interaction";
 import { CHART_COLORS } from "@/lib/chart-colors";
+import { ChartLegend, type ChartLegendHandle, type LegendIndicatorRow } from "@/components/ChartLegend";
 
 export type ChartType = "candlestick" | "line" | "bar" | "area";
 
@@ -92,6 +96,9 @@ export function PriceChart({
     hist: ISeriesApi<"Histogram">;
     container: HTMLDivElement;
   } | null>(null);
+  const hostRef          = useRef<HTMLDivElement>(null);
+  const volumeSeriesRef  = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const legendRef        = useRef<ChartLegendHandle>(null);
 
   // Stable refs to latest callbacks — avoids re-subscribing on every render
   const onAutoIntervalRef  = useRef(onAutoInterval);
@@ -185,6 +192,65 @@ export function PriceChart({
 
   const rsiEnabled  = !!indicators.rsi  && !isComparing;
   const macdEnabled = !!indicators.macd && !isComparing;
+
+  // ── §8 legend lookups — bars keyed by time seconds (crosshair param.time is
+  // a UTCTimestamp), and per-overlay value maps for the indicator rows. Empty
+  // in compare mode (overlaySpecs already is), so no indicator rows render.
+  const barByTime = useMemo(() => {
+    const m = new Map<number, PriceBar>();
+    bars.forEach((b, i) => m.set(times[i] as number, b));
+    return m;
+  }, [bars, times]);
+  const overlayValueMaps = useMemo(
+    () => overlaySpecs.map(s => {
+      const values = new Map<number, number>();
+      s.data.forEach(d => values.set(d.time as number, d.value));
+      return { title: s.title, color: s.color, values };
+    }),
+    [overlaySpecs],
+  );
+  const barByTimeRef        = useRef(barByTime);
+  const overlayValueMapsRef = useRef(overlayValueMaps);
+  useEffect(() => { barByTimeRef.current = barByTime; }, [barByTime]);
+  useEffect(() => { overlayValueMapsRef.current = overlayValueMaps; }, [overlayValueMaps]);
+
+  // Legend value writes are imperative DOM mutations, coalesced to one rAF
+  // flush per frame — never setState per mousemove.
+  const pushLegend = useRafCoalescer((payload: { bar: PriceBar | null; rows: LegendIndicatorRow[] }) => {
+    legendRef.current?.write(payload.bar, payload.rows);
+  });
+  const legendRowsAt = (t: number): LegendIndicatorRow[] => {
+    const rows: LegendIndicatorRow[] = [];
+    for (const s of overlayValueMapsRef.current) {
+      const v = s.values.get(t);
+      if (v !== undefined) rows.push({ title: s.title, value: v, color: s.color });
+    }
+    return rows;
+  };
+
+  // Seed the legend with the latest bar so it's populated before the first hover.
+  useEffect(() => {
+    const bar = bars.length ? bars[bars.length - 1] : null;
+    pushLegend({ bar, rows: bar ? legendRowsAt(toTs(bar.time) as number) : [] });
+  }, [bars, overlayValueMaps, pushLegend]);
+
+  // Crosshair: bar under cursor from the local map; mouse-out (or a whitespace
+  // time with no bar) falls back to the LAST bar — never blank. Also feeds the
+  // §7 crosshair channel.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const handler = (param: MouseEventParams) => {
+      const t = param.time !== undefined ? (param.time as number) : null;
+      const bs = barsRef.current;
+      const last = bs.length ? bs[bs.length - 1] : null;
+      const bar = t !== null ? (barByTimeRef.current.get(t) ?? last) : last;
+      pushLegend({ bar, rows: bar ? legendRowsAt(toTs(bar.time) as number) : [] });
+      interactionStore.set({ crosshair: t !== null ? { time: t } : null });
+    };
+    chart.subscribeCrosshairMove(handler);
+    return () => chart.unsubscribeCrosshairMove(handler);
+  }, [interactionStore, pushLegend]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cleanup series refs and sub-panes on unmount (chart itself cleaned up by useChartBase)
   useEffect(() => () => {
@@ -283,6 +349,13 @@ export function PriceChart({
     }
     mainSeriesRef.current = main;
 
+    // §9: leave the bottom ~30% of the pane to the volume overlay; last-price
+    // line + axis tag from the last bar (compare mode keeps its own tags).
+    main.priceScale().applyOptions({ scaleMargins: { top: 0.1, bottom: 0.3 } });
+    if (!isComparing) {
+      main.applyOptions({ priceLineVisible: true, lastValueVisible: true, priceLineSource: PriceLineSource.LastBar });
+    }
+
     return () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       try { chart.removeSeries(main as ISeriesApi<any>); } catch {}
@@ -321,6 +394,54 @@ export function PriceChart({
       ts.fitContent();
     }
   }, [bars, times, chartType, isComparing]);
+
+  // ── Volume overlay LIFECYCLE (§9) — a blank-priceScale histogram pinned to
+  // the bottom of the price pane (v4 has no panes; the blank overlay scale is
+  // the documented approach). Created once, like the main series.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const vol = chart.addHistogramSeries({
+      priceScaleId: "", // blank = overlay, no axis
+      priceFormat: { type: "volume" },
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
+    vol.priceScale().applyOptions({ scaleMargins: { top: 0.7, bottom: 0 } });
+    volumeSeriesRef.current = vol;
+    return () => {
+      try { chart.removeSeries(vol); } catch {}
+      if (volumeSeriesRef.current === vol) volumeSeriesRef.current = null;
+    };
+  }, []);
+
+  // Volume DATA — own effect, never touches the time scale. Hidden in compare
+  // mode (percent-normalized data has no volume meaning).
+  useEffect(() => {
+    const vol = volumeSeriesRef.current;
+    if (!vol) return;
+    if (isComparing || !bars.length) { vol.setData([]); return; }
+    vol.setData(bars.map((b, i) => ({
+      time: times[i] as Time,
+      value: b.volume,
+      color: b.close >= b.open ? CHART_COLORS.bullDim : CHART_COLORS.bearDim,
+    })));
+  }, [bars, times, isComparing]);
+
+  // ── Scale-mode toggle (§9) — A/L/% applied to the right price scale. In
+  // compare mode the series are already %-normalized: Percentage is forced and
+  // the toggle is hidden; Normal is restored on exit. Log is disabled while
+  // the MACD histogram (crosses zero) is visible.
+  const [scaleMode, setScaleMode] = useState<PriceScaleMode>(PriceScaleMode.Normal);
+  useEffect(() => {
+    chartRef.current?.priceScale("right").applyOptions({ mode: scaleMode });
+  }, [scaleMode]);
+  useEffect(() => {
+    setScaleMode(isComparing ? PriceScaleMode.Percentage : PriceScaleMode.Normal);
+  }, [isComparing]);
+  useEffect(() => {
+    if (macdEnabled && scaleMode === PriceScaleMode.Logarithmic) setScaleMode(PriceScaleMode.Normal);
+  }, [macdEnabled, scaleMode]);
 
   // ── Indicator overlays — recreate only when the overlay SET changes; else
   // just push new data into the existing line series (no flicker).
@@ -374,7 +495,7 @@ export function PriceChart({
 
   // ── RSI sub-pane lifecycle — create/destroy only on enable toggle.
   useEffect(() => {
-    const parent = containerRef.current?.parentElement;
+    const parent = hostRef.current;
     if (!parent) return;
     if (rsiEnabled && !rsiSubRef.current) {
       const div = document.createElement("div");
@@ -399,7 +520,7 @@ export function PriceChart({
 
   // ── MACD sub-pane lifecycle — create/destroy only on enable toggle.
   useEffect(() => {
-    const parent = containerRef.current?.parentElement;
+    const parent = hostRef.current;
     if (!parent) return;
     if (macdEnabled && !macdSubRef.current) {
       const div = document.createElement("div");
@@ -467,8 +588,31 @@ export function PriceChart({
   }, [trades, bars, chartType, isComparing]);
 
   return (
-    <div className="flex flex-col h-full" style={{ height }}>
-      <div ref={containerRef} className="w-full flex-1 min-h-0" />
+    <div ref={hostRef} className="flex flex-col h-full" style={{ height }}>
+      <div className="relative w-full flex-1 min-h-0">
+        <div ref={containerRef} className="w-full h-full" />
+        <ChartLegend ref={legendRef} />
+        {!isComparing && (
+          <div className="absolute bottom-8 right-16 z-10 flex overflow-hidden rounded border border-border bg-card/80">
+            {([
+              { label: "A", mode: PriceScaleMode.Normal,      title: "Arithmetic scale", disabled: false },
+              { label: "L", mode: PriceScaleMode.Logarithmic, title: "Logarithmic scale", disabled: macdEnabled },
+              { label: "%", mode: PriceScaleMode.Percentage,  title: "Percentage scale", disabled: false },
+            ] as const).map(m => (
+              <button
+                key={m.label}
+                type="button"
+                title={m.title}
+                disabled={m.disabled}
+                onClick={() => setScaleMode(m.mode)}
+                className={`px-1.5 py-0.5 font-mono text-[10px] disabled:opacity-40 ${scaleMode === m.mode ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
