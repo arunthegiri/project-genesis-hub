@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { keepPreviousData, useQuery, useQueries } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
@@ -35,6 +35,7 @@ import { aggregatePriceBars, intervalForSpan } from "@/lib/price-bars";
 import { intervalMs, snapRange } from "@/lib/interval-policy";
 import { CHART_COLORS } from "@/lib/chart-colors";
 import { createInteractionStore, type InteractionStore } from "@/lib/stores/chart-interaction";
+import { setPanelLastBar } from "@/lib/stores/last-bar-registry";
 import { CHARTS_UI_COOKIE, layoutCookieStorage, mergeUiCookie, panelUiCookie, readUiCookieJson, writeUiCookie } from "@/lib/cookie-state";
 import {
   PanelSkeleton,
@@ -205,6 +206,23 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
   const interactionStoreRef = useRef<InteractionStore | null>(null);
   if (!interactionStoreRef.current) interactionStoreRef.current = createInteractionStore();
   const interactionStore = interactionStoreRef.current;
+
+  // §15: mirror this panel's lastBar into the status-rail registry, keyed by
+  // panel instance (the rail merges entries per symbol). lastBar updates are
+  // rare (new bar close / data swap), so the extra subscription is cheap.
+  const panelId = useId();
+  const lastBar = useSyncExternalStore(
+    interactionStore.subscribe,
+    () => interactionStore.getSnapshot().lastBar,
+    () => null,
+  );
+  useEffect(() => {
+    setPanelLastBar(
+      panelId,
+      lastBar ? { symbol: selectedSymbol, interval, timeSec: lastBar.time } : null,
+    );
+    return () => setPanelLastBar(panelId, null);
+  }, [panelId, lastBar, selectedSymbol, interval]);
 
   // Vertical handle — pointer-capture drag grows/shrinks the whole region;
   // arrow keys resize in 24px steps (WAI-ARIA separator keyboard pattern).

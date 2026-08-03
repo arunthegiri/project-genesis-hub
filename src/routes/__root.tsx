@@ -7,6 +7,7 @@ import { Toaster } from "sonner";
 import appCss from "../styles.css?url";
 import type { RouterContext } from "../router";
 import { AppSidebar } from "@/components/AppSidebar";
+import { StatusRail } from "@/components/StatusRail";
 import { runHealthProbe } from "@/lib/api/health-probe";
 import { startLoafInstrumentation } from "@/lib/perf/loaf";
 
@@ -73,11 +74,14 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="flex h-screen w-full overflow-hidden bg-background">
-        <AppSidebar />
-        <main className="flex-1 overflow-auto">
-          <Outlet />
-        </main>
+      <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
+        <div className="flex min-h-0 flex-1">
+          <AppSidebar />
+          <main className="flex-1 overflow-auto">
+            <Outlet />
+          </main>
+        </div>
+        <StatusRail />
       </div>
       <Toaster theme="dark" position="bottom-right" />
     </QueryClientProvider>
