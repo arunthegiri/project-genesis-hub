@@ -71,6 +71,8 @@ services:
         condition: service_healthy
     command: >
       bash -c "pip install -e /home/jovyan/ananke-sdk &&
+               mkdir -p /opt/conda/share/jupyter/lab/settings &&
+               printf '%s' '{\"@jupyterlab/apputils-extension:themes\":{\"theme\":\"JupyterLab Dark\"}}' > /opt/conda/share/jupyter/lab/settings/overrides.json &&
                start-notebook.sh --IdentityProvider.token='' --ServerApp.password='' --ServerApp.allow_origin_regex='^http://localhost:[0-9]+$$' --ServerApp.allow_credentials=True"
 
 volumes:
