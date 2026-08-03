@@ -8,7 +8,9 @@ import appCss from "../styles.css?url";
 import type { RouterContext } from "../router";
 import { AppSidebar } from "@/components/AppSidebar";
 import { StatusRail } from "@/components/StatusRail";
+import { CommandPalette } from "@/components/CommandPalette";
 import { runHealthProbe } from "@/lib/api/health-probe";
+import { togglePalette } from "@/lib/command-registry";
 import { startLoafInstrumentation } from "@/lib/perf/loaf";
 
 function NotFoundComponent() {
@@ -72,6 +74,19 @@ function RootComponent() {
   // perf budgets; no-ops in production and unsupported browsers.
   useEffect(() => startLoafInstrumentation(), []);
 
+  // Global ⌘K / Ctrl+K toggles the command palette (§17). Client-only effect;
+  // preventDefault beats the browser's own search/shortcut bindings.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        togglePalette();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
@@ -83,6 +98,7 @@ function RootComponent() {
         </div>
         <StatusRail />
       </div>
+      <CommandPalette />
       <Toaster theme="dark" position="bottom-right" />
     </QueryClientProvider>
   );

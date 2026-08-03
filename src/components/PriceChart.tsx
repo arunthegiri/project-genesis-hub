@@ -15,6 +15,7 @@ import { sma, ema, bollinger, rsi, macd } from "@/lib/indicators";
 import { intervalForSpan } from "@/lib/price-bars";
 import { useChartBase, toTs, CHART_OPTIONS } from "@/hooks/useChartBase";
 import { useRafCoalescer } from "@/hooks/useRafCoalescer";
+import { useChartHotkeys, type ChartHotkeyHandlers } from "@/hooks/useHotkeys";
 import type { InteractionStore } from "@/lib/stores/chart-interaction";
 import { CHART_COLORS } from "@/lib/chart-colors";
 import { ChartSyncGroup } from "@/lib/chart-sync";
@@ -55,10 +56,19 @@ interface Props {
   viewportIntent?: ViewportIntent;
   /** Fired on user pan/zoom gestures (wheel / pointer) — never on programmatic range changes. */
   onViewportGesture?: () => void;
+  /** Panel symbol — used to focus the chart surface on symbol load (§17). */
+  symbol?: string;
+  /** §17 V hotkey / palette command — volume is otherwise always-on since §9. */
+  showVolume?: boolean;
+  /** §17 panel-owned hotkey actions; onStep is implemented here on the chart. */
+  hotkeys?: Omit<ChartHotkeyHandlers, "onStep">;
 }
 
 type LinePoint = { time: Time; value: number };
 type HistPoint = { time: Time; value: number; color: string };
+
+// §17 footer hint "seen" flag — shared across all chart instances.
+const HINT_SEEN_KEY = "ananke.chart-hint-seen";
 
 // A single indicator overlay: a stable `key` identifies its shape so series are
 // only recreated when the *set* of overlays changes (an indicator toggled), not
@@ -81,6 +91,9 @@ export function PriceChart({
   interactionStore,
   viewportIntent = "fit",
   onViewportGesture,
+  symbol,
+  showVolume = true,
+  hotkeys,
 }: Props) {
   const containerRef   = useRef<HTMLDivElement>(null);
   const { chartRef }   = useChartBase(containerRef);
@@ -140,6 +153,51 @@ export function PriceChart({
       el.removeEventListener("pointerdown", gesture);
     };
   }, []);
+
+  // ── §17 hotkeys, focus, footer hint ──────────────────────────────────────
+  // The chart surface is focusable (tabIndex on the container below): it
+  // takes focus on click and on symbol load so single-keys work immediately.
+  useEffect(() => {
+    if (symbol) containerRef.current?.focus({ preventScroll: true });
+  }, [symbol]);
+
+  // Footer hint line — shown until the first hotkey use, then faded out and
+  // remembered in localStorage ("seen" flag).
+  const [hint, setHint] = useState<"hidden" | "visible" | "fading">("hidden");
+  useEffect(() => {
+    try {
+      if (!window.localStorage.getItem(HINT_SEEN_KEY)) setHint("visible");
+    } catch { /* private mode — hint stays hidden rather than nagging */ }
+  }, []);
+  const dismissHint = () => {
+    if (hint !== "visible") return;
+    try { window.localStorage.setItem(HINT_SEEN_KEY, "1"); } catch { /* best-effort */ }
+    setHint("fading");
+    setTimeout(() => setHint("hidden"), 800);
+  };
+
+  // Arrow-step: shift the visible logical range one bar and anchor the
+  // viewport, exactly like a small pan gesture.
+  const handleStep = (dir: 1 | -1) => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const ts = chart.timeScale();
+    const r = ts.getVisibleLogicalRange();
+    if (!r) return;
+    ts.setVisibleLogicalRange({ from: r.from + dir, to: r.to + dir });
+    onGestureRef.current?.();
+  };
+
+  useChartHotkeys(
+    containerRef,
+    {
+      onInterval: i => hotkeys?.onInterval(i),
+      onResetViewport: () => hotkeys?.onResetViewport(),
+      onToggleVolume: () => hotkeys?.onToggleVolume(),
+      onStep: handleStep,
+    },
+    { onUse: dismissHint },
+  );
 
   const isComparing = compareData.length > 0;
 
@@ -424,17 +482,26 @@ export function PriceChart({
   }, []);
 
   // Volume DATA — own effect, never touches the time scale. Hidden in compare
-  // mode (percent-normalized data has no volume meaning).
+  // mode (percent-normalized data has no volume meaning) and by the §17
+  // showVolume toggle (V hotkey / palette command).
   useEffect(() => {
     const vol = volumeSeriesRef.current;
     if (!vol) return;
-    if (isComparing || !bars.length) { vol.setData([]); return; }
+    if (isComparing || !bars.length || !showVolume) { vol.setData([]); return; }
     vol.setData(bars.map((b, i) => ({
       time: times[i] as Time,
       value: b.volume,
       color: b.close >= b.open ? CHART_COLORS.bullDim : CHART_COLORS.bearDim,
     })));
-  }, [bars, times, isComparing]);
+  }, [bars, times, isComparing, showVolume]);
+
+  // Volume toggle also releases the bottom band the §9 margins reserve for
+  // the overlay, so hiding volume gives the price series its space back.
+  useEffect(() => {
+    mainSeriesRef.current?.priceScale().applyOptions({
+      scaleMargins: { top: 0.1, bottom: showVolume ? 0.3 : 0.03 },
+    });
+  }, [showVolume]);
 
   // ── Scale-mode toggle (§9) — A/L/% applied to the right price scale. In
   // compare mode the series are already %-normalized: Percentage is forced and
@@ -590,8 +657,23 @@ export function PriceChart({
   return (
     <div ref={hostRef} className="flex flex-col h-full" style={{ height }}>
       <div className="relative w-full flex-1 min-h-0">
-        <div ref={containerRef} className="w-full h-full" />
+        {/* Chart surface — focusable so §17 single-key hotkeys have a scope.
+            Clicking anywhere on the chart focuses it; symbol load also
+            focuses it (effect above). */}
+        <div
+          ref={containerRef}
+          className="w-full h-full outline-none"
+          tabIndex={0}
+          onPointerDown={() => containerRef.current?.focus({ preventScroll: true })}
+        />
         <ChartLegend ref={legendRef} />
+        {hint !== "hidden" && (
+          <div
+            className={`pointer-events-none absolute bottom-1 left-1/2 -translate-x-1/2 whitespace-nowrap font-mono text-[10px] text-muted-foreground/60 transition-opacity duration-700 ${hint === "fading" ? "opacity-0" : "opacity-100"}`}
+          >
+            ←/→ step · R reset · / indicators · type a symbol
+          </div>
+        )}
         {!isComparing && (
           <div className="absolute bottom-8 right-16 z-10 flex overflow-hidden rounded border border-border bg-card/80">
             {([

@@ -34,6 +34,8 @@ import {
 import { aggregatePriceBars, intervalForSpan } from "@/lib/price-bars";
 import { intervalMs, snapRange } from "@/lib/interval-policy";
 import { CHART_COLORS } from "@/lib/chart-colors";
+import { registerCommands } from "@/lib/command-registry";
+import { registerChartPanel, setActiveChartPanel } from "@/lib/active-chart-panel";
 import { createInteractionStore, type InteractionStore } from "@/lib/stores/chart-interaction";
 import { setPanelLastBar } from "@/lib/stores/last-bar-registry";
 import { CHARTS_UI_COOKIE, layoutCookieStorage, mergeUiCookie, panelUiCookie, readUiCookieJson, writeUiCookie } from "@/lib/cookie-state";
@@ -87,6 +89,7 @@ interface PanelUiCookie {
   showBB?: boolean;
   showRSI?: boolean;
   showMACD?: boolean;
+  showVolume?: boolean;
   strategy?: string;
 }
 
@@ -114,6 +117,7 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
   const [showBB,   setShowBB]         = useState<boolean>(false);
   const [showRSI,  setShowRSI]        = useState<boolean>(false);
   const [showMACD, setShowMACD]       = useState<boolean>(false);
+  const [showVolume, setShowVolume]   = useState<boolean>(true); // §17 V toggle (volume is on by default since §9)
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
 
   // Viewport & interval intent state machine (build doc §5). Explicit user
@@ -161,6 +165,7 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
     if (typeof s.showBB === "boolean") setShowBB(s.showBB);
     if (typeof s.showRSI === "boolean") setShowRSI(s.showRSI);
     if (typeof s.showMACD === "boolean") setShowMACD(s.showMACD);
+    if (typeof s.showVolume === "boolean") setShowVolume(s.showVolume);
     if (typeof s.strategy === "string") setSelectedStrategy(s.strategy);
     restoredRef.current = true;
     setMounted(true);
@@ -200,6 +205,74 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
     setViewportIntent("fit");
     onSymbolChange?.(s);
   }, [onSymbolChange]);
+
+  // §17: this panel is the target of palette symbol jumps / chart hotkeys
+  // whenever the user last interacted with it (pointerdown anywhere inside).
+  const panelKey = persistKey ?? "panel";
+  useEffect(() => {
+    return registerChartPanel(panelKey, { setSymbol: handleSymbolChange });
+  }, [panelKey, handleSymbolChange]);
+
+  // §17: per-panel palette commands. IDs are stable (keyed by persistKey) so
+  // recents survive the label churn when the symbol changes. Interval picks
+  // go through handleIntervalSelect — the same §5 pin path as the dropdown.
+  useEffect(() => {
+    const suffix = selectedSymbol ? ` — ${selectedSymbol}` : "";
+    const toggles: [string, string, string[], React.Dispatch<React.SetStateAction<boolean>>][] = [
+      ["toggle-sma", "Toggle SMA", ["sma", "moving average"], setShowSMA],
+      ["toggle-ema", "Toggle EMA", ["ema", "moving average"], setShowEMA],
+      ["toggle-bb", "Toggle Bollinger Bands", ["bb", "bollinger"], setShowBB],
+      ["toggle-rsi", "Toggle RSI", ["rsi", "relative strength"], setShowRSI],
+      ["toggle-macd", "Toggle MACD", ["macd", "convergence"], setShowMACD],
+    ];
+    const intervals: [string, string, string, Interval][] = [
+      ["interval-1m", "Set interval 1m", "1", "1Min"],
+      ["interval-5m", "Set interval 5m", "5", "5Min"],
+      ["interval-15m", "Set interval 15m", "15", "15Min"],
+      ["interval-1h", "Set interval 1h", "H", "1Hour"],
+      ["interval-1d", "Set interval 1d", "D", "1Day"],
+    ];
+    return registerCommands([
+      ...toggles.map(([id, label, keywords, set]) => ({
+        id: `chart:${panelKey}:${id}`,
+        label: `${label}${suffix}`,
+        keywords,
+        category: "Indicators",
+        action: () => set(v => !v),
+      })),
+      ...intervals.map(([id, label, shortcut, value]) => ({
+        id: `chart:${panelKey}:${id}`,
+        label: `${label}${suffix}`,
+        keywords: ["interval", label],
+        category: "Interval",
+        shortcut,
+        action: () => handleIntervalSelect(value),
+      })),
+      {
+        id: `chart:${panelKey}:reset-viewport`,
+        label: `Reset viewport${suffix}`,
+        keywords: ["reset", "fit", "zoom"],
+        category: "Chart",
+        shortcut: "R",
+        action: () => setViewportIntent("fit"),
+      },
+      {
+        id: `chart:${panelKey}:toggle-volume`,
+        label: `Toggle volume${suffix}`,
+        keywords: ["volume", "histogram"],
+        category: "Chart",
+        shortcut: "V",
+        action: () => setShowVolume(v => !v),
+      },
+    ]);
+  }, [panelKey, selectedSymbol, handleIntervalSelect]);
+
+  // §17: chart-surface hotkeys act on THIS panel's §5 state machine.
+  const chartHotkeys = useMemo(() => ({
+    onInterval: handleIntervalSelect,
+    onResetViewport: () => setViewportIntent("fit"),
+    onToggleVolume: () => setShowVolume(v => !v),
+  }), [handleIntervalSelect]);
 
   // Interaction store (§7): visible range / crosshair / lastBar live OUTSIDE
   // React state so panning never re-renders this panel. One store per panel.
@@ -266,10 +339,10 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
     writeUiCookie(panelUiCookie(persistKey), JSON.stringify({
       symbol: selectedSymbol, startDate, endDate, interval, rangePreset, chartType,
       compareSymbols, showData,
-      showSMA, showEMA, showBB, showRSI, showMACD, strategy: selectedStrategy,
+      showSMA, showEMA, showBB, showRSI, showMACD, showVolume, strategy: selectedStrategy,
     }));
   }, [persistKey, selectedSymbol, startDate, endDate, interval, rangePreset, chartType,
-      compareSymbols, showData, showSMA, showEMA, showBB, showRSI, showMACD,
+      compareSymbols, showData, showSMA, showEMA, showBB, showRSI, showMACD, showVolume,
       selectedStrategy]);
 
   const { data: strategyDetail } = useQuery({
@@ -395,8 +468,10 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
   }
 
   return (
-    <div className="flex flex-col rounded-md border border-border bg-card">
-      {/* Panel header */}
+    <div
+      className="flex flex-col rounded-md border border-border bg-card"
+      onPointerDownCapture={() => setActiveChartPanel(panelKey)}
+    >      {/* Panel header */}
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
         <Select value={selectedSymbol} onValueChange={handleSymbolChange}>
           <SelectTrigger className="h-8 w-36 font-mono text-sm">
@@ -612,6 +687,9 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
                       interactionStore={interactionStore}
                       viewportIntent={viewportIntent}
                       onViewportGesture={() => setViewportIntent("anchored")}
+                      symbol={selectedSymbol}
+                      showVolume={showVolume}
+                      hotkeys={chartHotkeys}
                     />
                   )}
                   {isFetching && selectedSymbol && (

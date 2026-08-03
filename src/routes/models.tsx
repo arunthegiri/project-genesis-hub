@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -8,6 +8,7 @@ import {
   type ModelDetail,
   type ModelSummary,
 } from "@/lib/api/models";
+import { registerCommands } from "@/lib/command-registry";
 import {
   Sheet,
   SheetContent,
@@ -213,6 +214,32 @@ function ModelDetailDrawer({
   const perf = detail?.performance;
   const contract = detail?.contract;
   const busy = deployM.isPending || archiveM.isPending;
+
+  // §17: palette commands for the open drawer ("Deploy version…"). Registered
+  // only while a model is selected; mutate functions are referentially
+  // stable, so the actions never go stale.
+  const { mutate: deployMutate } = deployM;
+  const { mutate: archiveMutate } = archiveM;
+  useEffect(() => {
+    if (!open || !selected) return;
+    const name = `${selected.name} ${selected.version}`;
+    return registerCommands([
+      {
+        id: `models:deploy:${selected.name}:${selected.version}`,
+        label: `Deploy ${name} (${mode})`,
+        keywords: ["deploy", selected.name, mode],
+        category: "Models",
+        action: () => deployMutate(),
+      },
+      {
+        id: `models:archive:${selected.name}:${selected.version}`,
+        label: `Archive ${name}`,
+        keywords: ["archive", selected.name],
+        category: "Models",
+        action: () => archiveMutate(),
+      },
+    ]);
+  }, [open, selected, mode, deployMutate, archiveMutate]);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>

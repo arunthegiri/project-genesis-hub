@@ -5,6 +5,7 @@ import { Plus } from "lucide-react";
 import { SymbolPicker } from "@/components/SymbolPicker";
 import { ChartPanel } from "@/components/ChartPanel";
 import { Button } from "@/components/ui/button";
+import { takePendingSymbol } from "@/lib/active-chart-panel";
 import {
   CHARTS_UI_COOKIE,
   mergeUiCookie,
@@ -73,6 +74,14 @@ function ChartsPage() {
       addPanel(sym);
     }
   };
+
+  // §17: a palette symbol jump made off-route stashes a pending symbol and
+  // navigates here; consume it once through the normal select path.
+  useEffect(() => {
+    const sym = takePendingSymbol();
+    if (sym) handleSymbolSelect(sym);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="grid h-full grid-cols-[220px_1fr] gap-3 p-3">

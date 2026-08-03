@@ -47,9 +47,12 @@ src/
   lib/date-range.ts ← preset ranges (1D/5D/1M…), UTC conversion for API params
   lib/datetime.ts   ← datetime-local input → ISO UTC
   lib/python-export.ts ← generates pandas + SQLAlchemy snippets mirroring the UI query
+  lib/command-registry.ts ← §17 command registry (registerCommands on mount/cleanup, stable IDs, recents in localStorage) + palette open state + hotkey scope stack
+  lib/active-chart-panel.ts ← §17 active-panel signal: palette symbol jumps apply to the last-interacted ChartPanel; off "/", a pending symbol is stashed and consumed by the charts page
   components/
-    PriceChart.tsx  ← lightweight-charts wrapper; main chart + sub-panes (RSI, MACD)
-    ChartPanel.tsx  ← chart panel with controls, indicator toggles, data panel (react-resizable-panels v4 Group/Panel/Separator; split layout cookie-persisted via useDefaultLayout + §13 cookie storage)
+    PriceChart.tsx  ← lightweight-charts wrapper; main chart + sub-panes (RSI, MACD); focusable chart surface with §17 hotkeys + footer hint
+    ChartPanel.tsx  ← chart panel with controls, indicator toggles, data panel (react-resizable-panels v4 Group/Panel/Separator; split layout cookie-persisted via useDefaultLayout + §13 cookie storage); registers its own palette commands
+    CommandPalette.tsx ← §17 ⌘K palette on cmdk (local commands + debounced symbol jump)
     BacktestingChart.tsx ← candlestick chart for backtesting replay
     EquityChart.tsx ← equity curve chart
     SymbolPicker.tsx
@@ -60,8 +63,9 @@ src/
     ui/             ← shadcn/ui components (don't edit manually — use shadcn CLI)
   hooks/
     useChartBase.ts ← shared chart lifecycle: CHART_OPTIONS, toTs, chart create/destroy
+    useHotkeys.ts   ← §17 scoped chart single-keys (1/5/15/H/D interval pin, R reset, V volume, / indicators, bare letter → symbol jump)
   routes/
-    __root.tsx      ← layout shell: QueryClientProvider + AppSidebar + <Outlet>
+    __root.tsx      ← layout shell: QueryClientProvider + AppSidebar + <Outlet> + global ⌘K handler & CommandPalette
     index.tsx       → /            Charts page (live)
     data.tsx        → /data        Raw data explorer with virtualised table (live)
     backtesting.tsx → /backtesting Backtesting replay + strategy runner (live)

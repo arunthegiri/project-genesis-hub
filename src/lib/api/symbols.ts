@@ -12,8 +12,8 @@ export const symbolsApi = {
     apiFetch<Symbol>("/api/symbols", { method: "POST", body: { symbol } }),
   remove: (symbol: string) =>
     apiFetch<void>(`/api/symbols/${encodeURIComponent(symbol)}`, { method: "DELETE" }),
-  search: (q: string) =>
-    apiFetch<AssetMatch[]>(`/api/symbols/search`, { query: { q } }),
+  search: (q: string, signal?: AbortSignal) =>
+    apiFetch<AssetMatch[]>(`/api/symbols/search`, { query: { q }, signal }),
 };
 
 /** Normalize backend response (could be string[], {symbol}[], or wrapped {symbols:[...]}) */
