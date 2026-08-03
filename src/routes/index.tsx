@@ -5,8 +5,33 @@ import { Plus } from "lucide-react";
 import { SymbolPicker } from "@/components/SymbolPicker";
 import { ChartPanel } from "@/components/ChartPanel";
 import { Button } from "@/components/ui/button";
+import {
+  CHARTS_UI_COOKIE,
+  mergeUiCookie,
+  readUiCookieServerFn,
+} from "@/lib/cookie-state";
+
+interface PanelSpec { id: number; symbol?: string }
+interface ChartsUiCookie {
+  panels?: PanelSpec[];
+  chartHeight?: number;
+}
 
 export const Route = createFileRoute("/")({
+  // §13: the panel set + chart height are workspace arrangement — they live in
+  // the ui.charts cookie. The loader reads it inside the SSR request context,
+  // so the first painted frame already shows the persisted panel set; the
+  // dehydrated loader data keeps the hydration render identical.
+  loader: async (): Promise<ChartsUiCookie> => {
+    const raw = await readUiCookieServerFn({ data: CHARTS_UI_COOKIE });
+    if (!raw) return {};
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? parsed as ChartsUiCookie : {};
+    } catch {
+      return {};
+    }
+  },
   head: () => ({
     meta: [
       { title: "Charts — Quant Trading Platform" },
@@ -17,25 +42,19 @@ export const Route = createFileRoute("/")({
 });
 
 function ChartsPage() {
-  // SSR-safe default; persisted panels are restored after mount (see below) so
-  // the server and first client render match and hydration doesn't break.
-  const [panels, setPanels] = useState<{ id: number; symbol?: string }[]>([{ id: 1 }]);
-  const nextId = useRef(2);
+  const cookie = Route.useLoaderData();
+  const [panels, setPanels] = useState<PanelSpec[]>(() =>
+    Array.isArray(cookie.panels) && cookie.panels.length > 0 ? cookie.panels : [{ id: 1 }]);
+  // Render-time init (SSR-deterministic): next id derives from the same
+  // loader data on server and client.
+  const nextId = useRef(0);
+  if (nextId.current === 0) nextId.current = panels.reduce((m, p) => Math.max(m, p.id), 0) + 1;
 
+  // Persist the panel set to the cookie. No first-run guard needed: the
+  // initial state IS the cookie value, and mergeUiCookie preserves keys
+  // owned by other writers (ChartPanel's chartHeight).
   useEffect(() => {
-    try {
-      const saved = JSON.parse(sessionStorage.getItem("charts-panels") ?? "null");
-      if (Array.isArray(saved) && saved.length > 0) {
-        setPanels(saved);
-        nextId.current = saved.reduce((m, p) => Math.max(m, p.id), 0) + 1;
-      }
-    } catch {}
-  }, []);
-
-  const skipPersist = useRef(true);
-  useEffect(() => {
-    if (skipPersist.current) { skipPersist.current = false; return; }
-    sessionStorage.setItem("charts-panels", JSON.stringify(panels));
+    mergeUiCookie(CHARTS_UI_COOKIE, { panels });
   }, [panels]);
 
   const addPanel = (symbol?: string) => {
@@ -67,6 +86,9 @@ function ChartsPage() {
             key={p.id}
             persistKey={`charts-panel-${p.id}`}
             initialSymbol={p.symbol}
+            initialChartHeight={cookie.chartHeight}
+            onSymbolChange={sym =>
+              setPanels(prev => prev.map(x => x.id === p.id ? { ...x, symbol: sym } : x))}
             onRemove={() => removePanel(p.id)}
             canRemove={panels.length > 1}
           />

@@ -38,6 +38,7 @@ import { tradesApi, type TradesResult } from "@/lib/api/trades";
 import type { BacktestTrade, BacktestResults } from "@/lib/api/strategies";
 import type { PriceBar, Trade } from "@/lib/api/types";
 import { applyCapitalConstraints, calcBuyHold } from "@/lib/backtest-capital";
+import { BACKTESTING_UI_COOKIE, readUiCookieJson, writeUiCookie } from "@/lib/cookie-state";
 import { useRafCoalescer } from "@/hooks/useRafCoalescer";
 import { cn } from "@/lib/utils";
 
@@ -92,8 +93,6 @@ function formatPnl(pnl: number) {
   return `${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}`;
 }
 
-const SESSION_KEY = "backtesting-state";
-
 function BacktestingPage() {
   const search   = Route.useSearch();
   const navigate = Route.useNavigate();
@@ -117,15 +116,12 @@ function BacktestingPage() {
   // Set in onSuccess so the capitalStats effect knows to add a history entry
   const pendingHistoryRef = useRef(false);
 
+  // Last loaded replay config survives reloads via the ui.backtesting cookie
+  // (arrangement → cookie, §13); the URL stays the source of truth once set.
   useEffect(() => {
     if (!search.loaded || !search.symbol) {
-      try {
-        const stored = sessionStorage.getItem(SESSION_KEY);
-        if (stored) {
-          const restored = JSON.parse(stored) as typeof search;
-          if (restored.loaded && restored.symbol) navigate({ search: restored, replace: true });
-        }
-      } catch { /* ignore */ }
+      const restored = readUiCookieJson<typeof search>(BACKTESTING_UI_COOKIE);
+      if (restored?.loaded && restored.symbol) navigate({ search: restored, replace: true });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -452,7 +448,7 @@ function BacktestingPage() {
     setCursor(-1);
     const next = { symbol: selectedSymbol, from, to, speed, loaded: true };
     setSearch(next);
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(next));
+    writeUiCookie(BACKTESTING_UI_COOKIE, JSON.stringify(next));
   };
 
   const restart     = () => { setPlaying(false); setCursor(0); };

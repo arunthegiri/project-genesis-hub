@@ -72,8 +72,8 @@ src/
 ```
 
 ### SSR notes
-- This is TanStack Start SSR — any state that reads the DOM or storage must be read after mount (use `useEffect` or `mounted` flag, not direct `useState` init from sessionStorage)
-- SSR hydration guards exist in ChartPanel and the Charts page (`skipPersist` refs)
+- This is TanStack Start SSR — client-only state is handled two ways (build doc §13: "URL = where you are; cookie = how the workspace is arranged; server = what the data is"): workspace arrangement (panel set, chart height) lives in `ui.*` cookies (`src/lib/cookie-state.ts`) and is read server-side by the `/` route loader via `readUiCookieServerFn` (createServerFn + getCookie), so first paint is SSR-correct; per-panel internals restore post-mount behind ChartPanel's `mounted` gate, which renders the geometry-identical `PanelSkeleton` (sizing co-located in `src/components/PanelSkeleton.tsx`) until then. No render-then-snap, no `skipPersist`.
+- Location-like view state belongs in `validateSearch` (see `/backtesting`, `/data`), with relative defaults resolved at parse time.
 - `lightweight-charts` is pinned at 4.2.0 — do not upgrade
 - Unused shadcn scaffold deps (`embla-carousel-react`, `vaul`, `input-otp`) are accepted scaffold — leave installed; removing them risks shadcn regen churn for zero runtime win
 

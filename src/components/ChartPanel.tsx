@@ -34,6 +34,15 @@ import { aggregatePriceBars, intervalForSpan } from "@/lib/price-bars";
 import { intervalMs, snapRange } from "@/lib/interval-policy";
 import { CHART_COLORS } from "@/lib/chart-colors";
 import { createInteractionStore, type InteractionStore } from "@/lib/stores/chart-interaction";
+import { CHARTS_UI_COOKIE, mergeUiCookie, panelUiCookie, readUiCookieJson, writeUiCookie } from "@/lib/cookie-state";
+import {
+  PanelSkeleton,
+  clampHeight,
+  DEFAULT_CHART_HEIGHT,
+  DEFAULT_DATA_PCT,
+  MIN_DATA_PCT,
+  MAX_DATA_PCT,
+} from "@/components/PanelSkeleton";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -41,6 +50,9 @@ interface Props {
   canRemove: boolean;
   initialSymbol?: string;
   persistKey?: string;
+  // SSR-correct arrangement from the / route loader (ui.charts cookie).
+  initialChartHeight?: number;
+  onSymbolChange?: (symbol: string) => void;
 }
 
 const RANGE_PRESETS: Exclude<ChartRangePreset, "CUSTOM">[] = ["1D", "5D", "1M", "3M", "6M", "1Y"];
@@ -51,38 +63,40 @@ const CHART_TYPES: { value: ChartType; label: string }[] = [
   { value: "area",        label: "Area"   },
 ];
 
-// Chart+data region sizing. The vertical height is drag-resizable and persisted
-// in localStorage; the horizontal chart/data split is drag-resizable too.
-const CHART_HEIGHT_KEY    = "quant.chartPanel.height";
-const MIN_CHART_HEIGHT    = 300;
-const DEFAULT_CHART_HEIGHT = 520;
-const DEFAULT_DATA_PCT    = 40;   // data panel width when open (~60/40 split)
-const MIN_DATA_PCT        = 15;
-const MAX_DATA_PCT        = 70;
-
-const maxChartHeight = () =>
-  typeof window === "undefined" ? 900 : Math.round(window.innerHeight * 0.9);
-const clampHeight = (h: number) =>
-  Math.min(maxChartHeight(), Math.max(MIN_CHART_HEIGHT, h));
-
-function loadSession(key: string | undefined): Record<string, unknown> {
-  if (!key) return {};
-  try {
-    const p = JSON.parse(sessionStorage.getItem(key) ?? "{}");
-    return p && typeof p === "object" && !Array.isArray(p) ? p : {};
-  } catch { return {}; }
+// Chart+data region sizing lives in PanelSkeleton.tsx (co-located with the
+// skeleton so the placeholder and the real panel can't drift, §13).
+//
+// Panel internals persist in the ui.panel.<persistKey> cookie: layout-
+// critical, non-sensitive, small JSON. SSR never sees per-panel internals —
+// it renders PanelSkeleton until mount, so nothing paints one way and snaps.
+interface PanelUiCookie {
+  symbol?: string;
+  startDate?: string;
+  endDate?: string;
+  interval?: Interval;
+  rangePreset?: ChartRangePreset;
+  chartType?: ChartType;
+  compareSymbols?: string[];
+  showData?: boolean;
+  dataPanelPct?: number;
+  showSMA?: boolean;
+  showEMA?: boolean;
+  showBB?: boolean;
+  showRSI?: boolean;
+  showMACD?: boolean;
+  strategy?: string;
 }
 
-export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey }: Props) {
+export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey, initialChartHeight, onSymbolChange }: Props) {
   const initialRange = getPresetRange("5D");
 
   const initialInterval = intervalForSpan(
     (new Date(initialRange.endDate).getTime() - new Date(initialRange.startDate).getTime()) / 86_400_000);
 
-  // SSR-safe defaults: sessionStorage must NOT be read during render, or the
-  // server-rendered markup (no storage) won't match the client's first render
-  // and React will throw a hydration mismatch. Persisted state is restored in a
-  // post-mount effect below instead.
+  // SSR/hydration render these defaults inside PanelSkeleton; the real panel
+  // only mounts after the post-mount effect below restores the persisted
+  // internals from the panel cookie, so no value ever paints then snaps.
+  const [mounted, setMounted]           = useState(false);
   const [selectedSymbol, setSelectedSymbol] = useState<string>(initialSymbol);
   const [startDate, setStartDate]     = useState<string>(initialRange.startDate);
   const [endDate, setEndDate]         = useState<string>(initialRange.endDate);
@@ -107,21 +121,27 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
   // Layout: vertical height of the whole chart+data region (drag handle at the
   // bottom edge) and the horizontal chart/data split ratio. `dragging` disables
   // the layout CSS transition so panels track the cursor 1:1 while dragging.
-  const [chartHeight, setChartHeight]   = useState<number>(DEFAULT_CHART_HEIGHT);
+  // chartHeight is SSR-known from the ui.charts cookie (via the / loader), so
+  // the skeleton and the live panel share the same outer geometry.
+  const [chartHeight, setChartHeight]   = useState<number>(() =>
+    clampHeight(initialChartHeight ?? DEFAULT_CHART_HEIGHT));
   const [dataPanelPct, setDataPanelPct] = useState<number>(DEFAULT_DATA_PCT);
   const [dragging, setDragging]         = useState<null | "h" | "v">(null);
   const chartRowRef = useRef<HTMLDivElement>(null);
 
-  // Restore persisted state after mount (client only, post-hydration).
+  // Restore persisted internals after mount (client only, post-hydration),
+  // then reveal the real panel. All setters batch into one commit — the
+  // skeleton swaps straight to fully-restored content.
+  const restoredRef = useRef(false);
   useEffect(() => {
-    const s = loadSession(persistKey);
+    const s = (persistKey ? readUiCookieJson<PanelUiCookie>(panelUiCookie(persistKey)) : null) ?? {};
     if (typeof s.symbol === "string") setSelectedSymbol(s.symbol);
     if (typeof s.startDate === "string") setStartDate(s.startDate);
     if (typeof s.endDate === "string") setEndDate(s.endDate);
-    if (typeof s.interval === "string") updateInterval(s.interval as Interval);
-    if (typeof s.rangePreset === "string") setRangePreset(s.rangePreset as ChartRangePreset);
-    if (typeof s.chartType === "string") setChartType(s.chartType as ChartType);
-    if (Array.isArray(s.compareSymbols)) setCompareSymbols(s.compareSymbols as string[]);
+    if (typeof s.interval === "string") updateInterval(s.interval);
+    if (typeof s.rangePreset === "string") setRangePreset(s.rangePreset);
+    if (typeof s.chartType === "string") setChartType(s.chartType);
+    if (Array.isArray(s.compareSymbols)) setCompareSymbols(s.compareSymbols);
     if (typeof s.showData === "boolean") setShowData(s.showData);
     if (typeof s.dataPanelPct === "number") setDataPanelPct(s.dataPanelPct);
     if (typeof s.showSMA === "boolean") setShowSMA(s.showSMA);
@@ -130,18 +150,9 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
     if (typeof s.showRSI === "boolean") setShowRSI(s.showRSI);
     if (typeof s.showMACD === "boolean") setShowMACD(s.showMACD);
     if (typeof s.strategy === "string") setSelectedStrategy(s.strategy);
+    restoredRef.current = true;
+    setMounted(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Restore the persisted vertical height from localStorage after mount.
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(CHART_HEIGHT_KEY);
-      if (raw != null) {
-        const n = Number(raw);
-        if (Number.isFinite(n)) setChartHeight(clampHeight(n));
-      }
-    } catch { /* ignore */ }
   }, []);
 
   // Auto-pick interval whenever the date range changes — but only in auto
@@ -175,7 +186,8 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
   const handleSymbolChange = useCallback((s: string) => {
     setSelectedSymbol(s);
     setViewportIntent("fit");
-  }, []);
+    onSymbolChange?.(s);
+  }, [onSymbolChange]);
 
   // Interaction store (§7): visible range / crosshair / lastBar live OUTSIDE
   // React state so panning never re-renders this panel. One store per panel.
@@ -221,20 +233,19 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
       setDragging(null);
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
-      try { localStorage.setItem(CHART_HEIGHT_KEY, String(current)); } catch { /* ignore */ }
+      mergeUiCookie(CHARTS_UI_COOKIE, { chartHeight: current });
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   }, [chartHeight]);
 
-  // Persist configuration so state survives tab navigation. Skip the first run
-  // (mount, before the restore effect has applied) so we don't overwrite saved
-  // state with defaults.
-  const skipPersist = useRef(true);
+  // Persist configuration so the panel survives reloads and tab navigation.
+  // The restore effect flips restoredRef in the same commit it applies the
+  // cookie, so the first write here already carries the restored values —
+  // saved state is never overwritten with defaults.
   useEffect(() => {
-    if (!persistKey) return;
-    if (skipPersist.current) { skipPersist.current = false; return; }
-    sessionStorage.setItem(persistKey, JSON.stringify({
+    if (!persistKey || !restoredRef.current) return;
+    writeUiCookie(panelUiCookie(persistKey), JSON.stringify({
       symbol: selectedSymbol, startDate, endDate, interval, rangePreset, chartType,
       compareSymbols, showData, dataPanelPct,
       showSMA, showEMA, showBB, showRSI, showMACD, strategy: selectedStrategy,
@@ -357,6 +368,13 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
   };
 
   const isComparing = compareData.length > 0;
+
+  // §13 skeleton gate: SSR and hydration paint a geometry-identical
+  // placeholder; the first post-mount commit swaps in the fully-restored
+  // panel. No wrong-content flash, no layout shift.
+  if (!mounted) {
+    return <PanelSkeleton symbol={initialSymbol} height={chartHeight} />;
+  }
 
   return (
     <div className="flex flex-col rounded-md border border-border bg-card">
@@ -532,10 +550,10 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
 
       {/* Chart + data region.
           A fixed-height wrapper (drag the bottom handle to resize, persisted in
-          localStorage) that also gives the chart a *definite* height to resolve
-          its canvas against. Inside, a horizontal flex split: the chart column
-          flex-grows while the data column's width animates open/closed and is
-          drag-adjustable via the splitter. */}
+          the ui.charts cookie) that also gives the chart a *definite* height to
+          resolve its canvas against. Inside, a horizontal flex split: the chart
+          column flex-grows while the data column's width animates open/closed
+          and is drag-adjustable via the splitter. */}
       <div
         className="relative flex flex-col"
         style={{
@@ -678,7 +696,7 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
         </div>
 
         {/* Vertical resize handle at the bottom edge — drag to change the
-            region's height (clamped 300px … 90vh, persisted in localStorage). */}
+            region's height (clamped 300px … 90vh, persisted in the ui.charts cookie). */}
         <div
           onMouseDown={startVDrag}
           role="separator"

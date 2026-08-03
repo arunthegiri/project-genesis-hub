@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { format, subDays } from "date-fns";
@@ -17,7 +17,30 @@ import { buildPythonSnippet } from "@/lib/python-export";
 import { localDateTimeInputToApiParam } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 
+// Defaults resolve relative to *now* at parse time — never constants — so a
+// clean URL opens on the last 7 days and the SSR'd first paint already shows
+// the real range (no mount-time snap).
+function defaultFrom(): string {
+  return format(subDays(new Date(), 7), "yyyy-MM-dd'T'HH:mm");
+}
+function defaultTo(): string {
+  return format(new Date(), "yyyy-MM-dd'T'HH:mm");
+}
+
+const VALID_INTERVALS = new Set<string>(INTERVALS.map((i) => i.value));
+
 export const Route = createFileRoute("/data")({
+  // §13/§18 division of labor: symbol/range/interval are *location* — they
+  // belong to the URL, not storage. Column toggles stay arrangement-local
+  // (ephemeral in-memory state).
+  validateSearch: (search: Record<string, unknown>) => ({
+    symbol: typeof search.symbol === "string" ? search.symbol : "",
+    from:   typeof search.from === "string" && search.from ? search.from : defaultFrom(),
+    to:     typeof search.to === "string" && search.to ? search.to : defaultTo(),
+    interval: VALID_INTERVALS.has(String(search.interval))
+      ? (search.interval as Interval)
+      : ("1Hour" as Interval),
+  }),
   head: () => ({
     meta: [
       { title: "Data — Quant Trading Platform" },
@@ -42,28 +65,25 @@ const ALL_COLUMNS: { key: keyof PriceBar; label: string; sql: string }[] = [
 const DT_FMT_HINT = "YYYY-MM-DDTHH:MM";
 
 function DataPage() {
-  const [symbol, setSymbol] = useState("");
-  // Stable initial values for SSR; refreshed to "now" on mount.
-  const [from, setFrom] = useState("2024-01-01T09:30");
-  const [to, setTo] = useState("2024-01-08T16:00");
+  // URL = where you are: symbol/from/to/interval come from validateSearch.
+  const { symbol, from, to, interval: barInterval } = Route.useSearch();
+  const navigate = Route.useNavigate();
+  const setSearch = useCallback(
+    (updates: Partial<{ symbol: string; from: string; to: string; interval: Interval }>) =>
+      navigate({ search: (prev) => ({ ...prev, ...updates }), replace: true }),
+    [navigate],
+  );
+  const setSymbol = useCallback((s: string) => setSearch({ symbol: s }), [setSearch]);
   const [fromError, setFromError] = useState("");
   const [toError, setToError] = useState("");
-  const [barInterval, setBarInterval] = useState<Interval>("1Hour");
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-    setFrom(format(subDays(new Date(), 7), "yyyy-MM-dd'T'HH:mm"));
-    setTo(format(new Date(), "yyyy-MM-dd'T'HH:mm"));
-  }, []);
   const [enabledCols, setEnabledCols] = useState<Set<string>>(
     () => new Set(ALL_COLUMNS.map((c) => c.key as string)),
   );
-  const fromApi = mounted ? localDateTimeInputToApiParam(from) : `${from}:00`;
-  const toApi = mounted ? localDateTimeInputToApiParam(to) : `${to}:00`;
+  const fromApi = localDateTimeInputToApiParam(from);
+  const toApi = localDateTimeInputToApiParam(to);
 
   const { data: bars = [], isLoading, error } = useQuery({
-    enabled: mounted && !!symbol && !!fromApi && !!toApi,
+    enabled: !!symbol && !!fromApi && !!toApi,
     queryKey: ["prices", symbol, fromApi, toApi],
     queryFn: () => pricesApi.range(symbol, fromApi, toApi),
   });
@@ -102,7 +122,7 @@ function DataPage() {
             <Input
               type="datetime-local"
               value={from}
-              onChange={(e) => { setFrom(e.target.value); if (e.target.value) setFromError(""); }}
+              onChange={(e) => { setSearch({ from: e.target.value }); if (e.target.value) setFromError(""); }}
               onBlur={(e) => { if (!e.target.value) setFromError("Required"); }}
               aria-invalid={!!fromError}
               className={cn("h-8 tabular text-xs", fromError && "border-destructive")}
@@ -113,7 +133,7 @@ function DataPage() {
             <Input
               type="datetime-local"
               value={to}
-              onChange={(e) => { setTo(e.target.value); if (e.target.value) setToError(""); }}
+              onChange={(e) => { setSearch({ to: e.target.value }); if (e.target.value) setToError(""); }}
               onBlur={(e) => { if (!e.target.value) setToError("Required"); }}
               aria-invalid={!!toError}
               className={cn("h-8 tabular text-xs", toError && "border-destructive")}
@@ -123,7 +143,7 @@ function DataPage() {
           <Field label="Interval">
             <select
               value={barInterval}
-              onChange={(e) => setBarInterval(e.target.value as Interval)}
+              onChange={(e) => setSearch({ interval: e.target.value as Interval })}
               className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground"
             >
               {INTERVALS.map((i) => (
