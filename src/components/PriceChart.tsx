@@ -14,6 +14,13 @@ import { useChartBase, toTs, CHART_OPTIONS } from "@/hooks/useChartBase";
 
 export type ChartType = "candlestick" | "line" | "bar" | "area";
 
+/**
+ * Viewport intent state machine (build doc §5): 'fit' = follow the data
+ * (fitContent on data change); 'anchored' = preserve the user's visible range
+ * across data updates. Owned by ChartPanel; data arrival never mutates it.
+ */
+export type ViewportIntent = "fit" | "anchored";
+
 export interface IndicatorConfig {
   sma?: number[];
   ema?: number[];
@@ -37,6 +44,9 @@ interface Props {
   onAutoInterval?: (interval: Interval) => void;
   onRangeChange?: (from: number, to: number) => void;
   visibleRange?: { from: number; to: number };
+  viewportIntent?: ViewportIntent;
+  /** Fired on user pan/zoom gestures (wheel / pointer) — never on programmatic range changes. */
+  onViewportGesture?: () => void;
 }
 
 const INDICATOR_COLORS = ["#60a5fa", "#f59e0b", "#a78bfa", "#34d399", "#f472b6", "#fb923c"];
@@ -65,6 +75,8 @@ export function PriceChart({
   onAutoInterval,
   onRangeChange,
   visibleRange,
+  viewportIntent = "fit",
+  onViewportGesture,
 }: Props) {
   const containerRef   = useRef<HTMLDivElement>(null);
   const { chartRef }   = useChartBase(containerRef);
@@ -85,12 +97,36 @@ export function PriceChart({
   // Stable refs to latest callbacks — avoids re-subscribing on every render
   const onAutoIntervalRef  = useRef(onAutoInterval);
   const onRangeChangeRef   = useRef(onRangeChange);
+  const onGestureRef       = useRef(onViewportGesture);
   useEffect(() => { onAutoIntervalRef.current = onAutoInterval; }, [onAutoInterval]);
   useEffect(() => { onRangeChangeRef.current  = onRangeChange;  }, [onRangeChange]);
+  useEffect(() => { onGestureRef.current      = onViewportGesture; }, [onViewportGesture]);
 
-  // When auto-interval fires mid-zoom we suppress fitContent and restore the range instead
-  const suppressFitRef = useRef(false);
-  const savedRangeRef  = useRef<{ from: Time; to: Time } | null>(null);
+  // Mirror of the viewport-intent prop for the data effect (which must not
+  // re-run when intent flips — only when data does).
+  const viewportIntentRef = useRef(viewportIntent);
+  useEffect(() => { viewportIntentRef.current = viewportIntent; }, [viewportIntent]);
+
+  // Explicit 'fit' transitions (symbol change, Reset) fit immediately, even
+  // without a data change.
+  useEffect(() => {
+    if (viewportIntent === "fit") chartRef.current?.timeScale().fitContent();
+  }, [viewportIntent]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // User pan/zoom gestures anchor the viewport. DOM events distinguish user
+  // gestures from programmatic setVisibleLogicalRange/fitContent calls (which
+  // also emit range-change events and must NOT anchor).
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const gesture = () => onGestureRef.current?.();
+    el.addEventListener("wheel", gesture, { passive: true });
+    el.addEventListener("pointerdown", gesture);
+    return () => {
+      el.removeEventListener("wheel", gesture);
+      el.removeEventListener("pointerdown", gesture);
+    };
+  }, []);
 
   const isComparing = compareData.length > 0;
 
@@ -159,19 +195,22 @@ export function PriceChart({
     if (macdSubRef.current) { macdSubRef.current.chart.remove(); macdSubRef.current.container.remove(); macdSubRef.current = null; }
   }, []);
 
-  // Subscribe to visible time range changes for auto-resolution switching
+  // Subscribe to visible time range changes for auto-resolution switching.
+  // Fires only when the suggested bucket CHANGES (a span-table boundary
+  // crossing), not per range event; ChartPanel applies it only in auto mode.
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
     let timer: ReturnType<typeof setTimeout>;
+    let lastSuggested: Interval | null = null;
     const handler = (range: { from: Time; to: Time } | null) => {
       if (!range || !onAutoIntervalRef.current) return;
       clearTimeout(timer);
       timer = setTimeout(() => {
         const spanDays = ((range.to as number) - (range.from as number)) / 86400;
         const suggested = intervalForSpan(spanDays);
-        suppressFitRef.current = true;
-        savedRangeRef.current  = range;
+        if (suggested === lastSuggested) return;
+        lastSuggested = suggested;
         onAutoIntervalRef.current!(suggested);
       }, 300);
     };
@@ -238,6 +277,13 @@ export function PriceChart({
 
     if (!bars.length) { main.setData([]); return; }
 
+    // Viewport intent machine: 'anchored' preserves the user's visible range
+    // across the data swap; 'fit' follows the data. Data arrival never flips
+    // the intent — only user gestures, symbol change, and explicit Reset do.
+    const ts = chart.timeScale();
+    const anchored = viewportIntentRef.current === "anchored" && bars.length > 0;
+    const saved = anchored ? ts.getVisibleLogicalRange() : null;
+
     if (isComparing) {
       // Normalize to % return from first bar
       const firstClose = bars[0].close;
@@ -248,12 +294,10 @@ export function PriceChart({
       main.setData(bars.map((b, i) => ({ time: times[i] as Time, open: b.open, high: b.high, low: b.low, close: b.close })));
     }
 
-    if (suppressFitRef.current && savedRangeRef.current) {
-      chart.timeScale().setVisibleRange(savedRangeRef.current);
-      suppressFitRef.current = false;
-      savedRangeRef.current  = null;
+    if (saved) {
+      ts.setVisibleLogicalRange(saved);
     } else {
-      chart.timeScale().fitContent();
+      ts.fitContent();
     }
   }, [bars, times, chartType, isComparing]);
 

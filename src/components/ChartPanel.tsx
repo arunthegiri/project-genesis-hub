@@ -3,7 +3,7 @@ import { keepPreviousData, useQuery, useQueries } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { ChevronDown, ChevronUp, GripHorizontal, Loader2, Plus, X } from "lucide-react";
 
-import { PriceChart, type IndicatorConfig, type ChartType } from "@/components/PriceChart";
+import { PriceChart, type IndicatorConfig, type ChartType, type ViewportIntent } from "@/components/PriceChart";
 import { ChartScrollbar } from "@/components/ChartScrollbar";
 import { PythonExport } from "@/components/PythonExport";
 import { DateRangePicker } from "@/components/DateRangePicker";
@@ -97,6 +97,11 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
   const [showMACD, setShowMACD]       = useState<boolean>(false);
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
 
+  // Viewport & interval intent state machine (build doc §5). Explicit user
+  // intent only — data arrival never mutates either field.
+  const [viewportIntent, setViewportIntent] = useState<ViewportIntent>("fit");
+  const [intervalMode, setIntervalMode]     = useState<"auto" | "pinned">("auto");
+
   // Layout: vertical height of the whole chart+data region (drag handle at the
   // bottom edge) and the horizontal chart/data split ratio. `dragging` disables
   // the layout CSS transition so panels track the cursor 1:1 while dragging.
@@ -137,13 +142,38 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
     } catch { /* ignore */ }
   }, []);
 
-  // Auto-pick interval whenever the date range changes
+  // Auto-pick interval whenever the date range changes — but only in auto
+  // mode; a pinned (manually selected) interval survives range nudges.
   useEffect(() => {
+    if (intervalMode !== "auto") return;
+    const days = (new Date(endDate).getTime() - new Date(startDate).getTime()) / 86_400_000;
+    updateInterval(intervalForSpan(days));
+  }, [startDate, endDate, intervalMode]);
+
+  // Zoom-driven suggestion (from PriceChart's span-table boundary crossings):
+  // applies only in auto mode, and only when it actually changes the bucket.
+  const handleAutoInterval = useCallback((i: Interval) => {
+    if (intervalMode !== "auto") return;
+    updateInterval(prev => (prev === i ? prev : i));
+  }, [intervalMode]);
+
+  // Manual interval pick pins the policy; the AUTO chip un-pins it and
+  // immediately re-derives the interval from the current span.
+  const handleIntervalSelect = useCallback((i: Interval) => {
+    updateInterval(i);
+    setIntervalMode("pinned");
+  }, []);
+
+  const handleUnpinInterval = useCallback(() => {
+    setIntervalMode("auto");
     const days = (new Date(endDate).getTime() - new Date(startDate).getTime()) / 86_400_000;
     updateInterval(intervalForSpan(days));
   }, [startDate, endDate]);
 
-  const handleAutoInterval = useCallback((i: Interval) => updateInterval(i), []);
+  const handleSymbolChange = useCallback((s: string) => {
+    setSelectedSymbol(s);
+    setViewportIntent("fit");
+  }, []);
 
   const [visibleRange, setVisibleRange] = useState<{ from: number; to: number } | null>(null);
   const handleRangeChange = useCallback((from: number, to: number) => setVisibleRange({ from, to }), []);
@@ -311,7 +341,7 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
     <div className="flex flex-col rounded-md border border-border bg-card">
       {/* Panel header */}
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-        <Select value={selectedSymbol} onValueChange={setSelectedSymbol}>
+        <Select value={selectedSymbol} onValueChange={handleSymbolChange}>
           <SelectTrigger className="h-8 w-36 font-mono text-sm">
             <SelectValue placeholder="Symbol…" />
           </SelectTrigger>
@@ -394,16 +424,28 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
         </Field>
 
         <Field label="Interval">
-          <Select value={interval} onValueChange={v => updateInterval(v as Interval)}>
-            <SelectTrigger className="h-8 w-[130px] text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {INTERVALS.map(item => (
-                <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-1">
+            <Select value={interval} onValueChange={v => handleIntervalSelect(v as Interval)}>
+              <SelectTrigger className="h-8 w-[130px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {INTERVALS.map(item => (
+                  <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {intervalMode === "pinned" && (
+              <button
+                type="button"
+                onClick={handleUnpinInterval}
+                title="Return to automatic interval selection"
+                className="rounded border border-border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground hover:text-foreground"
+              >
+                Auto
+              </button>
+            )}
+          </div>
         </Field>
 
         <Field label="Type">
@@ -506,12 +548,24 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
                     onAutoInterval={handleAutoInterval}
                     onRangeChange={handleRangeChange}
                     visibleRange={visibleRange ?? undefined}
+                    viewportIntent={viewportIntent}
+                    onViewportGesture={() => setViewportIntent("anchored")}
                   />
                 )}
                 {isFetching && selectedSymbol && (
                   <div className="absolute right-3 top-3 flex items-center gap-1 text-[10px] text-muted-foreground">
                     <Loader2 className="h-3 w-3 animate-spin" /> {isPlaceholderData ? "refining…" : "refreshing"}
                   </div>
+                )}
+                {viewportIntent === "anchored" && (
+                  <button
+                    type="button"
+                    onClick={() => setViewportIntent("fit")}
+                    title="Reset viewport to fit all data (R)"
+                    className="absolute left-3 top-3 rounded border border-border bg-card/80 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground hover:text-foreground"
+                  >
+                    Reset
+                  </button>
                 )}
               </div>
 
@@ -521,7 +575,7 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
                   totalBars={bars.length}
                   from={visibleRange.from}
                   to={visibleRange.to}
-                  onRangeChange={(f, t) => setVisibleRange({ from: f, to: t })}
+                  onRangeChange={(f, t) => { setVisibleRange({ from: f, to: t }); setViewportIntent("anchored"); }}
                 />
               )}
             </div>
