@@ -2,7 +2,9 @@
 
 Named after the Greek primordial goddess of necessity, Ananke transforms chaotic market data into a deterministic, permanent record of financial truth. This terminal serves as the "mathematical blueprint" for your trading, where every tick is captured with inescapable precision to drive high-performance execution.
 
-A full-stack quant trading terminal. Select any stock, view interactive OHLCV candlestick charts with technical indicators (SMA, EMA, Bollinger Bands, RSI, MACD), and inspect raw tick data. Price history is fetched on demand from Alpaca Markets and stored permanently in TimescaleDB — so every chart loads faster over time.
+A full-stack quant trading terminal. Select any stock, view interactive OHLCV candlestick charts with technical indicators (SMA, EMA, Bollinger Bands, RSI, MACD), inspect raw tick data, and replay backtests bar-by-bar. Price history is fetched on demand from Alpaca Markets and stored permanently in TimescaleDB — so every chart loads faster over time.
+
+Terminal-grade touches: a ⌘K command palette and chart hotkeys, a live status rail (market session, data staleness, backend health), a coverage timeline showing exactly which ranges are stored, and one-click export of any chart query into a JupyterLab notebook.
 
 ---
 
@@ -51,8 +53,10 @@ The frontend container lives behind the `full` profile — plain `docker compose
 |---|---|
 | **Frontend** | http://localhost:3000 |
 | **Backend API** | http://localhost:8080/api |
-| **JupyterLab** | http://localhost:8888 (no token; `ananke-sdk` pre-installed) |
+| **JupyterLab** | http://localhost:8890 (no token; `ananke-sdk` pre-installed) |
 | **TimescaleDB** | localhost:5432 (user: `postgres`, db: `stockdb`) |
+
+> JupyterLab maps to host port **8890**, not 8888 — a host-local `jupyter-lab` process may already occupy 8888, and the container keeps a consistent port of its own.
 
 ---
 
@@ -140,11 +144,30 @@ All endpoints on `http://localhost:8080`.
 |---|---|---|
 | `GET` | `/api/prices/{symbol}/range?from=&to=` | Fetch bars for a date range (auto-fills from Alpaca) |
 | `GET` | `/api/prices/{symbol}/latest?hours=` | Most recent N hours of bars |
-| `POST` | `/api/prices/{symbol}/backfill?from=&to=` | Force-backfill a symbol |
+| `GET` | `/api/prices/{symbol}/coverage-blocks?from=&to=` | Contiguous stored blocks in a range (gap detection; read-only) |
+| `POST` | `/api/prices/{symbol}/backfill?from=&to=` | Force-backfill a symbol (synchronous) |
+| `POST` | `/api/prices/{symbol}/backfill/async?from=&to=` | Start an async backfill job |
+| `GET` | `/api/prices/jobs?symbol=` | List backfill jobs (poll for status/progress) |
+| `GET` | `/api/prices/jobs/{jobId}` | One backfill job |
+| `POST` | `/api/prices/jobs/{jobId}/retry` | Retry a failed job |
+| `POST` | `/api/prices/jobs/{jobId}/cancel` | Cancel a running job |
 | `POST` | `/api/prices/backfill-all?from=&to=` | Force-backfill all tracked symbols |
 | `POST` | `/api/prices/fetch` | Trigger an immediate live price fetch |
 
 Dates use ISO-8601 format, e.g. `2026-01-01T00:00:00Z`.
+
+---
+
+## Open in JupyterLab
+
+The export panel on the Charts and Data pages has an **Open in JupyterLab** button: it writes the generated pandas/SQLAlchemy snippet as a ready-to-run `.ipynb` into `Test Trading Strategies/` (the Jupyter container's `strategies/` volume) and opens it in a new browser tab. The notebook can pull data through the pre-installed `ananke-sdk`:
+
+```python
+from ananke import get_data
+df = get_data("AAPL", "2026-07-01", "2026-08-01", "1min")
+```
+
+`get_data` self-heals missing ranges (coverage check → async backfill → progress bar → resampled DataFrame). This feature targets the local Docker stack — API calls go through the Vite dev proxy `/jupyter-api`, so it works on any frontend port during development.
 
 ---
 
@@ -159,12 +182,14 @@ Ananke/
 │       └── main/resources/
 │           └── db/migration/   # Flyway SQL migrations (TimescaleDB schema)
 ├── src/                        # React frontend source
-│   ├── routes/                 # File-based pages (Charts, Data, Replay…)
-│   ├── components/             # PriceChart, SymbolPicker, DateRangePicker…
+│   ├── routes/                 # File-based pages (Charts, Data, Backtesting, Live, Models…)
+│   ├── components/             # PriceChart, ChartPanel, CommandPalette, StatusRail…
 │   └── lib/
 │       ├── api/                # Typed fetch client for the Spring backend
 │       ├── indicators.ts       # SMA, EMA, RSI, MACD, Bollinger (pure JS)
 │       └── price-bars.ts       # Client-side OHLCV aggregation by interval
+├── ananke-sdk/                 # Python SDK (ananke.get_data) — pip-installed into Jupyter
+├── ananke-copilot/             # Standalone AI copilot app (Vite + Kimi-backed chat endpoint)
 ├── docker-compose.yml          # Root compose — runs everything
 ├── Dockerfile                  # Frontend container
 ├── .env.example                # Copy to .env and fill in your keys
