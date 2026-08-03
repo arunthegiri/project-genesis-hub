@@ -440,9 +440,12 @@ export function PriceChart({
     // Viewport intent machine: 'anchored' preserves the user's visible range
     // across the data swap; 'fit' follows the data. Data arrival never flips
     // the intent — only user gestures, symbol change, and explicit Reset do.
+    // The range is saved as TIMES (not logical indices): bar indices are
+    // meaningless across datasets (interval/symbol change alters bar counts),
+    // and restoring them lands the chart in whitespace — the blank-chart bug.
     const ts = chart.timeScale();
     const anchored = viewportIntentRef.current === "anchored" && bars.length > 0;
-    const saved = anchored ? ts.getVisibleLogicalRange() : null;
+    const saved = anchored ? ts.getVisibleRange() : null;
 
     if (isComparing) {
       // Normalize to % return from first bar
@@ -455,7 +458,17 @@ export function PriceChart({
     }
 
     if (saved) {
-      ts.setVisibleLogicalRange(saved);
+      // Clamp the saved time range to the new dataset's span; if the user's
+      // range no longer overlaps the data at all, fall back to fit.
+      const first = times[0] as number;
+      const last  = times[times.length - 1] as number;
+      const from  = Math.max(saved.from as number, first);
+      const to    = Math.min(saved.to as number, last);
+      if (to > from) {
+        ts.setVisibleRange({ from: from as Time, to: to as Time });
+      } else {
+        ts.fitContent();
+      }
     } else {
       ts.fitContent();
     }
