@@ -17,6 +17,7 @@ import { useChartBase, toTs, CHART_OPTIONS } from "@/hooks/useChartBase";
 import { useRafCoalescer } from "@/hooks/useRafCoalescer";
 import type { InteractionStore } from "@/lib/stores/chart-interaction";
 import { CHART_COLORS } from "@/lib/chart-colors";
+import { ChartSyncGroup } from "@/lib/chart-sync";
 import { ChartLegend, type ChartLegendHandle, type LegendIndicatorRow } from "@/components/ChartLegend";
 
 export type ChartType = "candlestick" | "line" | "bar" | "area";
@@ -100,6 +101,9 @@ export function PriceChart({
   const hostRef          = useRef<HTMLDivElement>(null);
   const volumeSeriesRef  = useRef<ISeriesApi<"Histogram"> | null>(null);
   const legendRef        = useRef<ChartLegendHandle>(null);
+  // §10b — one sync group per PriceChart; the main chart is the reference
+  // (registers first, in the main-series lifecycle effect below).
+  const [syncGroup]      = useState(() => new ChartSyncGroup());
 
   // Stable refs to latest callbacks — avoids re-subscribing on every render
   const onAutoIntervalRef  = useRef(onAutoInterval);
@@ -348,6 +352,9 @@ export function PriceChart({
       main = chart.addCandlestickSeries({ upColor: CHART_COLORS.bull, downColor: CHART_COLORS.bear, borderVisible: false, wickUpColor: CHART_COLORS.bull, wickDownColor: CHART_COLORS.bear });
     }
     mainSeriesRef.current = main;
+    // §10b: main chart is the sync group's reference — it registers first, so
+    // panes that mount later adopt its current visible range.
+    syncGroup.register(chart, main);
 
     // §9: leave the bottom ~30% of the pane to the volume overlay; last-price
     // line + axis tag from the last bar (compare mode keeps its own tags).
@@ -357,11 +364,12 @@ export function PriceChart({
     }
 
     return () => {
+      syncGroup.unregister(chart);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       try { chart.removeSeries(main as ISeriesApi<any>); } catch {}
       if (mainSeriesRef.current === main) mainSeriesRef.current = null;
     };
-  }, [chartType, isComparing]);
+  }, [chartType, isComparing, syncGroup]);
 
   // ── Main series DATA — setData on bars/type change; never recreates.
   useEffect(() => {
@@ -501,11 +509,13 @@ export function PriceChart({
     const chart = createChart(pane, CHART_OPTIONS);
     const series = chart.addLineSeries({ color: "#a78bfa", lineWidth: 2, title: "RSI" });
     rsiSubRef.current = { chart, series };
+    syncGroup.register(chart, series);
     return () => {
+      syncGroup.unregister(chart);
       chart.remove();
       rsiSubRef.current = null;
     };
-  }, [rsiEnabled]);
+  }, [rsiEnabled, syncGroup]);
 
   // RSI data
   useEffect(() => {
@@ -522,11 +532,13 @@ export function PriceChart({
     const lineSignal = chart.addLineSeries({ color: "#f59e0b", lineWidth: 2, title: "Signal" });
     const hist       = chart.addHistogramSeries({ color: "#475569" });
     macdSubRef.current = { chart, lineMacd, lineSignal, hist };
+    syncGroup.register(chart, lineMacd);
     return () => {
+      syncGroup.unregister(chart);
       chart.remove();
       macdSubRef.current = null;
     };
-  }, [macdEnabled]);
+  }, [macdEnabled, syncGroup]);
 
   // MACD data
   useEffect(() => {
