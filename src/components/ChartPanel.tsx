@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { keepPreviousData, useQuery, useQueries } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { ChevronDown, ChevronUp, GripHorizontal, Loader2, Plus, X } from "lucide-react";
@@ -32,6 +32,7 @@ import {
 import { aggregatePriceBars, intervalForSpan } from "@/lib/price-bars";
 import { intervalMs, snapRange } from "@/lib/interval-policy";
 import { CHART_COLORS } from "@/lib/chart-colors";
+import { createInteractionStore, type InteractionStore } from "@/lib/stores/chart-interaction";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -175,8 +176,11 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
     setViewportIntent("fit");
   }, []);
 
-  const [visibleRange, setVisibleRange] = useState<{ from: number; to: number } | null>(null);
-  const handleRangeChange = useCallback((from: number, to: number) => setVisibleRange({ from, to }), []);
+  // Interaction store (§7): visible range / crosshair / lastBar live OUTSIDE
+  // React state so panning never re-renders this panel. One store per panel.
+  const interactionStoreRef = useRef<InteractionStore | null>(null);
+  if (!interactionStoreRef.current) interactionStoreRef.current = createInteractionStore();
+  const interactionStore = interactionStoreRef.current;
 
   // Horizontal splitter — drag to adjust the chart/data width ratio.
   const startHDrag = useCallback((e: React.MouseEvent) => {
@@ -546,8 +550,7 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
                     compareData={compareData}
                     trades={strategyTrades}
                     onAutoInterval={handleAutoInterval}
-                    onRangeChange={handleRangeChange}
-                    visibleRange={visibleRange ?? undefined}
+                    interactionStore={interactionStore}
                     viewportIntent={viewportIntent}
                     onViewportGesture={() => setViewportIntent("anchored")}
                   />
@@ -569,13 +572,13 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
                 )}
               </div>
 
-              {/* Vertical scrollbar on right */}
-              {bars.length > 0 && visibleRange && (
-                <ChartScrollbar
+              {/* Vertical scrollbar on right — reads/writes the interaction
+                  store directly, so dragging never re-renders this panel. */}
+              {bars.length > 0 && (
+                <StoreConnectedScrollbar
+                  store={interactionStore}
                   totalBars={bars.length}
-                  from={visibleRange.from}
-                  to={visibleRange.to}
-                  onRangeChange={(f, t) => { setVisibleRange({ from: f, to: t }); setViewportIntent("anchored"); }}
+                  onUserRange={() => setViewportIntent("anchored")}
                 />
               )}
             </div>
@@ -669,6 +672,39 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
         <EquityChart equityCurve={equityCurve} height={180} />
       )}
     </div>
+  );
+}
+
+/**
+ * Store-connected scrollbar (§7): subscribes to the interaction store itself
+ * so only this tiny component re-renders at drag frame rate — the panel
+ * doesn't. Writes go straight back to the store; PriceChart applies them via
+ * its epsilon-guarded subscription.
+ */
+function StoreConnectedScrollbar({
+  store,
+  totalBars,
+  onUserRange,
+}: {
+  store: InteractionStore;
+  totalBars: number;
+  onUserRange: () => void;
+}) {
+  const range = useSyncExternalStore(
+    store.subscribe,
+    () => store.getSnapshot().visibleRange,
+  );
+  if (!range) return null;
+  return (
+    <ChartScrollbar
+      totalBars={totalBars}
+      from={range.from}
+      to={range.to}
+      onRangeChange={(f, t) => {
+        store.set({ visibleRange: { from: f, to: t } });
+        onUserRange();
+      }}
+    />
   );
 }
 

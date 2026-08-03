@@ -11,6 +11,8 @@ import type { BacktestTrade } from "@/lib/api/strategies";
 import { sma, ema, bollinger, rsi, macd } from "@/lib/indicators";
 import { intervalForSpan } from "@/lib/price-bars";
 import { useChartBase, toTs, CHART_OPTIONS } from "@/hooks/useChartBase";
+import { useRafCoalescer } from "@/hooks/useRafCoalescer";
+import type { InteractionStore } from "@/lib/stores/chart-interaction";
 import { CHART_COLORS } from "@/lib/chart-colors";
 
 export type ChartType = "candlestick" | "line" | "bar" | "area";
@@ -43,8 +45,8 @@ interface Props {
   compareData?: CompareEntry[];
   trades?: BacktestTrade[];
   onAutoInterval?: (interval: Interval) => void;
-  onRangeChange?: (from: number, to: number) => void;
-  visibleRange?: { from: number; to: number };
+  /** High-frequency interaction channel (§7) — replaces the old visibleRange/onRangeChange prop round-trip. */
+  interactionStore: InteractionStore;
   viewportIntent?: ViewportIntent;
   /** Fired on user pan/zoom gestures (wheel / pointer) — never on programmatic range changes. */
   onViewportGesture?: () => void;
@@ -71,8 +73,7 @@ export function PriceChart({
   compareData = [],
   trades = [],
   onAutoInterval,
-  onRangeChange,
-  visibleRange,
+  interactionStore,
   viewportIntent = "fit",
   onViewportGesture,
 }: Props) {
@@ -94,11 +95,13 @@ export function PriceChart({
 
   // Stable refs to latest callbacks — avoids re-subscribing on every render
   const onAutoIntervalRef  = useRef(onAutoInterval);
-  const onRangeChangeRef   = useRef(onRangeChange);
   const onGestureRef       = useRef(onViewportGesture);
   useEffect(() => { onAutoIntervalRef.current = onAutoInterval; }, [onAutoInterval]);
-  useEffect(() => { onRangeChangeRef.current  = onRangeChange;  }, [onRangeChange]);
   useEffect(() => { onGestureRef.current      = onViewportGesture; }, [onViewportGesture]);
+
+  // Latest bars for the coalesced auto-interval computation.
+  const barsRef = useRef(bars);
+  useEffect(() => { barsRef.current = bars; }, [bars]);
 
   // Mirror of the viewport-intent prop for the data effect (which must not
   // re-run when intent flips — only when data does).
@@ -193,52 +196,72 @@ export function PriceChart({
     if (macdSubRef.current) { macdSubRef.current.chart.remove(); macdSubRef.current.container.remove(); macdSubRef.current = null; }
   }, []);
 
-  // Subscribe to visible time range changes for auto-resolution switching.
-  // Fires only when the suggested bucket CHANGES (a span-table boundary
-  // crossing), not per range event; ChartPanel applies it only in auto mode.
+  // ── Interaction store wiring (§7) ────────────────────────────────────────
+  // Producer: chart pans/zooms write the logical range into the store (0.5-bar
+  // tolerance so sub-bar noise doesn't fan out to subscribers).
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
-    let timer: ReturnType<typeof setTimeout>;
-    let lastSuggested: Interval | null = null;
-    const handler = (range: { from: Time; to: Time } | null) => {
-      if (!range || !onAutoIntervalRef.current) return;
-      clearTimeout(timer);
-      timer = setTimeout(() => {
-        const spanDays = ((range.to as number) - (range.from as number)) / 86400;
-        const suggested = intervalForSpan(spanDays);
-        if (suggested === lastSuggested) return;
-        lastSuggested = suggested;
-        onAutoIntervalRef.current!(suggested);
-      }, 300);
-    };
-    chart.timeScale().subscribeVisibleTimeRangeChange(handler);
-    return () => {
-      clearTimeout(timer);
-      chart.timeScale().unsubscribeVisibleTimeRangeChange(handler);
-    };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Emit logical range (bar indices) to parent for the scrollbar
-  useEffect(() => {
-    const chart = chartRef.current;
-    if (!chart) return;
+    let last: { from: number; to: number } | null = null;
     const handler = (range: { from: number; to: number } | null) => {
-      if (range) onRangeChangeRef.current?.(range.from, range.to);
+      if (!range) return;
+      if (last && Math.abs(last.from - range.from) < 0.5 && Math.abs(last.to - range.to) < 0.5) return;
+      last = { from: range.from, to: range.to };
+      interactionStore.set({ visibleRange: last });
     };
     chart.timeScale().subscribeVisibleLogicalRangeChange(handler);
     return () => chart.timeScale().unsubscribeVisibleLogicalRangeChange(handler);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [interactionStore]);
 
-  // Apply visibleRange from parent (scrollbar/zoom buttons) → chart
+  // Consumer: store ranges from OUTSIDE the chart (scrollbar drags, zoom
+  // buttons) are applied to the time scale. The epsilon guard kills the echo
+  // from chart-originated writes — no feedback loop.
   useEffect(() => {
-    if (!visibleRange || !chartRef.current) return;
-    const ts  = chartRef.current.timeScale();
-    const cur = ts.getVisibleLogicalRange();
-    // Skip if already matches to avoid infinite loop
-    if (cur && Math.abs(cur.from - visibleRange.from) < 0.5 && Math.abs(cur.to - visibleRange.to) < 0.5) return;
-    ts.setVisibleLogicalRange(visibleRange);
-  }, [visibleRange]);
+    const chart = chartRef.current;
+    if (!chart) return;
+    return interactionStore.subscribe(() => {
+      const r = interactionStore.getSnapshot().visibleRange;
+      if (!r) return;
+      const ts = chart.timeScale();
+      const cur = ts.getVisibleLogicalRange();
+      if (!cur || Math.abs(cur.from - r.from) > 0.5 || Math.abs(cur.to - r.to) > 0.5) {
+        ts.setVisibleLogicalRange(r);
+      }
+    });
+  }, [interactionStore]);
+
+  // Auto-interval suggestion: a coalesced store subscription, not a
+  // render-driven effect. Fires only on span-table boundary crossings;
+  // ChartPanel applies it only in auto mode.
+  const lastSuggestedRef = useRef<Interval | null>(null);
+  const pushSuggestion = useRafCoalescer((range: { from: number; to: number }) => {
+    const bs = barsRef.current;
+    if (!bs.length || !onAutoIntervalRef.current) return;
+    const fromIdx = Math.max(0, Math.floor(range.from));
+    const toIdx = Math.min(bs.length - 1, Math.floor(range.to));
+    if (toIdx <= fromIdx) return;
+    const spanDays = (toTs(bs[toIdx].time) - toTs(bs[fromIdx].time)) / 86400;
+    const suggested = intervalForSpan(spanDays);
+    if (suggested === lastSuggestedRef.current) return;
+    lastSuggestedRef.current = suggested;
+    onAutoIntervalRef.current(suggested);
+  });
+  useEffect(() => {
+    return interactionStore.subscribe(() => {
+      const r = interactionStore.getSnapshot().visibleRange;
+      if (r) pushSuggestion(r);
+    });
+  }, [interactionStore, pushSuggestion]);
+
+  // lastBar producer — feeds the §8 legend and §15 staleness rail.
+  useEffect(() => {
+    const b = bars[bars.length - 1];
+    interactionStore.set({
+      lastBar: b
+        ? { time: toTs(b.time), open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume }
+        : null,
+    });
+  }, [bars, interactionStore]);
 
   // ── Main series LIFECYCLE — recreate only when the series type (or compare
   // mode) changes. Data is applied by a separate effect so a bars change never
