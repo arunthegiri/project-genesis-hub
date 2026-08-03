@@ -22,7 +22,11 @@ import { useScrollReveal } from "../helpers/useScrollReveal";
 import styles from "./_index.module.css";
 
 export default function LandingPage() {
-  const revealRef = useScrollReveal({ threshold: 0.1, rootMargin: "0px 0px -50px 0px" });
+  const revealRef = useScrollReveal<HTMLElement>({
+    threshold: 0.1,
+    rootMargin: "0px 0px -50px 0px",
+    selector: `.${styles.revealItem}`,
+  });
 
   return (
     <div className={styles.page}>

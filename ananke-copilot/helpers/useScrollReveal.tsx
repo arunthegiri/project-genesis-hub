@@ -1,53 +1,85 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 interface Options {
   threshold?: number;
   rootMargin?: string;
-  /** Class toggled on each observed child once it enters the viewport. */
-  revealClass?: string;
+  /** Selector for the items to reveal, matched against each container's subtree. */
+  selector?: string;
+}
+
+const REVEALED_ATTR = "data-revealed";
+
+function reveal(el: Element) {
+  el.setAttribute(REVEALED_ATTR, "true");
 }
 
 /**
- * Returns a ref for a container whose direct children fade in as they scroll
- * into view. Children start at `opacity: 0` and are released one at a time;
- * anything already on screen at mount is revealed immediately.
+ * Returns a ref callback that may be attached to any number of containers. Every
+ * descendant matching `selector` starts at `opacity: 0` and is marked
+ * `data-revealed="true"` once it scrolls into view; anything already on screen at
+ * mount is revealed on the observer's first callback.
  */
 export function useScrollReveal<T extends HTMLElement = HTMLDivElement>({
   threshold = 0.1,
   rootMargin = "0px",
-  revealClass = "is-revealed",
+  selector = "[data-reveal]",
 }: Options = {}) {
-  const ref = useRef<T>(null);
+  const containers = useRef(new Set<T>());
+  const observerRef = useRef<IntersectionObserver | null>(null);
+
+  const observeContainer = useCallback(
+    (container: T) => {
+      const observer = observerRef.current;
+      if (!observer) return;
+      container.querySelectorAll(selector).forEach((el) => observer.observe(el));
+    },
+    [selector],
+  );
 
   useEffect(() => {
-    const root = ref.current;
-    if (!root) return;
-
-    const targets = Array.from(root.children) as HTMLElement[];
-    if (targets.length === 0) return;
-
     // Respect reduced-motion: show everything, animate nothing.
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      targets.forEach((el) => el.classList.add(revealClass));
+      containers.current.forEach((container) => {
+        container.querySelectorAll(selector).forEach(reveal);
+      });
       return;
     }
-
-    targets.forEach((el) => el.classList.add("scroll-reveal"));
 
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
           if (!entry.isIntersecting) continue;
-          entry.target.classList.add(revealClass);
+          reveal(entry.target);
           observer.unobserve(entry.target);
         }
       },
       { threshold, rootMargin },
     );
+    observerRef.current = observer;
 
-    targets.forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
-  }, [threshold, rootMargin, revealClass]);
+    // Containers attach during commit, before this effect runs, so pick up
+    // everything registered so far. This also covers StrictMode's simulated
+    // remount, where the effect re-runs but the ref callbacks do not.
+    containers.current.forEach(observeContainer);
 
-  return ref;
+    return () => {
+      observer.disconnect();
+      observerRef.current = null;
+    };
+  }, [threshold, rootMargin, selector, observeContainer]);
+
+  return useCallback(
+    (node: T | null) => {
+      if (node) {
+        containers.current.add(node);
+        observeContainer(node);
+        return;
+      }
+      // React reports detachment as a bare null, so drop whatever left the DOM.
+      containers.current.forEach((el) => {
+        if (!el.isConnected) containers.current.delete(el);
+      });
+    },
+    [observeContainer],
+  );
 }
