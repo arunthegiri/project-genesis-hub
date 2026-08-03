@@ -7,6 +7,7 @@
 // which runs inside the incoming request's context during SSR.
 import { createServerFn } from "@tanstack/react-start";
 import { getCookie } from "@tanstack/react-start/server";
+import type { LayoutStorage } from "react-resizable-panels";
 
 const MAX_AGE = 60 * 60 * 24 * 365; // 1 year
 
@@ -47,6 +48,16 @@ export function mergeUiCookie(name: string, patch: Record<string, unknown>): voi
   const base = readUiCookieJson<Record<string, unknown>>(name) ?? {};
   writeUiCookie(name, JSON.stringify({ ...base, ...patch }));
 }
+
+// Adapter for react-resizable-panels v4's useDefaultLayout (§14): splitter
+// layouts persist into the same cookie jar. LayoutStorage is synchronous
+// (Pick<Storage, "getItem" | "setItem">), so cookies are legal — and because
+// the / route loader reads ui.* cookies server-side, the persisted layout is
+// what the first client render reveals.
+export const layoutCookieStorage: LayoutStorage = {
+  getItem: (key) => readUiCookie(key),
+  setItem: (key, value) => writeUiCookie(key, value),
+};
 
 // Server-side read for route loaders. During SSR the handler executes inside
 // the request context, so getCookie sees the incoming request's cookies; the

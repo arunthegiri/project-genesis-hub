@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { keepPreviousData, useQuery, useQueries } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { format } from "date-fns";
 import { ChevronDown, ChevronUp, GripHorizontal, Loader2, Plus, X } from "lucide-react";
 
@@ -34,7 +35,7 @@ import { aggregatePriceBars, intervalForSpan } from "@/lib/price-bars";
 import { intervalMs, snapRange } from "@/lib/interval-policy";
 import { CHART_COLORS } from "@/lib/chart-colors";
 import { createInteractionStore, type InteractionStore } from "@/lib/stores/chart-interaction";
-import { CHARTS_UI_COOKIE, mergeUiCookie, panelUiCookie, readUiCookieJson, writeUiCookie } from "@/lib/cookie-state";
+import { CHARTS_UI_COOKIE, layoutCookieStorage, mergeUiCookie, panelUiCookie, readUiCookieJson, writeUiCookie } from "@/lib/cookie-state";
 import {
   PanelSkeleton,
   clampHeight,
@@ -69,6 +70,8 @@ const CHART_TYPES: { value: ChartType; label: string }[] = [
 // Panel internals persist in the ui.panel.<persistKey> cookie: layout-
 // critical, non-sensitive, small JSON. SSR never sees per-panel internals —
 // it renders PanelSkeleton until mount, so nothing paints one way and snaps.
+// The chart/table split ratio is NOT here — §14 moved it to the Group layout
+// cookie managed by useDefaultLayout (react-resizable-panels:<id>:* keys).
 interface PanelUiCookie {
   symbol?: string;
   startDate?: string;
@@ -78,7 +81,6 @@ interface PanelUiCookie {
   chartType?: ChartType;
   compareSymbols?: string[];
   showData?: boolean;
-  dataPanelPct?: number;
   showSMA?: boolean;
   showEMA?: boolean;
   showBB?: boolean;
@@ -118,16 +120,26 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
   const [viewportIntent, setViewportIntent] = useState<ViewportIntent>("fit");
   const [intervalMode, setIntervalMode]     = useState<"auto" | "pinned">("auto");
 
-  // Layout: vertical height of the whole chart+data region (drag handle at the
-  // bottom edge) and the horizontal chart/data split ratio. `dragging` disables
-  // the layout CSS transition so panels track the cursor 1:1 while dragging.
-  // chartHeight is SSR-known from the ui.charts cookie (via the / loader), so
-  // the skeleton and the live panel share the same outer geometry.
+  // Layout: vertical height of the whole chart+data region (drag handle at
+  // the bottom edge, pointer-capture based). chartHeight is SSR-known from
+  // the ui.charts cookie (via the / loader), so the skeleton and the live
+  // panel share the same outer geometry. The horizontal chart/table split is
+  // owned by the react-resizable-panels Group below (§14), not by state here.
   const [chartHeight, setChartHeight]   = useState<number>(() =>
     clampHeight(initialChartHeight ?? DEFAULT_CHART_HEIGHT));
-  const [dataPanelPct, setDataPanelPct] = useState<number>(DEFAULT_DATA_PCT);
-  const [dragging, setDragging]         = useState<null | "h" | "v">(null);
-  const chartRowRef = useRef<HTMLDivElement>(null);
+  const [dragging, setDragging]         = useState<null | "v">(null);
+  const vDragRef = useRef<{ startY: number; startH: number } | null>(null);
+
+  // §14: chart/table split with cookie-persisted layout. The storage adapter
+  // is the §13 cookie jar, so the layout the user dragged is what the first
+  // client render reveals (the §13 skeleton hides the internals during SSR —
+  // server-side storage reads return null and Group never renders there).
+  // panelIds covers the conditionally-rendered data panel (SSR-shift guard).
+  const { defaultLayout, onLayoutChanged } = useDefaultLayout({
+    id: `chartpanel-v1-${persistKey ?? "default"}`,
+    storage: layoutCookieStorage,
+    panelIds: ["chart", "table"],
+  });
 
   // Restore persisted internals after mount (client only, post-hydration),
   // then reveal the real panel. All setters batch into one commit — the
@@ -143,7 +155,6 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
     if (typeof s.chartType === "string") setChartType(s.chartType);
     if (Array.isArray(s.compareSymbols)) setCompareSymbols(s.compareSymbols);
     if (typeof s.showData === "boolean") setShowData(s.showData);
-    if (typeof s.dataPanelPct === "number") setDataPanelPct(s.dataPanelPct);
     if (typeof s.showSMA === "boolean") setShowSMA(s.showSMA);
     if (typeof s.showEMA === "boolean") setShowEMA(s.showEMA);
     if (typeof s.showBB === "boolean") setShowBB(s.showBB);
@@ -195,49 +206,38 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
   if (!interactionStoreRef.current) interactionStoreRef.current = createInteractionStore();
   const interactionStore = interactionStoreRef.current;
 
-  // Horizontal splitter — drag to adjust the chart/data width ratio.
-  const startHDrag = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    const row = chartRowRef.current;
-    if (!row) return;
-    const rowWidth = row.getBoundingClientRect().width;
-    const startX = e.clientX;
-    const startPct = dataPanelPct;
-    setDragging("h");
-    const onMove = (ev: MouseEvent) => {
-      // Dragging left widens the data panel.
-      const delta = ((startX - ev.clientX) / rowWidth) * 100;
-      setDataPanelPct(Math.min(MAX_DATA_PCT, Math.max(MIN_DATA_PCT, startPct + delta)));
-    };
-    const onUp = () => {
-      setDragging(null);
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  }, [dataPanelPct]);
-
-  // Vertical handle — drag the bottom edge to grow/shrink the whole region.
-  const startVDrag = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    const startY = e.clientY;
-    const startH = chartHeight;
-    let current = startH;
+  // Vertical handle — pointer-capture drag grows/shrinks the whole region;
+  // arrow keys resize in 24px steps (WAI-ARIA separator keyboard pattern).
+  // The new height persists to the ui.charts cookie on release.
+  const handleVPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    vDragRef.current = { startY: e.clientY, startH: chartHeight };
     setDragging("v");
-    const onMove = (ev: MouseEvent) => {
-      current = clampHeight(startH + (ev.clientY - startY));
-      setChartHeight(current);
-    };
-    const onUp = () => {
-      setDragging(null);
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      mergeUiCookie(CHARTS_UI_COOKIE, { chartHeight: current });
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
   }, [chartHeight]);
+
+  const handleVPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const d = vDragRef.current;
+    if (!d) return;
+    setChartHeight(clampHeight(d.startH + (e.clientY - d.startY)));
+  }, []);
+
+  const endVDrag = useCallback(() => {
+    if (!vDragRef.current) return;
+    vDragRef.current = null;
+    setDragging(null);
+    setChartHeight(h => { mergeUiCookie(CHARTS_UI_COOKIE, { chartHeight: h }); return h; });
+  }, []);
+
+  const handleVKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    const delta = e.key === "ArrowDown" ? 24 : e.key === "ArrowUp" ? -24 : 0;
+    if (!delta) return;
+    e.preventDefault();
+    setChartHeight(h => {
+      const next = clampHeight(h + delta);
+      mergeUiCookie(CHARTS_UI_COOKIE, { chartHeight: next });
+      return next;
+    });
+  }, []);
 
   // Persist configuration so the panel survives reloads and tab navigation.
   // The restore effect flips restoredRef in the same commit it applies the
@@ -247,11 +247,11 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
     if (!persistKey || !restoredRef.current) return;
     writeUiCookie(panelUiCookie(persistKey), JSON.stringify({
       symbol: selectedSymbol, startDate, endDate, interval, rangePreset, chartType,
-      compareSymbols, showData, dataPanelPct,
+      compareSymbols, showData,
       showSMA, showEMA, showBB, showRSI, showMACD, strategy: selectedStrategy,
     }));
   }, [persistKey, selectedSymbol, startDate, endDate, interval, rangePreset, chartType,
-      compareSymbols, showData, dataPanelPct, showSMA, showEMA, showBB, showRSI, showMACD,
+      compareSymbols, showData, showSMA, showEMA, showBB, showRSI, showMACD,
       selectedStrategy]);
 
   const { data: strategyDetail } = useQuery({
@@ -551,101 +551,98 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
       {/* Chart + data region.
           A fixed-height wrapper (drag the bottom handle to resize, persisted in
           the ui.charts cookie) that also gives the chart a *definite* height to
-          resolve its canvas against. Inside, a horizontal flex split: the chart
-          column flex-grows while the data column's width animates open/closed
-          and is drag-adjustable via the splitter. */}
+          resolve its canvas against. Inside, a react-resizable-panels Group
+          owns the chart/table split (§14) — layout persists to a cookie via
+          useDefaultLayout, so a reload reveals the dragged split as-is. */}
       <div
         className="relative flex flex-col"
         style={{
           height: chartHeight,
           userSelect: dragging ? "none" : undefined,
-          cursor: dragging === "v" ? "row-resize" : dragging === "h" ? "col-resize" : undefined,
+          cursor: dragging === "v" ? "row-resize" : undefined,
         }}
       >
-        <div ref={chartRowRef} className="flex min-h-0 flex-1 overflow-hidden">
-          {/* Chart column — grows to fill whatever the data column leaves free. */}
-          <div className="relative flex min-w-0 flex-1 flex-col">
-            <div className="relative flex flex-1 overflow-hidden">
-              {/* Chart content */}
-              <div className="relative flex-1 min-w-0">
-                {!selectedSymbol && <Empty>Select a symbol above to begin.</Empty>}
-                {selectedSymbol && isInitialLoad && <Empty><Loader2 className="h-4 w-4 animate-spin" /> Loading…</Empty>}
-                {selectedSymbol && error && (
-                  <Empty><span className="text-destructive">{(error as Error).message}</span></Empty>
-                )}
-                {selectedSymbol && !isInitialLoad && !error && bars.length === 0 && (
-                  <Empty>No data for {selectedSymbol} in this range.</Empty>
-                )}
-                {selectedSymbol && bars.length > 0 && (
-                  <PriceChart
-                    bars={bars}
-                    indicators={indicators}
-                    height="100%"
-                    chartType={chartType}
-                    compareData={compareData}
-                    trades={strategyTrades}
-                    onAutoInterval={handleAutoInterval}
-                    interactionStore={interactionStore}
-                    viewportIntent={viewportIntent}
-                    onViewportGesture={() => setViewportIntent("anchored")}
+        <Group
+          orientation="horizontal"
+          className="min-h-0 flex-1"
+          defaultLayout={defaultLayout}
+          onLayoutChanged={onLayoutChanged}
+        >
+          {/* Chart panel — grows to fill whatever the data panel leaves free. */}
+          <Panel id="chart" minSize="30%" className="relative min-w-0">
+            <div className="relative flex h-full min-w-0 flex-col">
+              <div className="relative flex flex-1 overflow-hidden">
+                {/* Chart content */}
+                <div className="relative flex-1 min-w-0">
+                  {!selectedSymbol && <Empty>Select a symbol above to begin.</Empty>}
+                  {selectedSymbol && isInitialLoad && <Empty><Loader2 className="h-4 w-4 animate-spin" /> Loading…</Empty>}
+                  {selectedSymbol && error && (
+                    <Empty><span className="text-destructive">{(error as Error).message}</span></Empty>
+                  )}
+                  {selectedSymbol && !isInitialLoad && !error && bars.length === 0 && (
+                    <Empty>No data for {selectedSymbol} in this range.</Empty>
+                  )}
+                  {selectedSymbol && bars.length > 0 && (
+                    <PriceChart
+                      bars={bars}
+                      indicators={indicators}
+                      height="100%"
+                      chartType={chartType}
+                      compareData={compareData}
+                      trades={strategyTrades}
+                      onAutoInterval={handleAutoInterval}
+                      interactionStore={interactionStore}
+                      viewportIntent={viewportIntent}
+                      onViewportGesture={() => setViewportIntent("anchored")}
+                    />
+                  )}
+                  {isFetching && selectedSymbol && (
+                    <div className="absolute right-3 top-3 flex items-center gap-1 text-[10px] text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" /> {isPlaceholderData ? "refining…" : "refreshing"}
+                    </div>
+                  )}
+                  {viewportIntent === "anchored" && (
+                    <button
+                      type="button"
+                      onClick={() => setViewportIntent("fit")}
+                      title="Reset viewport to fit all data (R)"
+                      className="absolute left-3 top-3 rounded border border-border bg-card/80 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground hover:text-foreground"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+
+                {/* Vertical scrollbar on right — reads/writes the interaction
+                    store directly, so dragging never re-renders this panel. */}
+                {bars.length > 0 && (
+                  <StoreConnectedScrollbar
+                    store={interactionStore}
+                    totalBars={bars.length}
+                    onUserRange={() => setViewportIntent("anchored")}
                   />
                 )}
-                {isFetching && selectedSymbol && (
-                  <div className="absolute right-3 top-3 flex items-center gap-1 text-[10px] text-muted-foreground">
-                    <Loader2 className="h-3 w-3 animate-spin" /> {isPlaceholderData ? "refining…" : "refreshing"}
-                  </div>
-                )}
-                {viewportIntent === "anchored" && (
-                  <button
-                    type="button"
-                    onClick={() => setViewportIntent("fit")}
-                    title="Reset viewport to fit all data (R)"
-                    className="absolute left-3 top-3 rounded border border-border bg-card/80 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground hover:text-foreground"
-                  >
-                    Reset
-                  </button>
-                )}
               </div>
-
-              {/* Vertical scrollbar on right — reads/writes the interaction
-                  store directly, so dragging never re-renders this panel. */}
-              {bars.length > 0 && (
-                <StoreConnectedScrollbar
-                  store={interactionStore}
-                  totalBars={bars.length}
-                  onUserRange={() => setViewportIntent("anchored")}
-                />
-              )}
             </div>
-          </div>
+          </Panel>
 
-          {/* Draggable horizontal splitter (only when the data panel is open). */}
+          {/* Splitter + data panel (only when the data view is open). The
+              Separator is keyboard-accessible and double-click-resets out of
+              the box; data-separator carries hover/focus/active state. */}
           {showData && (
-            <div
-              onMouseDown={startHDrag}
-              role="separator"
-              aria-orientation="vertical"
-              title="Drag to resize"
-              className="flex w-1.5 shrink-0 cursor-col-resize items-center justify-center bg-border/20 transition-colors hover:bg-border/60 active:bg-primary/40"
+            <Separator
+              className="w-1.5 shrink-0 cursor-col-resize bg-border/20 transition-colors data-[separator=active]:bg-primary/40 data-[separator=focus]:bg-primary/60 data-[separator=hover]:bg-border/60"
             />
           )}
-
-          {/* Data column — width animates on open/close and tracks the splitter. */}
-          <div
-            className="flex min-w-0 flex-col overflow-hidden border-l border-border"
-            style={{
-              flexGrow: 0,
-              flexShrink: 0,
-              flexBasis: showData ? `${dataPanelPct}%` : "0%",
-              opacity: showData ? 1 : 0,
-              pointerEvents: showData ? undefined : "none",
-              transition: dragging === "h"
-                ? "none"
-                : "flex-basis 200ms ease, opacity 200ms ease",
-            }}
-          >
-            {showData && (
-              <>
+          {showData && (
+            <Panel
+              id="table"
+              minSize={`${MIN_DATA_PCT}%`}
+              maxSize={`${MAX_DATA_PCT}%`}
+              defaultSize={`${DEFAULT_DATA_PCT}%`}
+              className="min-w-0 border-l border-border"
+            >
+              <div className="flex h-full min-w-0 flex-col overflow-hidden">
                 <div ref={dataTableRef} className="overflow-auto flex-1">
                   <table className="tabular w-full text-[11px]">
                     <thead className="sticky top-0 bg-card text-muted-foreground">
@@ -690,19 +687,26 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
                 <div className="shrink-0 border-t border-border p-2">
                   <PythonExport code={pythonCode} filename={`${selectedSymbol || "query"}_${interval}.py`} />
                 </div>
-              </>
-            )}
-          </div>
-        </div>
+              </div>
+            </Panel>
+          )}
+        </Group>
 
-        {/* Vertical resize handle at the bottom edge — drag to change the
-            region's height (clamped 300px … 90vh, persisted in the ui.charts cookie). */}
+        {/* Vertical resize handle at the bottom edge — drag (pointer capture)
+            or arrow keys to change the region's height (clamped 300px … 90vh,
+            persisted in the ui.charts cookie). */}
         <div
-          onMouseDown={startVDrag}
           role="separator"
           aria-orientation="horizontal"
-          title="Drag to resize height"
-          className="group flex h-2 shrink-0 cursor-row-resize items-center justify-center border-t border-border bg-border/10 transition-colors hover:bg-border/40 active:bg-primary/30"
+          aria-label="Resize chart height"
+          title="Drag or use arrow keys to resize height"
+          tabIndex={0}
+          onPointerDown={handleVPointerDown}
+          onPointerMove={handleVPointerMove}
+          onPointerUp={endVDrag}
+          onPointerCancel={endVDrag}
+          onKeyDown={handleVKeyDown}
+          className="group flex h-2 shrink-0 cursor-row-resize touch-none items-center justify-center border-t border-border bg-border/10 transition-colors hover:bg-border/40 focus:bg-primary/30 focus:outline-none active:bg-primary/30"
         >
           <GripHorizontal className="h-3 w-3 text-muted-foreground/50 group-hover:text-muted-foreground" />
         </div>

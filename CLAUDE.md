@@ -49,7 +49,7 @@ src/
   lib/python-export.ts ← generates pandas + SQLAlchemy snippets mirroring the UI query
   components/
     PriceChart.tsx  ← lightweight-charts wrapper; main chart + sub-panes (RSI, MACD)
-    ChartPanel.tsx  ← chart panel with controls, indicator toggles, data panel (hand-rolled drag splitters — react-resizable-panels v4 migration planned)
+    ChartPanel.tsx  ← chart panel with controls, indicator toggles, data panel (react-resizable-panels v4 Group/Panel/Separator; split layout cookie-persisted via useDefaultLayout + §13 cookie storage)
     BacktestingChart.tsx ← candlestick chart for backtesting replay
     EquityChart.tsx ← equity curve chart
     SymbolPicker.tsx
