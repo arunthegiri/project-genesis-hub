@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { keepPreviousData, useQuery, useQueries } from "@tanstack/react-query";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { format } from "date-fns";
 import { ChevronDown, ChevronUp, GripHorizontal, Loader2, Plus, X } from "lucide-react";
 
@@ -286,6 +287,22 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
   const isInitialLoad = isPending && !isPlaceholderData;
 
   const bars = useMemo(() => aggregatePriceBars(rawBars, interval), [rawBars, interval]);
+
+  // Virtualized data table (§12): rows are pinned to a fixed 25px
+  // (text-[11px] + leading-4 + py-1 + 1px border) so the spacer-row
+  // padding math stays exact across the full range.
+  const dataTableRef = useRef<HTMLDivElement>(null);
+  const dataRowVirtualizer = useVirtualizer({
+    count: bars.length,
+    getScrollElement: () => dataTableRef.current,
+    estimateSize: () => 25,
+    overscan: 12,
+  });
+  const dataVirtualRows = dataRowVirtualizer.getVirtualItems();
+  const dataRowsPaddingTop = dataVirtualRows.length > 0 ? dataVirtualRows[0].start : 0;
+  const dataRowsPaddingBottom = dataVirtualRows.length > 0
+    ? dataRowVirtualizer.getTotalSize() - dataVirtualRows[dataVirtualRows.length - 1].end
+    : 0;
 
   const compareQueries = useQueries({
     queries: compareSymbols.map(sym => ({
@@ -611,7 +628,7 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
           >
             {showData && (
               <>
-                <div className="overflow-auto flex-1">
+                <div ref={dataTableRef} className="overflow-auto flex-1">
                   <table className="tabular w-full text-[11px]">
                     <thead className="sticky top-0 bg-card text-muted-foreground">
                       <tr>
@@ -621,16 +638,29 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
                       </tr>
                     </thead>
                     <tbody>
-                      {bars.slice(0, 200).map((b, i) => (
-                        <tr key={`${b.time}-${i}`} className="border-t border-border/50">
-                          <td className="px-2 py-1 text-muted-foreground">{format(new Date(b.time), "MM/dd/yy HH:mm")}</td>
-                          <td className="px-2 py-1">{b.open.toFixed(2)}</td>
-                          <td className="px-2 py-1 text-bull">{b.high.toFixed(2)}</td>
-                          <td className="px-2 py-1 text-bear">{b.low.toFixed(2)}</td>
-                          <td className="px-2 py-1">{b.close.toFixed(2)}</td>
-                          <td className="px-2 py-1 text-muted-foreground">{b.volume.toLocaleString()}</td>
+                      {dataVirtualRows.length > 0 && (
+                        <tr aria-hidden="true">
+                          <td colSpan={6} style={{ height: dataRowsPaddingTop, padding: 0, border: 0 }} />
                         </tr>
-                      ))}
+                      )}
+                      {dataVirtualRows.map((vi) => {
+                        const b = bars[vi.index];
+                        return (
+                          <tr key={vi.key} className="border-t border-border/50">
+                            <td className="px-2 py-1 leading-4 text-muted-foreground">{format(new Date(b.time), "yyyy-MM-dd HH:mm")}</td>
+                            <td className="px-2 py-1 leading-4">{b.open.toFixed(2)}</td>
+                            <td className="px-2 py-1 leading-4 text-bull">{b.high.toFixed(2)}</td>
+                            <td className="px-2 py-1 leading-4 text-bear">{b.low.toFixed(2)}</td>
+                            <td className="px-2 py-1 leading-4">{b.close.toFixed(2)}</td>
+                            <td className="px-2 py-1 leading-4 text-muted-foreground">{b.volume.toLocaleString()}</td>
+                          </tr>
+                        );
+                      })}
+                      {dataVirtualRows.length > 0 && (
+                        <tr aria-hidden="true">
+                          <td colSpan={6} style={{ height: dataRowsPaddingBottom, padding: 0, border: 0 }} />
+                        </tr>
+                      )}
                       {bars.length === 0 && (
                         <tr>
                           <td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">No data</td>

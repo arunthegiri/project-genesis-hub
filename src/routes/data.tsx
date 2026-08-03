@@ -39,8 +39,6 @@ const ALL_COLUMNS: { key: keyof PriceBar; label: string; sql: string }[] = [
   { key: "tradeCount", label: "tradeCount", sql: "trade_count" },
 ];
 
-const PAGE_SIZE = 100;
-
 const DT_FMT_HINT = "YYYY-MM-DDTHH:MM";
 
 function DataPage() {
@@ -61,8 +59,6 @@ function DataPage() {
   const [enabledCols, setEnabledCols] = useState<Set<string>>(
     () => new Set(ALL_COLUMNS.map((c) => c.key as string)),
   );
-  const [page, setPage] = useState(0);
-
   const fromApi = mounted ? localDateTimeInputToApiParam(from) : `${from}:00`;
   const toApi = mounted ? localDateTimeInputToApiParam(to) : `${to}:00`;
 
@@ -73,15 +69,10 @@ function DataPage() {
   });
 
   const visibleCols = ALL_COLUMNS.filter((c) => enabledCols.has(c.key as string));
-  const totalPages = Math.max(1, Math.ceil(bars.length / PAGE_SIZE));
-  const pageBars = useMemo(
-    () => bars.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE),
-    [bars, page],
-  );
 
   const parentRef = useRef<HTMLDivElement>(null);
   const rowVirtualizer = useVirtualizer({
-    count: pageBars.length,
+    count: bars.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 28,
     overscan: 12,
@@ -102,7 +93,7 @@ function DataPage() {
   return (
     <div className="grid h-full grid-cols-[220px_1fr] gap-3 p-3">
       <aside className="overflow-auto rounded-md border border-border bg-card p-3">
-        <SymbolPicker selected={symbol} onSelect={(s) => { setSymbol(s); setPage(0); }} />
+        <SymbolPicker selected={symbol} onSelect={setSymbol} />
       </aside>
 
       <section className="flex flex-col gap-3 overflow-hidden">
@@ -111,7 +102,7 @@ function DataPage() {
             <Input
               type="datetime-local"
               value={from}
-              onChange={(e) => { setFrom(e.target.value); setPage(0); if (e.target.value) setFromError(""); }}
+              onChange={(e) => { setFrom(e.target.value); if (e.target.value) setFromError(""); }}
               onBlur={(e) => { if (!e.target.value) setFromError("Required"); }}
               aria-invalid={!!fromError}
               className={cn("h-8 tabular text-xs", fromError && "border-destructive")}
@@ -122,7 +113,7 @@ function DataPage() {
             <Input
               type="datetime-local"
               value={to}
-              onChange={(e) => { setTo(e.target.value); setPage(0); if (e.target.value) setToError(""); }}
+              onChange={(e) => { setTo(e.target.value); if (e.target.value) setToError(""); }}
               onBlur={(e) => { if (!e.target.value) setToError("Required"); }}
               aria-invalid={!!toError}
               className={cn("h-8 tabular text-xs", toError && "border-destructive")}
@@ -167,21 +158,6 @@ function DataPage() {
             <span className="text-muted-foreground">
               {symbol ? `${bars.length.toLocaleString()} rows for ${symbol}` : "Select a symbol"}
             </span>
-            <div className="flex items-center gap-2">
-              <button
-                disabled={page === 0}
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-                className="rounded border border-border px-2 py-0.5 disabled:opacity-30"
-              >Prev</button>
-              <span className="tabular text-muted-foreground">
-                {page + 1} / {totalPages}
-              </span>
-              <button
-                disabled={page >= totalPages - 1}
-                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-                className="rounded border border-border px-2 py-0.5 disabled:opacity-30"
-              >Next</button>
-            </div>
           </div>
 
           <div className="grid grid-cols-[1fr] border-b border-border bg-panel-header text-[11px] text-muted-foreground">
@@ -200,7 +176,7 @@ function DataPage() {
             )}
             <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }}>
               {rowVirtualizer.getVirtualItems().map((vi) => {
-                const bar = pageBars[vi.index];
+                const bar = bars[vi.index];
                 return (
                   <div
                     key={vi.key}
@@ -235,7 +211,7 @@ function DataPage() {
 
 function formatCell(v: unknown, key: string): string {
   if (v == null) return "—";
-  if (key === "time") return format(new Date(String(v)), "yyyy-MM-dd HH:mm:ss");
+  if (key === "time") return format(new Date(String(v)), "yyyy-MM-dd HH:mm");
   if (typeof v === "number") {
     if (key === "volume" || key === "tradeCount") return v.toLocaleString();
     return v.toFixed(4);
