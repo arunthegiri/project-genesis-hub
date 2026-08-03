@@ -1,6 +1,8 @@
-import { Check, Copy, Download } from "lucide-react";
+import { Check, Copy, ExternalLink, Loader2 } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { openInJupyterLab } from "@/lib/jupyter-export";
 
 interface Props {
   code: string;
@@ -9,6 +11,18 @@ interface Props {
 
 export function PythonExport({ code, filename = "query.py" }: Props) {
   const [copied, setCopied] = useState(false);
+  const [opening, setOpening] = useState(false);
+
+  const handleOpenInJupyter = async () => {
+    setOpening(true);
+    try {
+      await openInJupyterLab(code, filename);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not open JupyterLab");
+    } finally {
+      setOpening(false);
+    }
+  };
 
   return (
     <div className="flex flex-col rounded-md border border-border bg-card">
@@ -34,17 +48,11 @@ export function PythonExport({ code, filename = "query.py" }: Props) {
             size="sm"
             variant="ghost"
             className="h-7 gap-1 text-xs"
-            onClick={() => {
-              const blob = new Blob([code], { type: "text/x-python" });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = filename;
-              a.click();
-              URL.revokeObjectURL(url);
-            }}
+            disabled={opening}
+            onClick={handleOpenInJupyter}
           >
-            <Download className="h-3 w-3" /> .py
+            {opening ? <Loader2 className="h-3 w-3 animate-spin" /> : <ExternalLink className="h-3 w-3" />}
+            Open in JupyterLab
           </Button>
         </div>
       </div>

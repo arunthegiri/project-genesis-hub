@@ -47,6 +47,9 @@ services:
     restart: unless-stopped
     depends_on:
       - stock-tracker
+    environment:
+      # vite dev proxy target for /jupyter-api (service name on the compose network)
+      JUPYTER_PROXY_TARGET: http://jupyter:8888
     ports:
       - "3000:5173"
 
@@ -54,7 +57,8 @@ services:
     image: jupyter/scipy-notebook:latest
     container_name: jupyter
     ports:
-      - "8888:8888"
+      # Host port 8890 — a host-local jupyter-lab already squats on 8888.
+      - "8890:8888"
     volumes:
       - ./Test Trading Strategies:/home/jovyan/strategies
       - ./ananke-sdk:/home/jovyan/ananke-sdk
@@ -67,7 +71,7 @@ services:
         condition: service_healthy
     command: >
       bash -c "pip install -e /home/jovyan/ananke-sdk &&
-               start-notebook.sh --NotebookApp.token='' --NotebookApp.password=''"
+               start-notebook.sh --IdentityProvider.token='' --ServerApp.password='' --ServerApp.allow_origin_regex='^http://localhost:[0-9]+$$' --ServerApp.allow_credentials=True"
 
 volumes:
   timescale_data:

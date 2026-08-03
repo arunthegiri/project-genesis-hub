@@ -122,6 +122,16 @@ Routes using unimplemented endpoints (`/metrics`, `/models`) render `<PendingPag
 |---|---|---|
 | `VITE_API_BASE_URL` | `http://localhost:8080` | Spring backend base URL |
 | `VITE_WS_URL` | derived from base URL | Future WebSocket (not yet used) |
+| `VITE_JUPYTER_URL` | `http://localhost:8890` | JupyterLab URL for "Open in JupyterLab" (see below) |
+
+### Open in JupyterLab
+
+The chart/data export panel (`PythonExport.tsx`) has an "Open in JupyterLab" button: `lib/jupyter-export.ts` writes the generated snippet as an `.ipynb` into the Jupyter contents API (`strategies/` → the `Test Trading Strategies` volume) and opens it in JupyterLab. Mechanics:
+
+- Jupyter runs authless for local dev but enforces XSRF — the client warms the `_xsrf` cookie and echoes it as `X-XSRFToken`.
+- API calls go through the vite dev proxy `/jupyter-api` (see `vite.config.ts`), which rewrites both Host and Origin (jupyter_server 404s writes whose Origin ≠ Host). Container target: `JUPYTER_PROXY_TARGET=http://jupyter:8888` (compose env); host dev default: `http://localhost:8890`.
+- The docker Jupyter is on host port **8890**, not 8888 — a host-local `jupyter-lab` process squats on 8888.
+- Feature is local-dev only (the proxy exists in vite dev; there is no production Jupyter).
 
 ### Adding a new route
 
