@@ -8,6 +8,7 @@ import { Loader2 } from "lucide-react";
 import { SymbolPicker } from "@/components/SymbolPicker";
 import { PythonExport } from "@/components/PythonExport";
 import { BackfillPanel } from "@/components/BackfillPanel";
+import { CoverageTimeline } from "@/components/CoverageTimeline";
 import { pricesApi } from "@/lib/api/prices";
 import { INTERVALS, type Interval, type PriceBar } from "@/lib/api/types";
 import { Input } from "@/components/ui/input";
@@ -172,6 +173,8 @@ function DataPage() {
             ))}
           </div>
         </div>
+
+        <CoverageTimeline from={fromApi} to={toApi} />
 
         <div className="flex min-h-0 flex-1 flex-col rounded-md border border-border bg-card">
           <div className="flex items-center justify-between border-b border-border px-3 py-2 text-xs">

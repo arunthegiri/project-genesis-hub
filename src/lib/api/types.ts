@@ -39,6 +39,27 @@ export interface Trade {
 
 export type BackfillStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
 
+/** Raw DTO from GET /api/prices/{symbol}/coverage-blocks (ApiDto.CoverageBlock). */
+export interface CoverageBlockResponse {
+  fromTime: string;  // ISO-8601 UTC
+  toTime: string;
+  barCount: number;
+}
+
+export type CoverageBlockState = "covered" | "gap" | "backfilling" | "covered-but-empty";
+
+/**
+ * §16 future-proof coverage segment. The backend ships fromTime/toTime/barCount
+ * today; `state` defaults to "covered" until the backend's per-block state field
+ * lands, at which point the extra renderings light up without a UI change.
+ */
+export interface CoverageBlock {
+  from: string;      // ISO-8601 UTC
+  to: string;
+  barCount: number;
+  state?: CoverageBlockState;
+}
+
 export interface BackfillJob {
   jobId: string;
   symbol: string;
