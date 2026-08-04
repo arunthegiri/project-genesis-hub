@@ -6,6 +6,7 @@ dist
 .nitro
 .wrangler
 *.local
+.env
 .DS_Store
 
 # Keep the frontend build context small — none of this is needed in the image

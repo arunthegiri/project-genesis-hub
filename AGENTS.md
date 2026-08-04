@@ -29,7 +29,7 @@ docker compose --profile full down            # stop everything (keeps db volume
 
 Notes:
 - Builds use BuildKit cache mounts (npm + Maven) and a slim `.dockerignore` context — don't remove the `RUN --mount=type=cache` lines from the Dockerfiles.
-- For frontend work, prefer host `npm run dev` over rebuilding the frontend image.
+- The frontend container serves the **production build** via `wrangler dev` (workerd runs the TanStack Start bundle from `dist/`, glibc `node:22-slim` runtime — workerd has no musl build). It is NOT a vite dev server: assets are content-hashed and immutable, so stale-chunk/dep-reoptimization reload failures can't happen. For frontend work, prefer host `npm run dev` over rebuilding the frontend image.
 - Explicitly targeting a service (`docker compose up -d --build frontend`) works without the profile flag.
 
 ## Architecture
@@ -129,7 +129,7 @@ Routes using unimplemented endpoints (`/metrics`, `/models`) render `<PendingPag
 The chart/data export panel (`PythonExport.tsx`) has an "Open in JupyterLab" button: `lib/jupyter-export.ts` writes the generated snippet as an `.ipynb` into the Jupyter contents API (`strategies/` → the `Test Trading Strategies` volume) and opens it in JupyterLab. Mechanics:
 
 - Jupyter runs authless for local dev but enforces XSRF — the client warms the `_xsrf` cookie and echoes it as `X-XSRFToken`.
-- API calls go through the vite dev proxy `/jupyter-api` (see `vite.config.ts`), which rewrites both Host and Origin (jupyter_server 404s writes whose Origin ≠ Host). Container target: `JUPYTER_PROXY_TARGET=http://jupyter:8888` (compose env); host dev default: `http://localhost:8890`.
+- API calls go through the app-level server route `src/routes/jupyter-api.$.ts`, which rewrites both Host and Origin (jupyter_server 404s writes whose Origin ≠ Host). Works identically under `vite dev` and the production worker. Target: `VITE_JUPYTER_PROXY_TARGET` baked at image build (`http://jupyter:8888` in the container); host dev default `http://localhost:8890`.
 - The docker Jupyter is on host port **8890**, not 8888 — a host-local `jupyter-lab` process squats on 8888.
 - Feature is local-dev only (the proxy exists in vite dev; there is no production Jupyter).
 

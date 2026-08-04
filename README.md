@@ -45,7 +45,7 @@ You can find your keys at [app.alpaca.markets](https://app.alpaca.markets) → *
 docker compose --profile full up -d --build
 ```
 
-The frontend container lives behind the `full` profile — plain `docker compose up -d` starts only TimescaleDB, the backend, and Jupyter (see **Daily development** below). First cold build takes 5–10 minutes (Maven + npm); subsequent builds reuse Docker layer and BuildKit caches and are much faster.
+The frontend container lives behind the `full` profile — plain `docker compose up -d` starts only TimescaleDB, the backend, and Jupyter (see **Daily development** below). It serves the **production build** (TanStack Start server bundle via wrangler/workerd) — no dev server, no HMR — so what you launch is what would be deployed. First cold build takes 5–10 minutes (Maven + npm); subsequent builds reuse Docker layer and BuildKit caches and are much faster.
 
 ### 4. Open the app
 
