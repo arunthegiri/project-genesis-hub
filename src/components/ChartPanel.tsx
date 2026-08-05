@@ -514,7 +514,7 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
           </SelectContent>
         </Select>
         {bars.length > 0 && (
-          <span className="text-[11px] text-muted-foreground tabular">
+          <span data-testid="panel-date-range" className="text-[11px] text-muted-foreground tabular">
             {bars.length} bars · {formatDisplayDate(startDate)} – {formatDisplayDate(endDate)}
           </span>
         )}

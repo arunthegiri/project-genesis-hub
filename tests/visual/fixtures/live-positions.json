@@ -1,0 +1,26 @@
+[
+  {
+    "symbol": "AAPL",
+    "side": "long",
+    "qty": "120",
+    "marketValue": "27618.00",
+    "costBasis": "26142.00",
+    "unrealizedPl": "1476.00",
+    "unrealizedPlPct": "0.0565",
+    "currentPrice": "230.15",
+    "lastdayPrice": "227.90",
+    "changeToday": "0.0099"
+  },
+  {
+    "symbol": "NVDA",
+    "side": "long",
+    "qty": "40",
+    "marketValue": "51244.00",
+    "costBasis": "53310.00",
+    "unrealizedPl": "-2066.00",
+    "unrealizedPlPct": "-0.0388",
+    "currentPrice": "1281.10",
+    "lastdayPrice": "1269.40",
+    "changeToday": "0.0092"
+  }
+]

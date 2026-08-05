@@ -130,7 +130,7 @@ export function StatusRail() {
       {mounted && session && (
         <>
           {/* Session badge + countdown to next transition */}
-          <span className="flex items-center gap-1.5 whitespace-nowrap">
+          <span data-testid="session-clock" className="flex items-center gap-1.5 whitespace-nowrap">
             <span className={cn("font-semibold tracking-wider", SESSION_STYLE[session.state])}>
               {session.state}
             </span>
@@ -150,6 +150,7 @@ export function StatusRail() {
                 return (
                   <span
                     key={b.symbol}
+                    data-testid="staleness"
                     className={cn(
                       "whitespace-nowrap",
                       tier === "stale" && "text-bear",
