@@ -7,6 +7,7 @@ import { Toaster } from "sonner";
 import appCss from "../styles.css?url";
 import type { RouterContext } from "../router";
 import { AppSidebar } from "@/components/AppSidebar";
+import { TopBar } from "@/components/TopBar";
 import { StatusRail } from "@/components/StatusRail";
 import { CommandPalette } from "@/components/CommandPalette";
 import { runHealthProbe } from "@/lib/api/health-probe";
@@ -38,7 +39,10 @@ export const Route = createRootRouteWithContext<RouterContext>()({
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Quant Trading Platform" },
-      { name: "description", content: "Professional quant trading dashboard, data exploration, and backtesting." },
+      {
+        name: "description",
+        content: "Professional quant trading dashboard, data exploration, and backtesting.",
+      },
     ],
     links: [{ rel: "stylesheet", href: appCss }],
   }),
@@ -90,6 +94,7 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
+        <TopBar />
         <div className="flex min-h-0 flex-1">
           <AppSidebar />
           <main className="flex-1 overflow-auto">
