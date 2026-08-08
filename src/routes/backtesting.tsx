@@ -39,6 +39,7 @@ import type { BacktestTrade, BacktestResults } from "@/lib/api/strategies";
 import type { PriceBar, Trade } from "@/lib/api/types";
 import { applyCapitalConstraints, calcBuyHold } from "@/lib/backtest-capital";
 import { BACKTESTING_UI_COOKIE, readUiCookieJson, writeUiCookie } from "@/lib/cookie-state";
+import { fmtPct, fmtPnl, fmtPrice, fmtSize } from "@/lib/format";
 import { useRafCoalescer } from "@/hooks/useRafCoalescer";
 import { cn } from "@/lib/utils";
 
@@ -87,10 +88,6 @@ function formatTs(iso: string) {
     month: "short", day: "numeric",
     hour: "2-digit", minute: "2-digit", hour12: false,
   });
-}
-
-function formatPnl(pnl: number) {
-  return `${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}`;
 }
 
 function BacktestingPage() {
@@ -559,11 +556,11 @@ function BacktestingPage() {
           {loaded && allBars.length > 0 && (
             <div className="flex flex-wrap items-center gap-4 px-1 text-xs text-muted-foreground">
               <span className="font-mono text-foreground">{currentTime ? formatTs(currentTime) : "—"}</span>
-              <span>Bar {resolvedIdx + 1} / {allBars.length}</span>
+              <span className="tabular-nums">Bar {fmtSize(resolvedIdx + 1)} / {fmtSize(allBars.length)}</span>
               {currentBar && (
                 <span className="font-mono">
-                  O {currentBar.open.toFixed(2)} H {currentBar.high.toFixed(2)}{" "}
-                  L {currentBar.low.toFixed(2)} C {currentBar.close.toFixed(2)}
+                  O {fmtPrice(currentBar.open)} H {fmtPrice(currentBar.high)}{" "}
+                  L {fmtPrice(currentBar.low)} C {fmtPrice(currentBar.close)}
                 </span>
               )}
               <div className="ml-auto flex items-center gap-2">
@@ -704,16 +701,16 @@ function BacktestingPage() {
           {stratBars.length > 0 && stratIdx !== -1 && (
             <div className="flex flex-wrap items-center gap-4 px-1 text-xs text-muted-foreground">
               <span className="font-mono text-foreground">{stratCurrentTime ? formatTs(stratCurrentTime) : "—"}</span>
-              <span>Bar {stratResolvedIdx + 1} / {stratBars.length}</span>
+              <span className="tabular-nums">Bar {fmtSize(stratResolvedIdx + 1)} / {fmtSize(stratBars.length)}</span>
               {stratBars[stratResolvedIdx] && (
                 <span className="font-mono">
-                  C {stratBars[stratResolvedIdx].close.toFixed(2)}
+                  C {fmtPrice(stratBars[stratResolvedIdx].close)}
                 </span>
               )}
               <span className={cn("font-mono font-semibold", stratRunningPnl >= 0 ? "text-bull" : "text-bear")}>
-                P&L {formatPnl(stratRunningPnl)}
+                P&L {fmtPnl(stratRunningPnl)}
               </span>
-              <span className="text-muted-foreground/60">{stratVisibleTrades.length} trades completed</span>
+              <span className="text-muted-foreground/60 tabular-nums">{fmtSize(stratVisibleTrades.length)} trades completed</span>
             </div>
           )}
 
@@ -737,8 +734,8 @@ function BacktestingPage() {
                 {runResults ? `Live run · ${activeResults.symbol ?? stratSymbol}` : `Stored · ${activeResults.symbol ?? "original"}`}
               </span>
               {activeResults && (
-                <span className="text-[10px] text-muted-foreground">
-                  {activeResults.totalTrades} trades · Win {Number(activeResults.winRate ?? 0).toFixed(1)}%
+                <span className="text-[10px] text-muted-foreground tabular-nums">
+                  {fmtSize(activeResults.totalTrades)} trades · Win {fmtPct(Number(activeResults.winRate ?? 0), { plus: false })}
                 </span>
               )}
               {buyHold && (
@@ -779,21 +776,21 @@ function BacktestingPage() {
             <div className="flex items-center gap-4 rounded-md border border-border bg-card px-3 py-1.5 text-xs">
               <span className="text-muted-foreground">Win Rate</span>
               <span className={cn("font-mono font-medium", capitalStats.winRate >= 50 ? "text-bull" : "text-bear")}>
-                {capitalStats.winRate.toFixed(1)}%
+                {fmtPct(capitalStats.winRate, { plus: false })}
               </span>
               <span className="text-border">|</span>
               <span className="text-muted-foreground">Total PnL</span>
               <span className={cn("font-mono font-medium", capitalStats.totalPnl >= 0 ? "text-bull" : "text-bear")}>
-                {capitalStats.totalPnl >= 0 ? "+" : ""}${Math.abs(capitalStats.totalPnl).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {fmtPnl(capitalStats.totalPnl)}
               </span>
               <span className="text-border">|</span>
               <span className="text-muted-foreground">ROC</span>
               <span className={cn("font-mono font-medium", capitalStats.returnOnCapital >= 0 ? "text-bull" : "text-bear")}>
-                {capitalStats.returnOnCapital >= 0 ? "+" : ""}{capitalStats.returnOnCapital.toFixed(2)}%
+                {fmtPct(capitalStats.returnOnCapital)}
               </span>
               <span className="text-border">|</span>
               <span className="text-muted-foreground">Trades</span>
-              <span className="font-mono font-medium">{capitalStats.totalTrades}</span>
+              <span className="font-mono font-medium">{fmtSize(capitalStats.totalTrades)}</span>
               {capitalStats.insufficientCapitalCount > 0 && (
                 <>
                   <span className="text-border">|</span>

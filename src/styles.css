@@ -1,3 +1,5 @@
+/* W5 §7.1 — Inter Variable (self-hosted, latin subset). Must precede Tailwind. */
+@import "@fontsource-variable/inter/wght.css";
 @import "tailwindcss" source(none);
 @source "../src";
 @import "tw-animate-css";
@@ -80,6 +82,8 @@
   --spacing-row-h-compact: var(--row-h-compact);
   --spacing-row-h-default: var(--row-h-default);
 
+  /* W5 §7.1 — Inter for UI/numerics; mono stays for axes/logs/code (§5.5) */
+  --font-sans: "Inter Variable", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
@@ -208,6 +212,19 @@
   .tabular {
     font-variant-numeric: tabular-nums;
     font-family: var(--font-mono);
+  }
+
+  /* W5 §7.2 — numeric discipline. Prefer Tailwind's tabular-nums utility where
+     the extra feature settings aren't needed. */
+  .num {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1, "zero" 1;
+  }
+  /* Hot cells (§14): floor the width so — → number and sign flips don't shift
+     neighbors. */
+  .num-fixed {
+    min-width: 12ch;
+    text-align: right;
   }
 
   ::-webkit-scrollbar {

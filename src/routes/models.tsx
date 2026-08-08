@@ -9,6 +9,7 @@ import {
   type ModelSummary,
 } from "@/lib/api/models";
 import { registerCommands } from "@/lib/command-registry";
+import { fmtPct, fmtPrice } from "@/lib/format";
 import {
   Sheet,
   SheetContent,
@@ -34,23 +35,6 @@ export const Route = createFileRoute("/models")({
 });
 
 // ── Formatting helpers ────────────────────────────────────────────────────────
-
-function fmtNum(value: string | number | null | undefined, decimals = 2): string {
-  if (value === null || value === undefined) return "—";
-  const n = typeof value === "string" ? parseFloat(value) : value;
-  if (isNaN(n)) return "—";
-  return n.toLocaleString("en-US", {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  });
-}
-
-function fmtPct(value: string | number | null | undefined): string {
-  if (value === null || value === undefined) return "—";
-  const n = typeof value === "string" ? parseFloat(value) : value;
-  if (isNaN(n)) return "—";
-  return (n >= 0 ? "+" : "") + n.toFixed(2) + "%";
-}
 
 function fmtDate(value: string | null | undefined): string {
   if (!value) return "—";
@@ -135,7 +119,7 @@ function ModelsTable({
               <td className="px-3 py-2"><StatusBadge status={m.status} /></td>
               <td className="px-3 py-2 text-muted-foreground text-xs">{m.deployMode ?? "—"}</td>
               <td className="px-3 py-2 text-right tabular-nums">{m.featureCount ?? "—"}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{fmtNum(m.sharpeRatio)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmtPrice(m.sharpeRatio)}</td>
               <td className="px-3 py-2 text-right tabular-nums">
                 {m.winRate != null ? fmtPct(parseFloat(m.winRate) * 100) : "—"}
               </td>
@@ -285,7 +269,7 @@ function ModelDetailDrawer({
                   </h3>
                   {perf ? (
                     <div className="grid grid-cols-3 gap-2">
-                      <Metric label="Sharpe" value={fmtNum(perf.sharpeRatio)} />
+                      <Metric label="Sharpe" value={fmtPrice(perf.sharpeRatio)} />
                       <Metric
                         label="Win Rate"
                         value={perf.winRate != null ? fmtPct(parseFloat(perf.winRate) * 100) : "—"}
@@ -295,7 +279,7 @@ function ModelDetailDrawer({
                         value={fmtPct(perf.totalPnlPct)}
                         valueClass={pnlColor(perf.totalPnlPct)}
                       />
-                      <Metric label="Profit Factor" value={fmtNum(perf.profitFactor)} />
+                      <Metric label="Profit Factor" value={fmtPrice(perf.profitFactor)} />
                       <Metric
                         label="Max Drawdown"
                         value={perf.maxDrawdown != null ? fmtPct(parseFloat(perf.maxDrawdown) * 100) : "—"}
@@ -305,7 +289,7 @@ function ModelDetailDrawer({
                       <Metric label="Losing" value={perf.losingTrades ?? "—"} />
                       <Metric
                         label="Total P&L"
-                        value={perf.totalPnl != null ? `$${fmtNum(perf.totalPnl)}` : "—"}
+                        value={perf.totalPnl != null ? `$${fmtPrice(perf.totalPnl)}` : "—"}
                         valueClass={pnlColor(perf.totalPnl)}
                       />
                     </div>
@@ -321,8 +305,8 @@ function ModelDetailDrawer({
                   </h3>
                   <div className="grid grid-cols-3 gap-2">
                     <Metric label="Features" value={detail?.featureCount ?? "—"} />
-                    <Metric label="Buy Thr." value={fmtNum(contract?.buyThreshold ?? null)} />
-                    <Metric label="Sell Thr." value={fmtNum(contract?.sellThreshold ?? null)} />
+                    <Metric label="Buy Thr." value={fmtPrice(contract?.buyThreshold ?? null)} />
+                    <Metric label="Sell Thr." value={fmtPrice(contract?.sellThreshold ?? null)} />
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div className="rounded-md border border-border bg-card p-3 space-y-0.5">

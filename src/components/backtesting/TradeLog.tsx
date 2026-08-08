@@ -2,6 +2,7 @@ import { useMemo, useRef } from "react";
 import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
 import type { Trade } from "@/lib/api/types";
 import type { BacktestTrade } from "@/lib/api/strategies";
+import { fmtPnl, fmtPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 type TradeFilter = "all" | "winning" | "losing";
@@ -15,10 +16,6 @@ function formatTs(iso: string) {
     month: "short", day: "numeric",
     hour: "2-digit", minute: "2-digit", hour12: false,
   });
-}
-
-function formatPnl(pnl: number) {
-  return `${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}`;
 }
 
 function VirtualizedRows<T>({ rows, virtualizer, parentRef, empty, renderRow }: {
@@ -79,10 +76,10 @@ export function TradeLog({ trades }: { trades: Trade[] }) {
           <div className="flex flex-col gap-0.5 px-3 py-2">
             <div className="flex items-center justify-between">
               <span className={cn("text-xs font-semibold", t.side === "LONG" ? "text-bull" : "text-bear")}>{t.side}</span>
-              <span className={cn("font-mono text-xs", t.pnl >= 0 ? "text-bull" : "text-bear")}>{formatPnl(t.pnl)}</span>
+              <span className={cn("font-mono text-xs", t.pnl >= 0 ? "text-bull" : "text-bear")}>{fmtPnl(t.pnl)}</span>
             </div>
-            <div className="font-mono text-[10px] text-muted-foreground">In: {formatTs(t.entryTime)} @ {t.entryPrice.toFixed(2)}</div>
-            <div className="font-mono text-[10px] text-muted-foreground">Out: {formatTs(t.exitTime)} @ {t.exitPrice.toFixed(2)}</div>
+            <div className="font-mono text-[10px] text-muted-foreground">In: {formatTs(t.entryTime)} @ {fmtPrice(t.entryPrice)}</div>
+            <div className="font-mono text-[10px] text-muted-foreground">Out: {formatTs(t.exitTime)} @ {fmtPrice(t.exitPrice)}</div>
           </div>
         )}
       />
@@ -90,7 +87,7 @@ export function TradeLog({ trades }: { trades: Trade[] }) {
         <div className="border-t border-border px-3 py-2">
           <div className="flex items-center justify-between text-xs">
             <span className="text-muted-foreground">Win rate {Math.round((wins / trades.length) * 100)}%</span>
-            <span className={cn("font-mono font-semibold", total >= 0 ? "text-bull" : "text-bear")}>{formatPnl(total)}</span>
+            <span className={cn("font-mono font-semibold", total >= 0 ? "text-bull" : "text-bear")}>{fmtPnl(total)}</span>
           </div>
         </div>
       )}
@@ -132,15 +129,15 @@ export function StrategyTradeLog({ trades, filter }: { trades: BacktestTrade[]; 
                 {t.direction}
               </span>
               <span className={cn("font-mono text-xs", (t.pnl ?? 0) >= 0 ? "text-bull" : "text-bear")}>
-                {formatPnl(t.pnl ?? 0)}
+                {fmtPnl(t.pnl ?? 0)}
               </span>
             </div>
             <div className="font-mono text-[10px] text-muted-foreground">
-              In: {t.entry_time ? formatTs(t.entry_time) : "—"} @ {t.entry_price.toFixed(2)}
+              In: {t.entry_time ? formatTs(t.entry_time) : "—"} @ {fmtPrice(t.entry_price)}
             </div>
             {t.exit_time && t.exit_price != null && (
               <div className="font-mono text-[10px] text-muted-foreground">
-                Out: {formatTs(t.exit_time)} @ {t.exit_price.toFixed(2)}
+                Out: {formatTs(t.exit_time)} @ {fmtPrice(t.exit_price)}
               </div>
             )}
           </div>
@@ -150,7 +147,7 @@ export function StrategyTradeLog({ trades, filter }: { trades: BacktestTrade[]; 
         <div className="border-t border-border px-3 py-2">
           <div className="flex items-center justify-between text-xs">
             <span className="text-muted-foreground">Win rate {trades.length > 0 ? Math.round((wins / trades.length) * 100) : 0}%</span>
-            <span className={cn("font-mono font-semibold", total >= 0 ? "text-bull" : "text-bear")}>{formatPnl(total)}</span>
+            <span className={cn("font-mono font-semibold", total >= 0 ? "text-bull" : "text-bear")}>{fmtPnl(total)}</span>
           </div>
         </div>
       )}

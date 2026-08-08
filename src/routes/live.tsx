@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { liveApi, type AccountData, type PositionData, type ActiveStrategy } from "@/lib/api/live";
+import { fmtPct, fmtPnl, fmtPrice, fmtSize } from "@/lib/format";
+import { MetaGrid, type MetaGridItem } from "@/components/terminal/MetaGrid";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/live")({
@@ -9,30 +11,6 @@ export const Route = createFileRoute("/live")({
 });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-function fmt(value: string | number | null | undefined, decimals = 2): string {
-  if (value === null || value === undefined) return "—";
-  const n = typeof value === "string" ? parseFloat(value) : value;
-  if (isNaN(n)) return "—";
-  return n.toLocaleString("en-US", {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  });
-}
-
-function fmtDollar(value: string | null | undefined): string {
-  if (!value) return "—";
-  const n = parseFloat(value);
-  if (isNaN(n)) return "—";
-  return (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function fmtPct(value: string | null | undefined, multiply100 = false): string {
-  if (!value) return "—";
-  const n = parseFloat(value) * (multiply100 ? 100 : 1);
-  if (isNaN(n)) return "—";
-  return (n >= 0 ? "+" : "") + n.toFixed(2) + "%";
-}
 
 function pnlColor(value: string | null | undefined): string {
   if (!value) return "text-muted-foreground";
@@ -71,28 +49,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-// ── Stat card ─────────────────────────────────────────────────────────────────
-
-function StatCard({
-  label,
-  value,
-  sub,
-  valueClass,
-}: {
-  label: string;
-  value: React.ReactNode;
-  sub?: React.ReactNode;
-  valueClass?: string;
-}) {
-  return (
-    <div className="rounded-lg border border-border bg-card p-4 space-y-1">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={cn("text-xl font-semibold tabular-nums", valueClass)}>{value}</p>
-      {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
-    </div>
-  );
-}
-
 // ── Not-configured banner ─────────────────────────────────────────────────────
 
 function NotConfiguredBanner() {
@@ -121,6 +77,26 @@ function PortfolioOverview({ account }: { account: AccountData | null }) {
     : null;
   const dailyPnlStr = dailyPnl !== null ? dailyPnl.toString() : null;
 
+  const items: MetaGridItem[] = [
+    { label: "Portfolio Value", value: fmtPnl(account.portfolioValue, { plus: false }) },
+    { label: "Cash", value: fmtPnl(account.cash, { plus: false }) },
+    { label: "Buying Power", value: fmtPnl(account.buyingPower, { plus: false }) },
+    {
+      label: "Day P&L",
+      color: pnlColor(dailyPnlStr),
+      value: (
+        <>
+          {fmtPnl(dailyPnlStr)}
+          {dailyPnlPct !== null && (
+            <span className="text-text-muted"> {fmtPct(dailyPnlPct)}</span>
+          )}
+        </>
+      ),
+    },
+    { label: "Long Exposure", value: fmtPnl(account.longMarketValue, { plus: false }) },
+    { label: "DT Buying Power", value: fmtPnl(account.daytradingBuyingPower, { plus: false }) },
+  ];
+
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
@@ -129,18 +105,8 @@ function PortfolioOverview({ account }: { account: AccountData | null }) {
           Account {account.accountNumber} · {account.currency}
         </span>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        <StatCard label="Portfolio Value" value={fmtDollar(account.portfolioValue)} />
-        <StatCard label="Cash" value={fmtDollar(account.cash)} />
-        <StatCard label="Buying Power" value={fmtDollar(account.buyingPower)} />
-        <StatCard
-          label="Day P&L"
-          value={fmtDollar(dailyPnlStr)}
-          sub={dailyPnlPct !== null ? (dailyPnlPct >= 0 ? "+" : "") + dailyPnlPct.toFixed(2) + "%" : undefined}
-          valueClass={pnlColor(dailyPnlStr)}
-        />
-        <StatCard label="Long Exposure" value={fmtDollar(account.longMarketValue)} />
-        <StatCard label="DT Buying Power" value={fmtDollar(account.daytradingBuyingPower)} />
+      <div className="rounded-lg border border-border bg-card p-4">
+        <MetaGrid items={items} className="grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" />
       </div>
     </div>
   );
@@ -184,14 +150,14 @@ function PositionsTable({ positions }: { positions: PositionData[] }) {
                   {p.side?.toUpperCase()}
                 </span>
               </td>
-              <td className="px-3 py-2 text-right tabular-nums">{fmt(p.qty, 0)}</td>
-              <td className="px-3 py-2 text-right tabular-nums">${fmt(p.currentPrice)}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{fmtDollar(p.marketValue)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmtSize(p.qty)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">${fmtPrice(p.currentPrice)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmtPnl(p.marketValue, { plus: false })}</td>
               <td className={cn("px-3 py-2 text-right tabular-nums", pnlColor(p.unrealizedPl))}>
-                {fmtDollar(p.unrealizedPl)}
+                {fmtPnl(p.unrealizedPl)}
               </td>
               <td className={cn("px-3 py-2 text-right tabular-nums", pnlColor(p.unrealizedPlPct))}>
-                {fmtPct(p.unrealizedPlPct, true)}
+                {p.unrealizedPlPct != null ? fmtPct(parseFloat(p.unrealizedPlPct) * 100) : "—"}
               </td>
             </tr>
           ))}
