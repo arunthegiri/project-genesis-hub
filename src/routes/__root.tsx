@@ -6,7 +6,7 @@ import { Toaster } from "sonner";
 
 import appCss from "../styles.css?url";
 import type { RouterContext } from "../router";
-import { AppSidebar } from "@/components/AppSidebar";
+import { AppSidebarWithHealth } from "@/components/AppSidebar";
 import { TopBar } from "@/components/TopBar";
 import { StatusRail } from "@/components/StatusRail";
 import { CommandPalette } from "@/components/CommandPalette";
@@ -143,7 +143,7 @@ function RootComponent() {
       <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
         <TopBar />
         <div className="flex min-h-0 flex-1">
-          <AppSidebar />
+          <AppSidebarWithHealth />
           <main className="flex-1 overflow-auto">
             <Outlet />
           </main>

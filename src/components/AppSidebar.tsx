@@ -1,6 +1,9 @@
+import { useMemo } from "react";
+import { useSyncExternalStore } from "react";
 import { Link, useLocation } from "@tanstack/react-router";
 import { LineChart, Database, History, Activity, Gauge, Brain, TerminalSquare } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { getEndpointStatus, subscribeProbe, type EndpointName } from "@/lib/api/health-probe";
 import { cn } from "@/lib/utils";
 
 type NavRoute = "/" | "/data" | "/backtesting" | "/live" | "/metrics" | "/models";
@@ -21,8 +24,44 @@ const NAV: NavItem[] = [
   { to: "/models", label: "Models", icon: Brain },
 ];
 
-/** Static for now — W4 wires this to the health probe (failing endpoint → dot on its nav icon). */
+/** Default (empty) badge map — AppSidebarWithHealth below supplies the live one. */
 const NO_NOTIFICATIONS: Partial<Record<NavRoute, boolean>> = {};
+
+// ── §6.4 health-probe badge wiring ───────────────────────────────────────────
+
+const PROBE_ENDPOINTS: EndpointName[] = ["symbols", "prices", "trades", "metrics"];
+
+/** Endpoint → the nav route(s) that own it; a flagged endpoint dots its icons. */
+const OWNING_ROUTES: Record<EndpointName, NavRoute[]> = {
+  symbols: ["/", "/data"],
+  prices: ["/", "/data"],
+  trades: ["/backtesting"],
+  metrics: ["/metrics"],
+};
+
+// Stable string snapshot for useSyncExternalStore — only changes when a probe
+// status does (setStatus notifies on transitions only).
+const probeSnapshot = () => PROBE_ENDPOINTS.map(getEndpointStatus).join("|");
+const SERVER_SNAPSHOT = PROBE_ENDPOINTS.map(() => "unknown").join("|");
+
+/**
+ * AppSidebar with the §6.4 badge wiring: the boot health probe's failing
+ * endpoints surface as 6px dir-down dots on the owning nav icons. SSR paints
+ * no dots (server snapshot = all unknown); the probe runs client-side only.
+ */
+export function AppSidebarWithHealth() {
+  const key = useSyncExternalStore(subscribeProbe, probeSnapshot, () => SERVER_SNAPSHOT);
+  const notifications = useMemo(() => {
+    const statuses = key.split("|");
+    const map: Partial<Record<NavRoute, boolean>> = {};
+    PROBE_ENDPOINTS.forEach((endpoint, i) => {
+      if (statuses[i] !== "flagged") return;
+      for (const route of OWNING_ROUTES[endpoint]) map[route] = true;
+    });
+    return map;
+  }, [key]);
+  return <AppSidebar notifications={notifications} />;
+}
 
 interface AppSidebarProps {
   /** Badge dots per nav route: true renders a 6px dir-down dot at the icon's top-right. */

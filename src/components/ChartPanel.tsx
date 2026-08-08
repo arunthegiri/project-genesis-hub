@@ -8,6 +8,7 @@ import { ChevronDown, ChevronUp, GripHorizontal, Loader2, Plus, X } from "lucide
 import { PriceChart, type IndicatorConfig, type ChartType, type ViewportIntent } from "@/components/PriceChart";
 import { ChartScrollbar } from "@/components/ChartScrollbar";
 import { TerminalPanel } from "@/components/terminal/TerminalPanel";
+import { PanelState } from "@/components/terminal/PanelState";
 import { PythonExport } from "@/components/PythonExport";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { StrategySelector } from "@/components/StrategySelector";
@@ -416,6 +417,7 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
   const {
     data: rawBars = [],
     error,
+    refetch,
     isFetching,
     isPending,
     isPlaceholderData,
@@ -714,15 +716,34 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
           <Panel id="chart" minSize="30%" className="relative min-w-0">
             <div className="relative flex h-full min-w-0 flex-col">
               <div className="relative flex flex-1 overflow-hidden">
-                {/* Chart content */}
+                {/* Chart content — §6: every non-chart state is an
+                    intentional PanelState, never a bare text placeholder. */}
                 <div className="relative flex-1 min-w-0">
-                  {!selectedSymbol && <Empty>Select a symbol above to begin.</Empty>}
-                  {selectedSymbol && isInitialLoad && <Empty><Loader2 className="h-4 w-4 animate-spin" /> Loading…</Empty>}
+                  {!selectedSymbol && (
+                    <PanelState
+                      kind="empty"
+                      art="search"
+                      message="Select a symbol above to begin."
+                    />
+                  )}
+                  {selectedSymbol && isInitialLoad && (
+                    <PanelState kind="loading" art="chart" message={`Loading ${selectedSymbol}…`} />
+                  )}
                   {selectedSymbol && error && (
-                    <Empty><span className="text-destructive">{(error as Error).message}</span></Empty>
+                    <PanelState
+                      kind="error"
+                      art="plug"
+                      message={(error as Error).message}
+                      detail={[`GET /api/prices/${selectedSymbol}/range`]}
+                      action={{ label: "Retry", onClick: () => refetch() }}
+                    />
                   )}
                   {selectedSymbol && !isInitialLoad && !error && bars.length === 0 && (
-                    <Empty>No data for {selectedSymbol} in this range.</Empty>
+                    <PanelState
+                      kind="empty"
+                      art="chart"
+                      message={`No data for ${selectedSymbol} in this range.`}
+                    />
                   )}
                   {selectedSymbol && bars.length > 0 && (
                     <PriceChart
@@ -924,13 +945,5 @@ function Toggle({
       <Checkbox checked={checked} onCheckedChange={v => onChange(!!v)} disabled={disabled} className="h-3.5 w-3.5" />
       <span className="text-foreground/90">{label}</span>
     </label>
-  );
-}
-
-function Empty({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex h-full min-h-[200px] items-center justify-center gap-2 px-6 text-center text-sm text-muted-foreground">
-      {children}
-    </div>
   );
 }

@@ -10,6 +10,7 @@ import {
 } from "@/lib/api/models";
 import { registerCommands } from "@/lib/command-registry";
 import { fmtPct, fmtPrice } from "@/lib/format";
+import { PanelState } from "@/components/terminal/PanelState";
 import {
   Sheet,
   SheetContent,
@@ -79,13 +80,12 @@ function ModelsTable({
 }) {
   if (models.length === 0) {
     return (
-      <div className="rounded-lg border border-border bg-card/50 p-6 text-center space-y-1">
-        <p className="text-sm text-muted-foreground">No registered models</p>
-        <p className="text-xs text-muted-foreground">
-          Export a model from Jupyter with{" "}
-          <code className="bg-muted px-1 rounded">k.export(...)</code>; deployed versions
-          appear here and on the Live page.
-        </p>
+      <div className="rounded-lg border border-border bg-card/50">
+        <PanelState
+          kind="empty"
+          art="table"
+          message="No registered models — export one from Jupyter with k.export(...); deployed versions appear here and on the Live page."
+        />
       </div>
     );
   }
@@ -471,10 +471,18 @@ function ModelsPage() {
 
       <div className="flex-1 p-6 space-y-4">
         {modelsQ.isLoading ? (
-          <div className="text-sm text-muted-foreground">Loading models…</div>
+          <div className="rounded-lg border border-border bg-card/50">
+            <PanelState kind="loading" art="table" message="Loading models…" />
+          </div>
         ) : modelsQ.isError ? (
-          <div className="rounded-lg border border-border bg-card/50 p-6 text-sm text-bear">
-            {(modelsQ.error as Error)?.message ?? "Failed to load models."}
+          <div className="rounded-lg border border-border bg-card/50">
+            <PanelState
+              kind="error"
+              art="plug"
+              message={(modelsQ.error as Error)?.message ?? "Failed to load models."}
+              detail={["GET /api/models"]}
+              action={{ label: "Retry", onClick: () => modelsQ.refetch() }}
+            />
           </div>
         ) : (
           <ModelsTable models={modelsQ.data ?? []} onSelect={openDetail} />

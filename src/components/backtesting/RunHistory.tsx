@@ -1,6 +1,7 @@
 import { Trash2 } from "lucide-react";
 import { BacktestStatsPanel } from "@/components/BacktestStatsPanel";
 import { EquityChart } from "@/components/EquityChart";
+import { PanelState } from "@/components/terminal/PanelState";
 import { cn } from "@/lib/utils";
 import type { CapitalStats, BuyHoldStats } from "@/lib/backtest-capital";
 import type { BacktestResults } from "@/lib/api/strategies";
@@ -38,9 +39,8 @@ export function RunHistory({ runHistory, selectedRecordId, onSelectRecord, onCle
     <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
       <div className="flex items-center justify-between px-1">
         <span className="text-xs text-muted-foreground">
-          {runHistory.length === 0
-            ? "No runs yet — run a strategy to see results here."
-            : `${runHistory.length} run${runHistory.length > 1 ? "s" : ""} this session · click a row to inspect`}
+          {runHistory.length > 0 &&
+            `${runHistory.length} run${runHistory.length > 1 ? "s" : ""} this session · click a row to inspect`}
         </span>
         {runHistory.length > 0 && (
           <button
@@ -51,6 +51,16 @@ export function RunHistory({ runHistory, selectedRecordId, onSelectRecord, onCle
           </button>
         )}
       </div>
+
+      {runHistory.length === 0 && (
+        <div className="min-h-0 flex-1 rounded-md border border-border bg-card">
+          <PanelState
+            kind="empty"
+            art="table"
+            message="No runs yet — run a strategy to see results here."
+          />
+        </div>
+      )}
 
       {runHistory.length > 0 && (
         <div className={cn("overflow-auto rounded-md border border-border", selectedRecord ? "max-h-48 shrink-0" : "min-h-0 flex-1")}>

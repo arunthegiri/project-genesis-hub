@@ -3,14 +3,15 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { format, subDays } from "date-fns";
-import { Loader2 } from "lucide-react";
 
 import { SymbolPicker } from "@/components/SymbolPicker";
 import { PythonExport } from "@/components/PythonExport";
 import { BackfillPanel } from "@/components/BackfillPanel";
 import { CoverageTimeline } from "@/components/CoverageTimeline";
 import { TerminalPanel } from "@/components/terminal/TerminalPanel";
+import { PanelState } from "@/components/terminal/PanelState";
 import { pricesApi } from "@/lib/api/prices";
+import { symbolsApi, normalizeSymbols } from "@/lib/api/symbols";
 import { INTERVALS, type Interval, type PriceBar } from "@/lib/api/types";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -84,11 +85,18 @@ function DataPage() {
   const fromApi = localDateTimeInputToApiParam(from);
   const toApi = localDateTimeInputToApiParam(to);
 
-  const { data: bars = [], isLoading, error } = useQuery({
+  const { data: bars = [], isLoading, error, refetch } = useQuery({
     enabled: !!symbol && !!fromApi && !!toApi,
     queryKey: ["prices", symbol, fromApi, toApi],
     queryFn: () => pricesApi.range(symbol, fromApi, toApi),
   });
+
+  // §6 coverage-empty/degraded: shares the ["symbols"] cache key with
+  // CoverageTimeline/SymbolPicker, so this adds no extra request. Only
+  // settled states (isSuccess/isError) swap the panel body, so the first
+  // client render always matches SSR (CoverageTimeline's own empty body).
+  const symbolsQ = useQuery({ queryKey: ["symbols"], queryFn: symbolsApi.list });
+  const coverageSymbols = normalizeSymbols(symbolsQ.data);
 
   const visibleCols = ALL_COLUMNS.filter((c) => enabledCols.has(c.key as string));
 
@@ -183,7 +191,22 @@ function DataPage() {
           activeTab="coverage"
           bodyClassName="[&>*]:rounded-none [&>*]:border-0"
         >
-          <CoverageTimeline from={fromApi} to={toApi} />
+          {symbolsQ.isError ? (
+            <PanelState
+              kind="error"
+              art="plug"
+              message="Coverage unavailable — the symbols endpoint is not responding."
+              detail={["GET /api/symbols"]}
+            />
+          ) : symbolsQ.isSuccess && coverageSymbols.length === 0 ? (
+            <PanelState
+              kind="empty"
+              art="chart"
+              message="No symbols tracked yet — add one to see coverage."
+            />
+          ) : (
+            <CoverageTimeline from={fromApi} to={toApi} />
+          )}
         </TerminalPanel>
 
         <div className="flex min-h-0 flex-1 flex-col rounded-md border border-border bg-card">
@@ -202,10 +225,23 @@ function DataPage() {
           </div>
 
           <div ref={parentRef} className="flex-1 overflow-auto">
-            {isLoading && <div className="p-6 text-center text-sm text-muted-foreground"><Loader2 className="mx-auto h-4 w-4 animate-spin" /></div>}
-            {error && <div className="p-6 text-center text-sm text-destructive">{(error as Error).message}</div>}
-            {!isLoading && !error && bars.length === 0 && symbol && (
-              <div className="p-6 text-center text-sm text-muted-foreground">No data for this filter.</div>
+            {isLoading && (
+              <PanelState kind="loading" art="table" message={`Loading ${symbol}…`} />
+            )}
+            {error && (
+              <PanelState
+                kind="error"
+                art="plug"
+                message={(error as Error).message}
+                detail={[`GET /api/prices/${symbol}/range`]}
+                action={{ label: "Retry", onClick: () => refetch() }}
+              />
+            )}
+            {!isLoading && !error && !symbol && (
+              <PanelState kind="empty" art="search" message="Select a symbol to load data." />
+            )}
+            {!isLoading && !error && symbol && bars.length === 0 && (
+              <PanelState kind="empty" art="table" message="No data for this filter." />
             )}
             <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }}>
               {rowVirtualizer.getVirtualItems().map((vi) => {

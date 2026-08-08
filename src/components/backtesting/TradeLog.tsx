@@ -2,6 +2,7 @@ import { useMemo, useRef } from "react";
 import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
 import type { Trade } from "@/lib/api/types";
 import type { BacktestTrade } from "@/lib/api/strategies";
+import { PanelState } from "@/components/terminal/PanelState";
 import { UnderlineTabs } from "@/components/terminal/UnderlineTabs";
 import { fmtPnl, fmtPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -72,7 +73,7 @@ export function TradeLog({ trades }: { trades: Trade[] }) {
         rows={rows}
         virtualizer={rowVirtualizer}
         parentRef={parentRef}
-        empty="No trades yet"
+        empty={<PanelState kind="empty" art="table" message="No trades yet" />}
         renderRow={(t) => (
           <div className="flex flex-col gap-0.5 px-3 py-2">
             <div className="flex items-center justify-between">
@@ -136,7 +137,13 @@ export function StrategyTradeLog({ trades, filter, counts, onFilterChange }: {
         rows={rows}
         virtualizer={rowVirtualizer}
         parentRef={parentRef}
-        empty={filter === "all" ? "No trades" : `No ${filter} trades`}
+        empty={
+          <PanelState
+            kind="empty"
+            art="table"
+            message={filter === "all" ? "No trades" : `No ${filter} trades`}
+          />
+        }
         renderRow={(t) => (
           <div className="flex flex-col gap-0.5 px-3 py-2">
             <div className="flex items-center justify-between">

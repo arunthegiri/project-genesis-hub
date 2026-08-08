@@ -1,9 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { liveApi, type AccountData, type PositionData, type ActiveStrategy } from "@/lib/api/live";
 import { fmtPct, fmtPnl, fmtPrice, fmtSize } from "@/lib/format";
 import { MetaGrid, type MetaGridItem } from "@/components/terminal/MetaGrid";
+import { PanelState } from "@/components/terminal/PanelState";
 import { TerminalPanel } from "@/components/terminal/TerminalPanel";
 import { cn } from "@/lib/utils";
 
@@ -118,11 +119,7 @@ function PortfolioOverview({ account }: { account: AccountData | null }) {
 
 function PositionsTable({ positions }: { positions: PositionData[] }) {
   if (positions.length === 0) {
-    return (
-      <div className="p-6 text-center text-sm text-muted-foreground">
-        No open positions
-      </div>
-    );
+    return <PanelState kind="empty" art="table" message="No open positions" />;
   }
 
   const sorted = [...positions].sort(
@@ -222,6 +219,14 @@ function LivePage() {
   // component-local rather than in the URL.
   const [bookTab, setBookTab] = useState<"positions" | "orders">("positions");
 
+  // Hydration gate (§6): the server paints the "Loading …" placeholders, but
+  // the client's first render can already have a settled query (e.g. account
+  // 404 → NotConfiguredBanner) — a textbook hydration mismatch. While
+  // `mounted` is false the client renders exactly what SSR painted; the
+  // settled empty/not-configured states only appear post-mount.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   const accountQ = useQuery({
     queryKey: ["live", "account"],
     queryFn: liveApi.account,
@@ -253,7 +258,7 @@ function LivePage() {
       <div className="flex-1 p-6 space-y-8">
         {/* 4A — Portfolio overview */}
         <Section title="Portfolio">
-          {accountQ.isLoading ? (
+          {!mounted || accountQ.isLoading ? (
             <div className="text-sm text-muted-foreground">Loading account…</div>
           ) : (
             <PortfolioOverview account={accountQ.data ?? null} />
@@ -274,21 +279,24 @@ function LivePage() {
           onTabChange={(id) => setBookTab(id as "positions" | "orders")}
         >
           {bookTab === "positions" ? (
-            positionsQ.isLoading ? (
+            !mounted || positionsQ.isLoading ? (
               <div className="p-4 text-sm text-muted-foreground">Loading positions…</div>
             ) : (
               <PositionsTable positions={positionsQ.data ?? []} />
             )
           ) : (
-            <div className="p-6 text-center text-sm text-muted-foreground">
-              No orders — the backend does not expose an orders endpoint yet.
-            </div>
+            <PanelState
+              kind="pending"
+              art="clock"
+              message="Orders are not exposed by the backend yet."
+              detail={["GET /api/orders"]}
+            />
           )}
         </TerminalPanel>
 
         {/* 4C — Active strategies */}
         <Section title="Active Strategies">
-          {strategiesQ.isLoading ? (
+          {!mounted || strategiesQ.isLoading ? (
             <div className="text-sm text-muted-foreground">Loading strategies…</div>
           ) : (
             <ActiveStrategiesTable strategies={strategiesQ.data ?? []} />
