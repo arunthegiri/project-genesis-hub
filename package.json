@@ -11,7 +11,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test:visual": "playwright test",
-    "test:visual:update": "playwright test --update-snapshots"
+    "test:visual:update": "playwright test --update-snapshots",
+    "test:theme": "node tests/chart-theme.smoke.mjs"
   },
   "dependencies": {
     "@cloudflare/vite-plugin": "^1.25.5",

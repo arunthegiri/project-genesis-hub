@@ -1,6 +1,6 @@
 import { forwardRef, useImperativeHandle, useRef } from "react";
 import type { PriceBar } from "@/lib/api/types";
-import { CHART_COLORS } from "@/lib/chart-colors";
+import { resolveChartTheme } from "@/lib/chart-theme";
 
 export interface LegendIndicatorRow {
   title: string;
@@ -52,7 +52,7 @@ export const ChartLegend = forwardRef<ChartLegendHandle>(function ChartLegend(_p
       if (deltaRef.current) {
         const pct = bar.open !== 0 ? ((bar.close - bar.open) / bar.open) * 100 : 0;
         deltaRef.current.textContent = `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
-        deltaRef.current.style.color = bar.close >= bar.open ? CHART_COLORS.bull : CHART_COLORS.bear;
+        deltaRef.current.style.color = bar.close >= bar.open ? resolveChartTheme().up : resolveChartTheme().down;
       }
       const rows = rowsRef.current;
       if (rows) {

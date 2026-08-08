@@ -71,12 +71,12 @@ function pnlColor(value: string | number | null | undefined): string {
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
     ACTIVE:   "bg-bull/20 text-bull border-bull/30",
-    STANDBY:  "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
-    STOPPED:  "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
-    EXPORTED: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-    ARCHIVED: "bg-zinc-500/20 text-zinc-500 border-zinc-500/30",
+    STANDBY:  "bg-warning/20 text-warning border-warning/30",
+    STOPPED:  "bg-muted/50 text-muted-foreground border-border",
+    EXPORTED: "bg-accent-blue/20 text-accent-blue border-accent-blue/30",
+    ARCHIVED: "bg-muted/50 text-text-muted border-border",
   };
-  const cls = map[status] ?? "bg-zinc-500/20 text-zinc-400 border-zinc-500/30";
+  const cls = map[status] ?? "bg-muted/50 text-muted-foreground border-border";
   return (
     <span className={cn("inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium", cls)}>
       {status}

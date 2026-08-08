@@ -6,7 +6,7 @@ import {
 } from "lightweight-charts";
 import type { EquityPoint } from "@/lib/api/strategies";
 import { useChartBase, toTs } from "@/hooks/useChartBase";
-import { CHART_COLORS } from "@/lib/chart-colors";
+import { resolveChartTheme } from "@/lib/chart-theme";
 
 interface Props {
   equityCurve: EquityPoint[];
@@ -25,9 +25,10 @@ export function EquityChart({ equityCurve, buyHoldCurve, height = 200 }: Props) 
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
+    const theme = resolveChartTheme();
 
     seriesRef.current = chart.addLineSeries({
-      color: CHART_COLORS.accent,
+      color: theme.accent,
       lineWidth: 2,
       priceLineVisible: false,
       title: "Strategy",
@@ -105,12 +106,12 @@ export function EquityChart({ equityCurve, buyHoldCurve, height = 200 }: Props) 
         <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
           Equity Curve — Cumulative PnL
         </span>
-        <span className="flex items-center gap-1 text-[10px] text-blue-400">
-          <span className="inline-block h-0.5 w-4 bg-blue-400" /> Strategy
+        <span className="flex items-center gap-1 text-[10px] text-accent-blue">
+          <span className="inline-block h-0.5 w-4 bg-accent-blue" /> Strategy
         </span>
         {(buyHoldCurve?.length ?? 0) > 0 && (
-          <span className="flex items-center gap-1 text-[10px] text-zinc-400">
-            <span className="inline-block h-0.5 w-4 border-t border-dashed border-zinc-400" /> Buy &amp; Hold
+          <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+            <span className="inline-block h-0.5 w-4 border-t border-dashed border-muted-foreground" /> Buy &amp; Hold
           </span>
         )}
       </div>

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
 import type { PriceBar, Trade } from "@/lib/api/types";
 import { useChartBase, toTs } from "@/hooks/useChartBase";
-import { CHART_COLORS } from "@/lib/chart-colors";
+import { resolveChartTheme } from "@/lib/chart-theme";
 
 interface Props {
   bars: PriceBar[];
@@ -64,13 +64,16 @@ function buildMarkers(trades: Trade[], sortedBarMs: number[], lastVisibleMs: num
     text: string;
   }> = [];
 
+  // Called from effects only (client-side) — safe to resolve the theme here.
+  const theme = resolveChartTheme();
+
   for (const trade of trades) {
     const entryTs = snap(trade.entryTime);
     if (entryTs !== null) {
       markers.push({
         time: entryTs,
         position: "belowBar",
-        color: trade.side === "LONG" ? CHART_COLORS.bull : CHART_COLORS.bear,
+        color: trade.side === "LONG" ? theme.up : theme.down,
         shape: trade.side === "LONG" ? "arrowUp" : "arrowDown",
         text: trade.side === "LONG" ? "L" : "S",
       });
@@ -81,7 +84,7 @@ function buildMarkers(trades: Trade[], sortedBarMs: number[], lastVisibleMs: num
       markers.push({
         time: exitTs,
         position: "aboveBar",
-        color: trade.pnl >= 0 ? CHART_COLORS.bull : CHART_COLORS.bear,
+        color: trade.pnl >= 0 ? theme.up : theme.down,
         shape: "circle",
         text: trade.pnl >= 0 ? "+" : "−",
       });
@@ -113,12 +116,13 @@ export function BacktestingChart({ bars, visibleCount, trades, height = "100%", 
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
+    const theme = resolveChartTheme();
     const series = chart.addCandlestickSeries({
-      upColor: CHART_COLORS.bull,
-      downColor: CHART_COLORS.bear,
+      upColor: theme.up,
+      downColor: theme.down,
       borderVisible: false,
-      wickUpColor: CHART_COLORS.bull,
-      wickDownColor: CHART_COLORS.bear,
+      wickUpColor: theme.up,
+      wickDownColor: theme.down,
     });
     seriesRef.current = series;
     return () => {

@@ -11,8 +11,8 @@ export function PendingPage({ title, description, pendingEndpoints }: Props) {
     <div className="flex h-full items-center justify-center p-8">
       <div className="max-w-xl rounded-lg border border-border bg-card p-8">
         <div className="mb-4 flex items-center gap-3">
-          <div className="rounded-md bg-neutral/15 p-2">
-            <Construction className="h-5 w-5 text-neutral" />
+          <div className="rounded-md bg-warning/15 p-2">
+            <Construction className="h-5 w-5 text-warning" />
           </div>
           <h1 className="text-xl font-semibold text-foreground">{title}</h1>
         </div>

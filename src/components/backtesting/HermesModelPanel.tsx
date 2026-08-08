@@ -114,7 +114,7 @@ export function HermesModelPanel() {
       value: perf.profitFactor >= 99 ? "∞" : perf.profitFactor.toFixed(2),
       color: perf.profitFactor >= 1 ? "text-bull" : "text-bear",
     },
-    { label: "Max Drawdown", value: `${perf.maxDrawdown.toFixed(2)}%`, color: "text-neutral" },
+    { label: "Max Drawdown", value: `${perf.maxDrawdown.toFixed(2)}%`, color: "text-warning" },
     {
       label: "Sharpe Ratio",
       value: perf.sharpeRatio.toFixed(2),
@@ -122,7 +122,7 @@ export function HermesModelPanel() {
         perf.sharpeRatio >= 1
           ? "text-bull"
           : perf.sharpeRatio >= 0
-            ? "text-neutral"
+            ? "text-dir-flat"
             : "text-bear",
     },
     { label: "Avg Win", value: fmtDollar(perf.avgWin), color: "text-bull" },
@@ -145,14 +145,14 @@ export function HermesModelPanel() {
           <h2 className="text-lg font-semibold text-foreground">
             {model.name}_{model.version}
           </h2>
-          <span className="rounded border border-blue-500/30 bg-blue-500/20 px-2 py-0.5 text-[10px] font-medium text-blue-400">
+          <span className="rounded border border-accent-blue/30 bg-accent-blue/20 px-2 py-0.5 text-[10px] font-medium text-accent-blue">
             {model.engine}
           </span>
-          <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
+          <span className="rounded border border-dir-up/30 bg-dir-up/10 px-2 py-0.5 text-[10px] font-medium text-dir-up">
             {model.status}
           </span>
           {data._sample && (
-            <span className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-neutral">
+            <span className="rounded border border-warning/40 bg-warning/10 px-2 py-0.5 text-[10px] font-medium text-warning">
               SAMPLE DATA — awaiting real C++ run
             </span>
           )}

@@ -38,7 +38,7 @@ export function BacktestStatsPanel({ capitalStats: cs, strategyName, buyHold }: 
     {
       label: "Max Drawdown",
       value: `${fmt(cs.maxDrawdown)}%`,
-      color: "text-neutral",
+      color: "text-warning",
     },
     {
       label: "Sharpe Ratio",
@@ -47,7 +47,7 @@ export function BacktestStatsPanel({ capitalStats: cs, strategyName, buyHold }: 
         (cs.sharpeRatio ?? 0) >= 1
           ? "text-bull"
           : (cs.sharpeRatio ?? 0) >= 0
-          ? "text-neutral"
+          ? "text-dir-flat"
           : "text-bear",
     },
     {
@@ -172,7 +172,7 @@ export function BacktestStatsPanel({ capitalStats: cs, strategyName, buyHold }: 
           {cs.totalTrades} trades · {cs.symbol ?? "—"}
         </span>
         {cs.insufficientCapitalCount > 0 && (
-          <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-neutral">
+          <span className="rounded border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] text-warning">
             {cs.insufficientCapitalCount} trade{cs.insufficientCapitalCount > 1 ? "s" : ""} skipped — insufficient capital
           </span>
         )}
@@ -204,13 +204,13 @@ export function BacktestStatsPanel({ capitalStats: cs, strategyName, buyHold }: 
                 <th className="pb-1 text-left font-normal">Metric</th>
                 <th className="pb-1 text-right font-normal">
                   <span className="flex items-center justify-end gap-1">
-                    {stratTrophy && <Trophy className="h-3 w-3 text-yellow-400" />}
+                    {stratTrophy && <Trophy className="h-3 w-3 text-warning" />}
                     Strategy
                   </span>
                 </th>
                 <th className="pb-1 text-right font-normal">
                   <span className="flex items-center justify-end gap-1">
-                    {bahTrophy && <Trophy className="h-3 w-3 text-yellow-400" />}
+                    {bahTrophy && <Trophy className="h-3 w-3 text-warning" />}
                     Buy &amp; Hold
                   </span>
                 </th>

@@ -107,8 +107,8 @@ export function RunHistory({ runHistory, selectedRecordId, onSelectRecord, onCle
                     <td className={cn("px-3 py-2 text-right font-mono", cs.profitFactor >= 1 ? "text-bull" : "text-bear")}>
                       {cs.profitFactor >= 99 ? "∞" : cs.profitFactor.toFixed(2)}
                     </td>
-                    <td className="px-3 py-2 text-right font-mono text-neutral">{cs.maxDrawdown.toFixed(1)}%</td>
-                    <td className={cn("px-3 py-2 text-right font-mono", cs.sharpeRatio >= 1 ? "text-bull" : cs.sharpeRatio >= 0 ? "text-neutral" : "text-bear")}>
+                    <td className="px-3 py-2 text-right font-mono text-warning">{cs.maxDrawdown.toFixed(1)}%</td>
+                    <td className={cn("px-3 py-2 text-right font-mono", cs.sharpeRatio >= 1 ? "text-bull" : cs.sharpeRatio >= 0 ? "text-dir-flat" : "text-bear")}>
                       {cs.sharpeRatio.toFixed(2)}
                     </td>
                     <td className={cn("px-3 py-2 text-right font-mono", bh == null ? "text-muted-foreground" : stratBeatsBH ? "text-bull" : "text-bear")}>

@@ -719,9 +719,9 @@ function BacktestingPage() {
 
           {/* Error banner */}
           {runError && (
-            <div className="rounded-md border border-bear/30 bg-red-500/10 px-3 py-2 text-xs text-bear">
+            <div className="rounded-md border border-bear/30 bg-bear/10 px-3 py-2 text-xs text-bear">
               {runError.includes("cannot be re-run") || runError.includes("type")
-                ? <>Strategy needs re-exporting. Open <code className="bg-red-900/30 px-1 rounded">rsi_strategy.ipynb</code>, re-run all cells, then run the updated export cell with <code className="bg-red-900/30 px-1 rounded">params=</code>.</>
+                ? <>Strategy needs re-exporting. Open <code className="bg-bear/20 px-1 rounded">rsi_strategy.ipynb</code>, re-run all cells, then run the updated export cell with <code className="bg-bear/20 px-1 rounded">params=</code>.</>
                 : runError}
             </div>
           )}
@@ -731,8 +731,8 @@ function BacktestingPage() {
             <div className="flex items-center gap-2 px-1">
               <span className={cn("rounded px-2 py-0.5 text-[10px] font-medium border",
                 runResults
-                  ? "bg-blue-500/20 text-blue-400 border-blue-500/30"
-                  : "bg-zinc-500/20 text-zinc-400 border-zinc-500/30"
+                  ? "bg-accent-blue/20 text-accent-blue border-accent-blue/30"
+                  : "bg-muted/50 text-muted-foreground border-border"
               )}>
                 {runResults ? `Live run · ${activeResults.symbol ?? stratSymbol}` : `Stored · ${activeResults.symbol ?? "original"}`}
               </span>
@@ -747,7 +747,7 @@ function BacktestingPage() {
                   className={cn(
                     "rounded border px-2 py-0.5 text-[10px] font-medium transition-colors",
                     comparisonVisible
-                      ? "border-yellow-500/40 bg-yellow-500/10 text-yellow-400"
+                      ? "border-warning/40 bg-warning/10 text-warning"
                       : "border-border text-muted-foreground hover:text-foreground",
                   )}
                 >
@@ -797,7 +797,7 @@ function BacktestingPage() {
               {capitalStats.insufficientCapitalCount > 0 && (
                 <>
                   <span className="text-border">|</span>
-                  <span className="text-neutral">{capitalStats.insufficientCapitalCount} skipped (cap)</span>
+                  <span className="text-warning">{capitalStats.insufficientCapitalCount} skipped (cap)</span>
                 </>
               )}
               <span className="ml-auto text-[10px] text-muted-foreground/60">

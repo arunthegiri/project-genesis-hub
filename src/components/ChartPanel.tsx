@@ -33,7 +33,7 @@ import {
 } from "@/lib/date-range";
 import { aggregatePriceBars, intervalForSpan } from "@/lib/price-bars";
 import { intervalMs, snapRange } from "@/lib/interval-policy";
-import { CHART_COLORS } from "@/lib/chart-colors";
+import { resolveChartTheme, withAlpha, type ChartTheme } from "@/lib/chart-theme";
 import { registerCommands } from "@/lib/command-registry";
 import { registerChartPanel, setActiveChartPanel } from "@/lib/active-chart-panel";
 import { createInteractionStore, type InteractionStore } from "@/lib/stores/chart-interaction";
@@ -125,6 +125,11 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
   const [showVolume, setShowVolume]   = useState<boolean>(true); // §17 V toggle (volume is on by default since §9)
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
 
+  // §3.4 chart theme for the compare-symbol badges (inline styles); resolved
+  // post-mount because getComputedStyle is client-only. Compare symbols only
+  // exist post-restore, so the badge colors are never SSR-visible.
+  const [chartTheme, setChartTheme]   = useState<ChartTheme | null>(null);
+
   // Viewport & interval intent state machine (build doc §5). Explicit user
   // intent only — data arrival never mutates either field.
   const [viewportIntent, setViewportIntent] = useState<ViewportIntent>("fit");
@@ -182,6 +187,7 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
     if (typeof s.showVolume === "boolean") setShowVolume(s.showVolume);
     if (typeof s.strategy === "string") setSelectedStrategy(s.strategy);
     restoredRef.current = true;
+    setChartTheme(resolveChartTheme());
     setMounted(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -633,18 +639,21 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
 
         <Field label="Compare">
           <div className="flex flex-wrap items-center gap-1">
-            {compareSymbols.map((sym, i) => (
+            {compareSymbols.map((sym, i) => {
+              const c = chartTheme?.overlays[i % (chartTheme.overlays.length || 1)];
+              return (
               <span
                 key={sym}
                 className="flex items-center gap-1 rounded px-2 py-0.5 text-xs font-mono"
-                style={{ backgroundColor: `${CHART_COLORS.compare[i % CHART_COLORS.compare.length]}22`, color: CHART_COLORS.compare[i % CHART_COLORS.compare.length] }}
+                style={c ? { backgroundColor: withAlpha(c, 0.13), color: c } : undefined}
               >
                 {sym}
                 <button onClick={() => setCompareSymbols(prev => prev.filter(s => s !== sym))}>
                   <X className="h-2.5 w-2.5" />
                 </button>
               </span>
-            ))}
+              );
+            })}
             {compareSymbols.length < 4 && (
               <form className="flex gap-1" onSubmit={e => { e.preventDefault(); addCompare(compareInput); }}>
                 <Input

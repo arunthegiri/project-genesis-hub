@@ -15,8 +15,8 @@ const ACTIVE_STATUSES = new Set(["PENDING", "RUNNING"]);
 
 const SESSION_STYLE: Record<SessionState, string> = {
   OPEN: "text-bull",
-  PRE: "text-neutral",
-  POST: "text-neutral",
+  PRE: "text-warning",
+  POST: "text-warning",
   CLOSED: "text-muted-foreground",
 };
 
@@ -154,7 +154,7 @@ export function StatusRail() {
                     className={cn(
                       "whitespace-nowrap",
                       tier === "stale" && "text-bear",
-                      tier === "aging" && "text-neutral",
+                      tier === "aging" && "text-warning",
                     )}
                     title={`${b.symbol} · ${b.interval} · last bar updated ${fmtAge(age)} ago`}
                   >
@@ -169,7 +169,7 @@ export function StatusRail() {
           {/* Backfill activity */}
           {(runningJobs > 0 || failedJobs > 0) && (
             <span className="whitespace-nowrap">
-              {runningJobs > 0 && <span className="text-blue-400">⟳ {runningJobs} backfill</span>}
+              {runningJobs > 0 && <span className="text-accent-blue">⟳ {runningJobs} backfill</span>}
               {runningJobs > 0 && failedJobs > 0 && " · "}
               {failedJobs > 0 && <span className="text-bear">{failedJobs} failed</span>}
             </span>
@@ -180,7 +180,7 @@ export function StatusRail() {
             <span
               className={cn(
                 conn === "offline" && "text-bear",
-                conn === "connecting" && "text-neutral",
+                conn === "connecting" && "text-warning",
               )}
             >
               API {conn}

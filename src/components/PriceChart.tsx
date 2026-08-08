@@ -13,11 +13,11 @@ import type { Interval, PriceBar } from "@/lib/api/types";
 import type { BacktestTrade } from "@/lib/api/strategies";
 import { sma, ema, bollinger, rsi, macd } from "@/lib/indicators";
 import { intervalForSpan } from "@/lib/price-bars";
-import { useChartBase, toTs, CHART_OPTIONS } from "@/hooks/useChartBase";
+import { useChartBase, toTs, chartOptions } from "@/hooks/useChartBase";
 import { useRafCoalescer } from "@/hooks/useRafCoalescer";
 import { useChartHotkeys, type ChartHotkeyHandlers } from "@/hooks/useHotkeys";
 import type { InteractionStore } from "@/lib/stores/chart-interaction";
-import { CHART_COLORS } from "@/lib/chart-colors";
+import { resolveChartTheme, withAlpha, type ChartTheme } from "@/lib/chart-theme";
 import { ChartSyncGroup } from "@/lib/chart-sync";
 import { ChartLegend, type ChartLegendHandle, type LegendIndicatorRow } from "@/components/ChartLegend";
 
@@ -118,6 +118,17 @@ export function PriceChart({
   // (registers first, in the main-series lifecycle effect below).
   const [syncGroup]      = useState(() => new ChartSyncGroup());
 
+  // §3.4 chart theme — resolved from computed style on the FIRST client
+  // render (SSR-guarded: this component only mounts behind ChartPanel's
+  // mounted gate, but render must stay window-free for the server). Being
+  // available in the mount commit matters: the main-series lifecycle effect
+  // creates the series and the data effect feeds it in the same commit —
+  // resolving any later would leave the series empty (the blank-chart bug).
+  const theme = useMemo<ChartTheme | null>(
+    () => (typeof window === "undefined" ? null : resolveChartTheme()),
+    [],
+  );
+
   // Stable refs to latest callbacks — avoids re-subscribing on every render
   const onAutoIntervalRef  = useRef(onAutoInterval);
   const onGestureRef       = useRef(onViewportGesture);
@@ -208,7 +219,7 @@ export function PriceChart({
   const closes = useMemo(() => bars.map(b => b.close), [bars]);
 
   const overlaySpecs = useMemo<OverlaySpec[]>(() => {
-    if (isComparing || !bars.length) return [];
+    if (!theme || isComparing || !bars.length) return [];
     const specs: OverlaySpec[] = [];
     let ci = 0;
     const pushLine = (key: string, title: string, values: number[], color: string) => {
@@ -222,17 +233,17 @@ export function PriceChart({
       });
     };
     indicators.sma?.forEach(p =>
-      pushLine(`sma-${p}`, `SMA ${p}`, sma(closes, p), CHART_COLORS.indicator[ci++ % CHART_COLORS.indicator.length]));
+      pushLine(`sma-${p}`, `SMA ${p}`, sma(closes, p), theme.overlays[ci++ % theme.overlays.length]));
     indicators.ema?.forEach(p =>
-      pushLine(`ema-${p}`, `EMA ${p}`, ema(closes, p), CHART_COLORS.indicator[ci++ % CHART_COLORS.indicator.length]));
+      pushLine(`ema-${p}`, `EMA ${p}`, ema(closes, p), theme.overlays[ci++ % theme.overlays.length]));
     if (indicators.bollinger) {
       const bb = bollinger(closes, indicators.bollinger.period, indicators.bollinger.stdDev);
-      pushLine("bb-upper", "BB upper", bb.upper, "#94a3b8");
-      pushLine("bb-mid",   "BB mid",   bb.middle, "#cbd5e1");
-      pushLine("bb-lower", "BB lower", bb.lower, "#94a3b8");
+      pushLine("bb-upper", "BB upper", bb.upper, theme.flat);
+      pushLine("bb-mid",   "BB mid",   bb.middle, theme.text);
+      pushLine("bb-lower", "BB lower", bb.lower, theme.flat);
     }
     return specs;
-  }, [bars.length, times, closes, indicators, isComparing]);
+  }, [theme, bars.length, times, closes, indicators, isComparing]);
 
   const rsiData = useMemo<LinePoint[]>(() => {
     if (!indicators.rsi || isComparing || !bars.length) return [];
@@ -242,16 +253,16 @@ export function PriceChart({
   }, [bars.length, times, closes, indicators.rsi, isComparing]);
 
   const macdData = useMemo<{ macd: LinePoint[]; signal: LinePoint[]; hist: HistPoint[] } | null>(() => {
-    if (!indicators.macd || isComparing || !bars.length) return null;
+    if (!theme || !indicators.macd || isComparing || !bars.length) return null;
     const m = macd(closes, indicators.macd.fast, indicators.macd.slow, indicators.macd.signal);
     return {
       macd: m.macd.map((v, i) => ({ time: times[i] as Time, value: v })).filter(d => !isNaN(d.value)),
       signal: m.signal.map((v, i) => ({ time: times[i] as Time, value: v })).filter(d => !isNaN(d.value)),
       hist: m.histogram
-        .map((v, i) => ({ time: times[i] as Time, value: v, color: v >= 0 ? CHART_COLORS.bullDim : CHART_COLORS.bearDim }))
+        .map((v, i) => ({ time: times[i] as Time, value: v, color: v >= 0 ? theme.upDim : theme.downDim }))
         .filter(d => !isNaN(d.value)),
     };
-  }, [bars.length, times, closes, indicators.macd, isComparing]);
+  }, [theme, bars.length, times, closes, indicators.macd, isComparing]);
 
   const rsiEnabled  = !!indicators.rsi  && !isComparing;
   const macdEnabled = !!indicators.macd && !isComparing;
@@ -396,18 +407,18 @@ export function PriceChart({
   // tears the series down.
   useEffect(() => {
     const chart = chartRef.current;
-    if (!chart) return;
+    if (!chart || !theme) return;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let main: ISeriesApi<any>;
     if (isComparing || chartType === "line") {
-      main = chart.addLineSeries({ color: CHART_COLORS.accent, lineWidth: 2, priceLineVisible: false, lastValueVisible: true });
+      main = chart.addLineSeries({ color: theme.accent, lineWidth: 2, priceLineVisible: false, lastValueVisible: true });
     } else if (chartType === "area") {
-      main = chart.addAreaSeries({ lineColor: CHART_COLORS.accent, topColor: "rgba(96,165,250,0.25)", bottomColor: "rgba(96,165,250,0)", lineWidth: 2 });
+      main = chart.addAreaSeries({ lineColor: theme.accent, topColor: withAlpha(theme.accent, 0.25), bottomColor: withAlpha(theme.accent, 0), lineWidth: 2 });
     } else if (chartType === "bar") {
-      main = chart.addBarSeries({ upColor: CHART_COLORS.bull, downColor: CHART_COLORS.bear });
+      main = chart.addBarSeries({ upColor: theme.up, downColor: theme.down });
     } else {
-      main = chart.addCandlestickSeries({ upColor: CHART_COLORS.bull, downColor: CHART_COLORS.bear, borderVisible: false, wickUpColor: CHART_COLORS.bull, wickDownColor: CHART_COLORS.bear });
+      main = chart.addCandlestickSeries({ upColor: theme.up, downColor: theme.down, borderVisible: false, wickUpColor: theme.up, wickDownColor: theme.down });
     }
     mainSeriesRef.current = main;
     // §10b: main chart is the sync group's reference — it registers first, so
@@ -427,7 +438,7 @@ export function PriceChart({
       try { chart.removeSeries(main as ISeriesApi<any>); } catch {}
       if (mainSeriesRef.current === main) mainSeriesRef.current = null;
     };
-  }, [chartType, isComparing, syncGroup]);
+  }, [chartType, isComparing, syncGroup, theme]);
 
   // ── Main series DATA — setData on bars/type change; never recreates.
   useEffect(() => {
@@ -500,13 +511,13 @@ export function PriceChart({
   useEffect(() => {
     const vol = volumeSeriesRef.current;
     if (!vol) return;
-    if (isComparing || !bars.length || !showVolume) { vol.setData([]); return; }
+    if (isComparing || !bars.length || !showVolume || !theme) { vol.setData([]); return; }
     vol.setData(bars.map((b, i) => ({
       time: times[i] as Time,
       value: b.volume,
-      color: b.close >= b.open ? CHART_COLORS.bullDim : CHART_COLORS.bearDim,
+      color: b.close >= b.open ? theme.upDim : theme.downDim,
     })));
-  }, [bars, times, isComparing, showVolume]);
+  }, [bars, times, isComparing, showVolume, theme]);
 
   // Volume toggle also releases the bottom band the §9 margins reserve for
   // the overlay, so hiding volume gives the price series its space back.
@@ -559,7 +570,7 @@ export function PriceChart({
   // hot path). Cleared when leaving compare mode.
   useEffect(() => {
     const chart = chartRef.current;
-    if (!chart) return;
+    if (!chart || !theme) return;
 
     compareSeriesRef.current.forEach(s => { try { chart.removeSeries(s); } catch {} });
     compareSeriesRef.current = [];
@@ -570,7 +581,7 @@ export function PriceChart({
       const fc = cb[0].close;
       const ct = cb.map(b => toTs(b.time));
       const s = chart.addLineSeries({
-        color: CHART_COLORS.compare[idx % CHART_COLORS.compare.length],
+        color: theme.overlays[idx % theme.overlays.length],
         lineWidth: 2,
         title: symbol,
         priceLineVisible: false,
@@ -579,15 +590,15 @@ export function PriceChart({
       s.setData(cb.map((b, i) => ({ time: ct[i] as Time, value: +((b.close / fc - 1) * 100).toFixed(4) })));
       compareSeriesRef.current.push(s);
     });
-  }, [compareData, isComparing]);
+  }, [compareData, isComparing, theme]);
 
   // ── RSI sub-pane lifecycle — create/destroy against the React-rendered pane
   // div (§10a). Idempotent pair: cleanup destroys exactly what this run made.
   useEffect(() => {
     const pane = rsiPaneRef.current;
-    if (!rsiEnabled || !pane) return;
-    const chart = createChart(pane, CHART_OPTIONS);
-    const series = chart.addLineSeries({ color: "#a78bfa", lineWidth: 2, title: "RSI" });
+    if (!rsiEnabled || !pane || !theme) return;
+    const chart = createChart(pane, chartOptions(theme));
+    const series = chart.addLineSeries({ color: theme.overlays[1], lineWidth: 2, title: "RSI" });
     rsiSubRef.current = { chart, series };
     syncGroup.register(chart, series);
     return () => {
@@ -595,7 +606,7 @@ export function PriceChart({
       chart.remove();
       rsiSubRef.current = null;
     };
-  }, [rsiEnabled, syncGroup]);
+  }, [rsiEnabled, syncGroup, theme]);
 
   // RSI data
   useEffect(() => {
@@ -606,11 +617,11 @@ export function PriceChart({
   // pane div (§10a). Idempotent pair: cleanup destroys exactly what this run made.
   useEffect(() => {
     const pane = macdPaneRef.current;
-    if (!macdEnabled || !pane) return;
-    const chart = createChart(pane, CHART_OPTIONS);
-    const lineMacd   = chart.addLineSeries({ color: CHART_COLORS.accent, lineWidth: 2, title: "MACD" });
-    const lineSignal = chart.addLineSeries({ color: "#f59e0b", lineWidth: 2, title: "Signal" });
-    const hist       = chart.addHistogramSeries({ color: "#475569" });
+    if (!macdEnabled || !pane || !theme) return;
+    const chart = createChart(pane, chartOptions(theme));
+    const lineMacd   = chart.addLineSeries({ color: theme.accent, lineWidth: 2, title: "MACD" });
+    const lineSignal = chart.addLineSeries({ color: theme.overlays[3], lineWidth: 2, title: "Signal" });
+    const hist       = chart.addHistogramSeries({ color: theme.flat });
     macdSubRef.current = { chart, lineMacd, lineSignal, hist };
     syncGroup.register(chart, lineMacd);
     return () => {
@@ -618,7 +629,7 @@ export function PriceChart({
       chart.remove();
       macdSubRef.current = null;
     };
-  }, [macdEnabled, syncGroup]);
+  }, [macdEnabled, syncGroup, theme]);
 
   // MACD data
   useEffect(() => {
@@ -633,7 +644,7 @@ export function PriceChart({
   // survive a chartType/compare switch.
   useEffect(() => {
     const series = mainSeriesRef.current;
-    if (!series) return;
+    if (!series || !theme) return;
 
     if (!trades.length) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -647,7 +658,7 @@ export function PriceChart({
       markers.push({
         time: toTs(t.entry_time) as Time,
         position: isLong ? "belowBar" : "aboveBar",
-        color: isLong ? CHART_COLORS.bull : CHART_COLORS.bear,
+        color: isLong ? theme.up : theme.down,
         shape: isLong ? "arrowUp" : "arrowDown",
         text: isLong ? "L" : "S",
       });
@@ -655,7 +666,7 @@ export function PriceChart({
         markers.push({
           time: toTs(t.exit_time) as Time,
           position: isLong ? "aboveBar" : "belowBar",
-          color: t.win ? CHART_COLORS.bull : CHART_COLORS.bear,
+          color: t.win ? theme.up : theme.down,
           shape: "circle",
           text: t.win ? "+" : "-",
         });
@@ -665,7 +676,7 @@ export function PriceChart({
     markers.sort((a, b) => (a.time as number) - (b.time as number));
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (series as ISeriesApi<any>).setMarkers(markers);
-  }, [trades, bars, chartType, isComparing]);
+  }, [trades, bars, chartType, isComparing, theme]);
 
   return (
     <div ref={hostRef} className="flex flex-col h-full" style={{ height }}>

@@ -50,6 +50,36 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
+  /* ── W1 terminal tokens (build doc §3.1) ────────────────────────────── */
+  --color-surface-0: var(--surface-0);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border-subtle: var(--border-subtle);
+
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+
+  --color-dir-up: var(--dir-up);
+  --color-dir-down: var(--dir-down);
+  --color-dir-flat: var(--dir-flat);
+  --color-warning: var(--warning);
+  --color-dir-up-cb: var(--dir-up-cb);
+  --color-dir-down-cb: var(--dir-down-cb);
+
+  --color-accent-blue: var(--accent-blue);
+  --color-overlay-primary: var(--overlay-primary);
+  --color-overlay-secondary: var(--overlay-secondary);
+  --color-grid-line: var(--grid-line);
+
+  /* Control geometry → h-control-h-md / h-row-h-default etc. */
+  --spacing-control-h-sm: var(--control-h-sm);
+  --spacing-control-h-md: var(--control-h-md);
+  --spacing-control-h-lg: var(--control-h-lg);
+  --spacing-row-h-compact: var(--row-h-compact);
+  --spacing-row-h-default: var(--row-h-default);
+
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
@@ -57,55 +87,94 @@
 :root {
   --radius: 0.375rem;
 
-  /* Deep terminal background */
-  --background: oklch(0.16 0.01 240);
-  --foreground: oklch(0.92 0.01 240);
+  /* ── Terminal surface ladder (build doc §3.1; WCAG-verified values —  */
+  /*    do not retune without re-running the contrast check)             */
+  --surface-0: #0C0F16;   /* app shell / gutters (darkest)    */
+  --surface-1: #12161F;   /* panel body                       */
+  --surface-2: #1A2029;   /* panel header + active tab        */
+  --surface-3: #242C38;   /* row hover / selected (lightest)  */
+  --border-subtle: #2B3342;
 
-  --card: oklch(0.19 0.01 240);
-  --card-foreground: oklch(0.92 0.01 240);
+  /* ── Text ────────────────────────────────────────────────── */
+  --text-primary:   #E9ECF2;  /* 11.9:1 min on any layer */
+  --text-secondary: #A6AEBD;  /*  6.3:1 min             */
+  --text-muted:     #8F98AA;  /*  4.85:1 min (AA floor) */
 
-  --popover: oklch(0.21 0.01 240);
-  --popover-foreground: oklch(0.92 0.01 240);
+  /* ── Direction / financial semantics ─────────────────────── */
+  --dir-up:    #35C77A;   /* teal-leaning green, 6.4:1 min  */
+  --dir-down:  #F86177;   /* pink-leaning red, 4.67:1 min   */
+  --dir-flat:  #8F98AA;   /* unchanged = de-emphasized gray */
+  --warning:   #E3B341;   /* caution / session PRE-POST     */
+  --dir-up-cb:   #3FBF97; /* colorblind pair (Okabe-Ito–    */
+  --dir-down-cb: #F07B4D; /* derived), swapped by pref      */
 
-  --primary: oklch(0.72 0.16 230);
-  --primary-foreground: oklch(0.12 0.01 240);
+  /* ── Accent & overlays ───────────────────────────────────── */
+  --accent-blue: #4C9AFF;
+  --overlay-primary:   #F472B6;  /* MA lines (magenta)  */
+  --overlay-secondary: #A78BFA;  /* secondary overlays  */
 
-  --secondary: oklch(0.24 0.01 240);
-  --secondary-foreground: oklch(0.88 0.01 240);
+  /* Canvas grid (fed to charts via lib/chart-theme.ts) */
+  --grid-line: rgba(255,255,255,0.04);
 
-  --muted: oklch(0.22 0.01 240);
-  --muted-foreground: oklch(0.62 0.01 240);
+  /* ── Control geometry ────────────────────────────────────── */
+  --control-h-sm: 24px; --control-h-md: 32px; --control-h-lg: 40px;
+  --row-h-compact: 32px; --row-h-default: 42px;
 
-  --accent: oklch(0.27 0.02 230);
-  --accent-foreground: oklch(0.92 0.01 240);
+  /* ── Legacy aliases (build doc §3.2) ─────────────────────────────
+     Every pre-W1 token now points at the new set so existing call sites
+     keep rendering while the literal sweep proceeds. New code must use
+     the tokens above, not these aliases. */
+  --background: var(--surface-0);
+  --foreground: var(--text-primary);
+
+  --card: var(--surface-1);
+  --card-foreground: var(--text-primary);
+
+  --popover: var(--surface-2);
+  --popover-foreground: var(--text-primary);
+
+  --primary: var(--accent-blue);
+  --primary-foreground: oklch(0.12 0.01 240); /* dark text on accent buttons */
+
+  --secondary: oklch(0.24 0.01 240); /* not remapped in §3.2 — unchanged */
+  --secondary-foreground: var(--text-primary);
+
+  --muted: var(--surface-2);
+  /* Deliberate AA upgrade (§3.2): was oklch 0.62, fails AA on L3 */
+  --muted-foreground: var(--text-secondary);
+
+  --accent: var(--surface-3); /* old accent was a hover surface, not a blue */
+  --accent-foreground: var(--text-primary);
 
   --destructive: oklch(0.62 0.22 25);
   --destructive-foreground: oklch(0.98 0 0);
 
-  --border: oklch(0.26 0.01 240);
-  --input: oklch(0.24 0.01 240);
-  --ring: oklch(0.72 0.16 230);
+  --border: var(--border-subtle);
+  --input: var(--border-subtle);
+  --ring: var(--accent-blue);
 
   /* Trading semantic */
-  --bull: oklch(0.72 0.18 150);    /* green */
-  --bear: oklch(0.65 0.22 25);     /* red */
-  --neutral: oklch(0.78 0.13 85);  /* amber */
-  --grid: oklch(0.24 0.01 240);
-  --panel: oklch(0.18 0.01 240);
-  --panel-header: oklch(0.21 0.01 240);
+  --bull: var(--dir-up);
+  --bear: var(--dir-down);
+  /* §3.2 semantic fork: compat alias only — call sites split between
+     text-warning (caution/session) and text-dir-flat (unchanged numbers) */
+  --neutral: var(--warning);
+  --grid: var(--grid-line);
+  --panel: var(--surface-1);
+  --panel-header: var(--surface-2);
 
-  --chart-1: oklch(0.72 0.16 230);
-  --chart-2: oklch(0.72 0.18 150);
-  --chart-3: oklch(0.78 0.13 85);
-  --chart-4: oklch(0.65 0.22 25);
-  --chart-5: oklch(0.7 0.2 305);
+  --chart-1: var(--accent-blue);
+  --chart-2: var(--overlay-primary);
+  --chart-3: var(--overlay-secondary);
+  --chart-4: #34d399; /* extended overlay palette (chart-theme.ts overlays) */
+  --chart-5: #fb923c;
 
-  --sidebar: oklch(0.14 0.01 240);
-  --sidebar-foreground: oklch(0.78 0.01 240);
-  --sidebar-accent: oklch(0.22 0.02 230);
-  --sidebar-accent-foreground: oklch(0.95 0.01 240);
-  --sidebar-border: oklch(0.22 0.01 240);
-  --sidebar-ring: oklch(0.72 0.16 230);
+  --sidebar: var(--surface-0); /* sidebar is L0 chrome */
+  --sidebar-foreground: var(--text-secondary);
+  --sidebar-accent: var(--surface-2);
+  --sidebar-accent-foreground: var(--text-primary);
+  --sidebar-border: var(--border-subtle);
+  --sidebar-ring: var(--accent-blue);
 
   /* sonner toast tokens → mapped onto the panel palette */
   --normal-bg: var(--panel);
