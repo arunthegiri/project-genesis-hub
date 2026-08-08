@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef } from "react";
 import {
   CandlestickSeries,
   createSeriesMarkers,
+  LineStyle,
+  type IPriceLine,
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
   type Time,
@@ -11,6 +13,9 @@ import type { PriceBar, Trade } from "@/lib/api/types";
 import { useChartBase, toTs } from "@/hooks/useChartBase";
 import { useChartTheme } from "@/hooks/useChartTheme";
 import { resolveChartTheme } from "@/lib/chart-theme";
+import { PricePillPrimitive, pricePillColors } from "@/lib/chart-primitives/price-pill";
+import { etDayKey, prevSessionClose } from "@/lib/chart-primitives/session-shading";
+import { fmtPrice } from "@/lib/format";
 
 interface Props {
   bars: PriceBar[];
@@ -108,6 +113,14 @@ export function BacktestingChart({ bars, visibleCount, trades, height = "100%", 
   const { chartRef }    = useChartBase(containerRef);
   const seriesRef       = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  // §11 M2 price pill: direction-colored last-price gutter label + the replay
+  // position pill (`Bar 14,832 / 21,000`) pinned 24px below it.
+  const pillRef         = useRef<PricePillPrimitive | null>(null);
+  // Explicit dotted last-price line (axis label off — the pill owns the
+  // gutter; v5 has no separate price-line-label switch) + its last direction
+  // for theme-change recolors.
+  const priceLineRef    = useRef<IPriceLine | null>(null);
+  const lastDirUpRef    = useRef(true);
   const prevLenRef      = useRef(0);
   const prevFirstTime   = useRef("");
   const onRangeChangeRef = useRef(onRangeChange);
@@ -119,6 +132,9 @@ export function BacktestingChart({ bars, visibleCount, trades, height = "100%", 
   // array reference, so replay ticks never rebuild it. Marker snapping
   // binary-searches this; targets past the visible window are dropped.
   const barTimesMs = useMemo(() => bars.map(b => new Date(b.time).getTime()), [bars]);
+  // ET day key per bar — the pill's previous-session close scans these
+  // (string compares, cheap enough at replay tick rate).
+  const dayKeys = useMemo(() => barTimesMs.map(etDayKey), [barTimesMs]);
   const lastVisibleMs = visibleCount > 0 && visibleCount <= barTimesMs.length
     ? barTimesMs[visibleCount - 1]
     : -Infinity;
@@ -134,7 +150,17 @@ export function BacktestingChart({ bars, visibleCount, trades, height = "100%", 
       borderVisible: false,
       wickUpColor: initialTheme.up,
       wickDownColor: initialTheme.down,
+      // §11 M2: the PricePillPrimitive owns the gutter label (native label
+      // off) — and the built-in price line stays off too: its axis label has
+      // no separate visibility switch in v5 and would duplicate the pill in
+      // the gutter. The dotted line is re-added per tick as an explicit
+      // createPriceLine with axisLabelVisible:false.
+      lastValueVisible: false,
+      priceLineVisible: false,
     });
+    const pill = new PricePillPrimitive(pricePillColors(initialTheme));
+    series.attachPrimitive(pill);
+    pillRef.current = pill;
     seriesRef.current = series;
     return () => {
       try {
@@ -143,6 +169,8 @@ export function BacktestingChart({ bars, visibleCount, trades, height = "100%", 
         /* plugin already gone */
       }
       markersRef.current = null;
+      pillRef.current = null;
+      priceLineRef.current = null;
       seriesRef.current = null;
       prevLenRef.current = 0;
       prevFirstTime.current = "";
@@ -159,6 +187,10 @@ export function BacktestingChart({ bars, visibleCount, trades, height = "100%", 
       downColor: theme.down,
       wickUpColor: theme.up,
       wickDownColor: theme.down,
+    });
+    pillRef.current?.setColors(pricePillColors(theme));
+    priceLineRef.current?.applyOptions({
+      color: lastDirUpRef.current ? theme.upDim : theme.downDim,
     });
   }, [theme]);
 
@@ -194,6 +226,15 @@ export function BacktestingChart({ bars, visibleCount, trades, height = "100%", 
 
     if (visibleLen === 0) {
       series.setData([]);
+      pillRef.current?.update({ price: null, replayText: null });
+      if (priceLineRef.current) {
+        try {
+          series.removePriceLine(priceLineRef.current);
+        } catch {
+          /* series already gone */
+        }
+        priceLineRef.current = null;
+      }
       prevLenRef.current = 0;
       prevFirstTime.current = "";
       return;
@@ -225,7 +266,37 @@ export function BacktestingChart({ bars, visibleCount, trades, height = "100%", 
 
     prevLenRef.current = visibleLen;
     prevFirstTime.current = firstTime;
-  }, [bars, visibleCount]);
+
+    // §11 M2 pill — tracks the replay cursor: last VISIBLE close (direction
+    // vs the previous session's close) + the absolute replay position. Field
+    // writes + the library's own requestUpdate; no React involvement per tick.
+    const last = bars[visibleLen - 1];
+    const prevClose = prevSessionClose(bars, dayKeys, visibleLen - 1);
+    const up = prevClose !== null ? last.close >= prevClose : true;
+    pillRef.current?.update({
+      price: last.close,
+      up,
+      text: fmtPrice(last.close),
+      replayText: `Bar ${visibleLen.toLocaleString("en-US")} / ${bars.length.toLocaleString("en-US")}`,
+    });
+
+    // Dotted last-price line at the cursor's close — explicit createPriceLine
+    // with axisLabelVisible:false (the pill owns the gutter label).
+    lastDirUpRef.current = up;
+    const lineColor = up ? resolveChartTheme().upDim : resolveChartTheme().downDim;
+    if (priceLineRef.current) {
+      priceLineRef.current.applyOptions({ price: last.close, color: lineColor });
+    } else {
+      priceLineRef.current = series.createPriceLine({
+        price: last.close,
+        color: lineColor,
+        lineWidth: 1,
+        lineStyle: LineStyle.Dotted,
+        axisLabelVisible: false,
+        title: "",
+      });
+    }
+  }, [bars, visibleCount, dayKeys]);
 
   // Update trade markers whenever visible trades or bars change. The v5
   // markers plugin attaches LAZILY, only while there are markers to show:

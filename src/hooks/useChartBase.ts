@@ -12,6 +12,7 @@ import {
   withAlpha,
   type ChartTheme,
 } from "@/lib/chart-theme";
+import { sessionTickMarkFormatter } from "@/lib/chart-primitives/session-shading";
 
 /**
  * Chart surface options, fed from the §3.4 chart theme registry (tokens are
@@ -45,6 +46,9 @@ export function chartOptions(theme: ChartTheme = resolveChartTheme()) {
       borderColor: theme.scaleBorder,
       timeVisible: true,
       secondsVisible: false,
+      // §11 M2: sun/moon glyphs at day boundaries (regular session ahead vs
+      // closed market). All other tick types keep the library's UTC text.
+      tickMarkFormatter: sessionTickMarkFormatter,
       // §10: the 100k+-bar story. NOTE the doc's "leave it enabled" assumed a
       // default-on flag — in 5.2.0 enableConflation defaults to FALSE
       // (typings), so it must be opted into explicitly. Threshold factor stays

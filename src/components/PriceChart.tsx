@@ -6,9 +6,10 @@ import {
   createSeriesMarkers,
   HistogramSeries,
   LineSeries,
-  PriceLineSource,
+  LineStyle,
   PriceScaleMode,
   type IPaneApi,
+  type IPriceLine,
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
   type MouseEventParams,
@@ -26,6 +27,15 @@ import { useChartHotkeys, type ChartHotkeyHandlers } from "@/hooks/useHotkeys";
 import type { InteractionStore } from "@/lib/stores/chart-interaction";
 import { withAlpha } from "@/lib/chart-theme";
 import { ChartLegend, type ChartLegendHandle, type LegendIndicatorRow } from "@/components/ChartLegend";
+import {
+  SessionBandsPrimitive,
+  buildExtendedHourSegments,
+  etDayKey,
+  prevSessionClose,
+} from "@/lib/chart-primitives/session-shading";
+import { PricePillPrimitive, pricePillColors } from "@/lib/chart-primitives/price-pill";
+import { readCssToken } from "@/lib/chart-primitives/chart-tokens";
+import { fmtPrice } from "@/lib/format";
 
 export type ChartType = "candlestick" | "line" | "bar" | "area";
 
@@ -68,13 +78,13 @@ interface Props {
   showVolume?: boolean;
   /** §17 panel-owned hotkey actions; onStep is implemented here on the chart. */
   hotkeys?: Omit<ChartHotkeyHandlers, "onStep">;
+  /** Fired once per hotkey use — the panel fades its footer hint line (§11 M2:
+      the hint lives in the bottom toolbar, so the state is hoisted there). */
+  onHotkeyUse?: () => void;
 }
 
 type LinePoint = { time: Time; value: number };
 type HistPoint = { time: Time; value: number; color: string };
-
-// §17 footer hint "seen" flag — shared across all chart instances.
-const HINT_SEEN_KEY = "ananke.chart-hint-seen";
 
 // A single indicator overlay: a stable `key` identifies its shape so series are
 // only recreated when the *set* of overlays changes (an indicator toggled), not
@@ -100,6 +110,7 @@ export function PriceChart({
   symbol,
   showVolume = true,
   hotkeys,
+  onHotkeyUse,
 }: Props) {
   const containerRef   = useRef<HTMLDivElement>(null);
   const { chartRef }   = useChartBase(containerRef);
@@ -125,6 +136,13 @@ export function PriceChart({
   } | null>(null);
   // v5 markers plugin attached to the main series (was series.setMarkers in v4).
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  // §11 M2 primitives: extended-hours bands on pane 0, direction-colored
+  // price pill on the main series (replaces the native last-value label).
+  const sessionBandsRef = useRef<SessionBandsPrimitive | null>(null);
+  const pricePillRef    = useRef<PricePillPrimitive | null>(null);
+  // §11 M2: explicit dotted last-price line with its axis label off (the pill
+  // owns the gutter) — created/updated by the pill state effect.
+  const priceLineRef    = useRef<IPriceLine | null>(null);
 
   // §3.4 chart theme, resolved from computed style (SSR-guarded: this
   // component only mounts behind ChartPanel's mounted gate). REACTIVE (§13.4
@@ -174,27 +192,12 @@ export function PriceChart({
     };
   }, []);
 
-  // ── §17 hotkeys, focus, footer hint ──────────────────────────────────────
+  // ── §17 hotkeys, focus ───────────────────────────────────────────────────
   // The chart surface is focusable (tabIndex on the container below): it
   // takes focus on click and on symbol load so single-keys work immediately.
   useEffect(() => {
     if (symbol) containerRef.current?.focus({ preventScroll: true });
   }, [symbol]);
-
-  // Footer hint line — shown until the first hotkey use, then faded out and
-  // remembered in localStorage ("seen" flag).
-  const [hint, setHint] = useState<"hidden" | "visible" | "fading">("hidden");
-  useEffect(() => {
-    try {
-      if (!window.localStorage.getItem(HINT_SEEN_KEY)) setHint("visible");
-    } catch { /* private mode — hint stays hidden rather than nagging */ }
-  }, []);
-  const dismissHint = () => {
-    if (hint !== "visible") return;
-    try { window.localStorage.setItem(HINT_SEEN_KEY, "1"); } catch { /* best-effort */ }
-    setHint("fading");
-    setTimeout(() => setHint("hidden"), 800);
-  };
 
   // Arrow-step: shift the visible logical range one bar and anchor the
   // viewport, exactly like a small pan gesture.
@@ -208,6 +211,8 @@ export function PriceChart({
     onGestureRef.current?.();
   };
 
+  // §11 M2: the footer hint moved into the panel's bottom toolbar — hotkey
+  // use is reported upward (onHotkeyUse) so the panel can fade it there.
   useChartHotkeys(
     containerRef,
     {
@@ -216,7 +221,7 @@ export function PriceChart({
       onToggleVolume: () => hotkeys?.onToggleVolume(),
       onStep: handleStep,
     },
-    { onUse: dismissHint },
+    { onUse: onHotkeyUse },
   );
 
   const isComparing = compareData.length > 0;
@@ -226,6 +231,10 @@ export function PriceChart({
   // tearing the series down.
   const times  = useMemo(() => bars.map(b => toTs(b.time)), [bars]);
   const closes = useMemo(() => bars.map(b => b.close), [bars]);
+  // ET day key per bar — session-band segments and the price pill's
+  // previous-session close both compare these (strings, not Intl calls).
+  const timesMs  = useMemo(() => bars.map(b => new Date(b.time).getTime()), [bars]);
+  const dayKeys  = useMemo(() => timesMs.map(etDayKey), [timesMs]);
 
   const overlaySpecs = useMemo<OverlaySpec[]>(() => {
     if (!theme || isComparing || !bars.length) return [];
@@ -448,15 +457,22 @@ export function PriceChart({
     }
     mainSeriesRef.current = main;
 
-    // §9: last-price line + axis tag from the last bar (compare mode keeps its
-    // own tags). §10: volume is a real pane now, so the price scale keeps its
+    // §9: last-price line from the last bar (compare mode keeps its own
+    // tags). §10: volume is a real pane now, so the price scale keeps its
     // DEFAULT margins — the v4 bottom-30% overlay reservation is deleted.
+    // §11 M2: the PricePillPrimitive owns the gutter label, so the native
+    // last-value label AND the built-in price line go off (v5 has no
+    // separate price-line-label visibility switch — its label would peek out
+    // from under the pill). The dotted line itself is re-added by the pill
+    // state effect as an explicit createPriceLine with axisLabelVisible:false.
     if (!isComparing) {
       main.applyOptions({
-        priceLineVisible: true,
-        lastValueVisible: true,
-        priceLineSource: PriceLineSource.LastBar,
+        priceLineVisible: false,
+        lastValueVisible: false,
       });
+      const pill = new PricePillPrimitive(pricePillColors(theme));
+      main.attachPrimitive(pill);
+      pricePillRef.current = pill;
     }
 
     return () => {
@@ -468,6 +484,18 @@ export function PriceChart({
         /* plugin already gone */
       }
       markersRef.current = null;
+      const pill = pricePillRef.current;
+      if (pill) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (main as ISeriesApi<any>).detachPrimitive(pill);
+        } catch {
+          /* series already gone */
+        }
+        pricePillRef.current = null;
+      }
+      // The explicit price line dies with its series — just drop the ref.
+      priceLineRef.current = null;
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         chart.removeSeries(main as ISeriesApi<any>);
@@ -527,6 +555,91 @@ export function PriceChart({
     // 'anchored' intent the visible range is saved/restored as usual, so a
     // retheme preserves the user's zoom.
   }, [bars, times, chartType, isComparing, theme]);
+
+  // ── §11 M2 session bands — extended-hours shading painted behind the price
+  // pane (zOrder "bottom"). The lifecycle effect (re)attaches the primitive on
+  // theme change and feeds the fill from the token layer; the data effect
+  // pushes segments, refed in the same commit after a re-attach.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || !theme) return;
+    const prim = new SessionBandsPrimitive();
+    const pane = chart.panes()[0];
+    pane.attachPrimitive(prim);
+    prim.setFill(withAlpha(readCssToken("--surface-2"), 0.35));
+    sessionBandsRef.current = prim;
+    return () => {
+      try {
+        pane.detachPrimitive(prim);
+      } catch {
+        /* pane already gone (chart removed) */
+      }
+      if (sessionBandsRef.current === prim) sessionBandsRef.current = null;
+    };
+  }, [theme, chartRef]);
+
+  // Intraday guard: at daily aggregation a "pre-market" run would swallow a
+  // whole day-width bar, regular session included — so bands only exist when
+  // the average bar spacing is under a day.
+  useEffect(() => {
+    const prim = sessionBandsRef.current;
+    if (!prim) return;
+    const n = timesMs.length;
+    const intraday = n > 1 && (timesMs[n - 1] - timesMs[0]) / (n - 1) < 86_400_000;
+    prim.setSegments(intraday ? buildExtendedHourSegments(timesMs) : []);
+  }, [timesMs, theme]);
+
+  // ── §11 M2 price pill state — last close, direction vs the previous
+  // session's close (prev bar as fallback) — and the dotted last-price line
+  // (explicit createPriceLine with axisLabelVisible:false so its label can't
+  // peek out from under the pill; the built-in price line stays off). The
+  // replay pill stays hidden on the live chart; BacktestingChart feeds it the
+  // replay position instead. Deps mirror the main-series lifecycle
+  // (theme/chartType/compare) so a re-attached pill is refed in the same
+  // commit; a recreated series gets a fresh price line (refs nulled by the
+  // lifecycle cleanup).
+  useEffect(() => {
+    const pill = pricePillRef.current;
+    if (!pill || !theme) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const series = mainSeriesRef.current as ISeriesApi<any> | null;
+    if (!bars.length) {
+      pill.update({ price: null });
+      if (series && priceLineRef.current) {
+        try {
+          series.removePriceLine(priceLineRef.current);
+        } catch {
+          /* series already gone */
+        }
+        priceLineRef.current = null;
+      }
+      return;
+    }
+    const last = bars[bars.length - 1];
+    const prevClose = prevSessionClose(bars, dayKeys, bars.length - 1);
+    const up = prevClose !== null ? last.close >= prevClose : true;
+    pill.update({
+      price: last.close,
+      up,
+      text: fmtPrice(last.close),
+      replayText: null,
+    });
+    if (series) {
+      const color = up ? theme.upDim : theme.downDim;
+      if (priceLineRef.current) {
+        priceLineRef.current.applyOptions({ price: last.close, color });
+      } else {
+        priceLineRef.current = series.createPriceLine({
+          price: last.close,
+          color,
+          lineWidth: 1,
+          lineStyle: LineStyle.Dotted,
+          axisLabelVisible: false,
+          title: "",
+        });
+      }
+    }
+  }, [bars, dayKeys, theme, chartType, isComparing]);
 
   // ── Volume PANE lifecycle (§10) — a real pane directly under the price pane
   // on the same chart instance (replaces the v4 blank-priceScale overlay +
@@ -784,18 +897,12 @@ export function PriceChart({
             focuses it (effect above). */}
         <div
           ref={containerRef}
+          data-testid="chart-surface"
           className="w-full h-full outline-none"
           tabIndex={0}
           onPointerDown={() => containerRef.current?.focus({ preventScroll: true })}
         />
         <ChartLegend ref={legendRef} />
-        {hint !== "hidden" && (
-          <div
-            className={`pointer-events-none absolute bottom-1 left-1/2 -translate-x-1/2 whitespace-nowrap font-mono text-[10px] text-muted-foreground/60 transition-opacity duration-700 ${hint === "fading" ? "opacity-0" : "opacity-100"}`}
-          >
-            ←/→ step · R reset · / indicators · type a symbol
-          </div>
-        )}
         {!isComparing && (
           <div className="absolute bottom-8 right-16 z-10 flex overflow-hidden rounded border border-border bg-card/80">
             {([

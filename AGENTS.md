@@ -62,21 +62,22 @@ src/
   lib/date-range.ts ← preset ranges (1D/5D/1M…), UTC conversion for API params
   lib/datetime.ts   ← datetime-local input → ISO UTC
   lib/python-export.ts ← generates pandas + SQLAlchemy snippets mirroring the UI query
+  lib/chart-primitives/ ← §11 M2 canvas-facing primitives: session-shading.ts (extended-hours bands pane primitive + sun/moon tickMarkFormatter + etDayKey/prevSessionClose), price-pill.ts (direction-colored last-price gutter pill + replay pill), chart-tokens.ts (readCssToken — lazy computed-style reads, never module scope/draw path)
   lib/command-registry.ts ← §17 command registry (registerCommands on mount/cleanup, stable IDs, recents in localStorage) + palette open state + hotkey scope stack
   lib/active-chart-panel.ts ← §17 active-panel signal: palette symbol jumps apply to the last-interacted ChartPanel; off "/", a pending symbol is stashed and consumed by the charts page
   lib/theme.ts        ← §13 theme prefs store (theme/convention/colorblind in the ui.theme cookie), no-flash script source; no localStorage
   components/
-    PriceChart.tsx  ← lightweight-charts wrapper; one chart instance with native panes (volume, RSI, MACD); focusable chart surface with §17 hotkeys + footer hint
-    ChartPanel.tsx  ← chart panel with controls, indicator toggles, data panel (react-resizable-panels v4 Group/Panel/Separator; split layout cookie-persisted via useDefaultLayout + §13 cookie storage); registers its own palette commands
+    PriceChart.tsx  ← lightweight-charts wrapper; one chart instance with native panes (volume, RSI, MACD) + §11 M2 primitives (session bands, price pill); focusable chart surface with §17 hotkeys
+    ChartPanel.tsx  ← chart panel with controls, indicator toggles, data panel (react-resizable-panels v4 Group/Panel/Separator; split layout cookie-persisted via useDefaultLayout + §13 cookie storage); §11 M2 top icon toolbar + bottom Range/Interval SegmentedControl toolbar (same state path as the hotkeys); registers its own palette commands
     CommandPalette.tsx ← §17 ⌘K palette on cmdk (local commands + debounced symbol jump)
     ThemeSettings.tsx ← §13.3 settings popover (4-theme picker + market-convention + colorblind toggles); mounted in TopBar's left slot
-    BacktestingChart.tsx ← candlestick chart for backtesting replay
+    BacktestingChart.tsx ← candlestick chart for backtesting replay; §11 M2 price pill carries the replay position (`Bar X / N`)
     EquityChart.tsx ← equity curve chart
     SymbolPicker.tsx
     DateRangePicker.tsx
     PythonExport.tsx
     PendingPage.tsx ← placeholder for routes missing backend endpoints
-    terminal/       ← §4/§6 terminal chrome: TerminalPanel, PanelTabs, UnderlineTabs, IconButton, MetaGrid, PanelState (+ art/ — 96×96 hand-drawn state SVGs)
+    terminal/       ← §4/§6 terminal chrome: TerminalPanel, PanelTabs, UnderlineTabs, IconButton, MetaGrid, PanelState (+ art/ — 96×96 hand-drawn state SVGs), controls/SegmentedControl (W7 primitive, built early for M2)
     backtesting/    ← backtesting sub-components (TradeLog, RunHistory)
     ui/             ← shadcn/ui components (don't edit manually — use shadcn CLI)
   hooks/
@@ -117,7 +118,8 @@ Four themes — `terminal-dark` (default), `paper-light`, `high-contrast`, `grap
 2. **Volume pane (pane 1)** — real pane holding a volume histogram (the v4 blank-`priceScaleId` overlay + `scaleMargins { top: 0.7 }` hack is deleted; the price scale keeps default margins). The series rides a custom overlay scale id (`priceScaleId: "volume"`) so it draws no axis — do NOT hide a pane's price scale with `visible: false`: in 5.2.0 that crashes the layout pass (`adjustSizeImpl` → "Value is null") whenever another pane's scale on the same side is visible.
 3. **RSI / MACD panes** — real panes on the same instance, created/destroyed on indicator toggle (`chart.addPane()` + `pane.moveTo()` keep a canonical volume→RSI→MACD order; cleanup is `chart.removePane(pane.paneIndex())`, StrictMode-safe). Crosshair and visible-range sync across panes are native in v5 — the v4 `ChartSyncGroup` (`src/lib/chart-sync.ts`) and the separate sub-chart divs/instances are removed entirely.
 4. **Markers** — trade entry/exit markers (PriceChart, BacktestingChart) use the v5 `createSeriesMarkers` plugin, attached LAZILY only while trades exist: in 5.2.0 the plugin's pane view calls `series.data()` on every update cycle (an O(bars) copy per pan/zoom frame even with zero markers), so an idle plugin measurably hurts at high bar counts.
-5. **v5.2.0 gotchas (verified against typings + runtime):** pane 0's default stretch factor is **2**, not 1 (size sub-pane `setStretchFactor` calls against that); `timeScale.enableConflation` defaults to **false** despite the "automatic at high bar counts" docs impression — `useChartBase` opts in explicitly (the 100k+-bar story); `timeVisible`/`secondsVisible` were NOT renamed.
+5. **§11 M2 surface primitives** — `SessionBandsPrimitive` (pane primitive on pane 0, `zOrder: "bottom"`, extended-hours bands from ET wall-clock math, intraday-only guard) and `PricePillPrimitive` (series primitive `priceAxisViews`: direction-colored last-price pill vs the previous session's close, plus a replay-position pill stacked flush below it in BacktestingChart — the offset must not exceed the axis-label height or tick-label slivers peek through the gap). Where the pill attaches, the native `lastValueVisible` AND the built-in price line go off — v5.2.0 has no price-line-label switch, so the dotted last-price line is an explicit `createPriceLine({ axisLabelVisible: false })` fed by the pill state effect. Sun/moon day-boundary glyphs ride `timeScale.tickMarkFormatter` in `useChartBase.chartOptions()`. State flows in via `update()`/`setSegments()` field writes + the library's own `requestUpdate`; colors re-resolve on §13.4 theme change.
+6. **v5.2.0 gotchas (verified against typings + runtime):** pane 0's default stretch factor is **2**, not 1 (size sub-pane `setStretchFactor` calls against that); `timeScale.enableConflation` defaults to **false** despite the "automatic at high bar counts" docs impression — `useChartBase` opts in explicitly (the 100k+-bar story); `timeVisible`/`secondsVisible` were NOT renamed; `logicalToCoordinate` returns **0, not null, for fractional logical indices** — convert with integer logicals and derive half-bar offsets from the run's average spacing (session-shading renderer).
 
 Client-side interval aggregation (`aggregatePriceBars`) runs on raw 1-minute bars from the API and buckets them into the selected interval. The API always returns 1-minute data; resampling happens entirely in the browser.
 

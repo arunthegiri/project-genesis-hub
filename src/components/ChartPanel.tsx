@@ -3,12 +3,14 @@ import { keepPreviousData, useQuery, useQueries } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { format } from "date-fns";
-import { ChevronDown, ChevronUp, GripHorizontal, Loader2, Plus, X } from "lucide-react";
+import { ChevronDown, ChevronUp, GripHorizontal, Loader2, Plus, X, Bell, CandlestickChart, GitCompareArrows, SlidersHorizontal } from "lucide-react";
 
 import { PriceChart, type IndicatorConfig, type ChartType, type ViewportIntent } from "@/components/PriceChart";
 import { ChartScrollbar } from "@/components/ChartScrollbar";
 import { TerminalPanel } from "@/components/terminal/TerminalPanel";
+import { IconButton } from "@/components/terminal/IconButton";
 import { PanelState } from "@/components/terminal/PanelState";
+import { SegmentedControl } from "@/components/terminal/controls/SegmentedControl";
 import { PythonExport } from "@/components/PythonExport";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { StrategySelector } from "@/components/StrategySelector";
@@ -26,6 +28,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { buildPythonSnippet } from "@/lib/python-export";
 import {
   buildUtcApiRange,
@@ -73,6 +76,24 @@ const CHART_TYPES: { value: ChartType; label: string }[] = [
   { value: "line",        label: "Line"   },
   { value: "area",        label: "Area"   },
 ];
+
+// §11 M2 bottom-toolbar segments. Interval values mirror the §17 hotkeys
+// (1/5/15/H/D) — toolbar and hotkeys write through the SAME handlers, so
+// they can never disagree.
+const RANGE_SEGMENTS = RANGE_PRESETS.map((p) => ({ value: p as string, label: p }));
+const INTERVAL_SEGMENTS = [
+  { value: "AUTO", label: "AUTO", title: "Automatic interval from the visible span" },
+  { value: "1Min", label: "1m", title: "1 minute (hotkey 1)" },
+  { value: "5Min", label: "5m", title: "5 minutes (hotkey 5)" },
+  { value: "15Min", label: "15m", title: "15 minutes (hotkey 15)" },
+  { value: "30Min", label: "30m", title: "30 minutes" },
+  { value: "1Hour", label: "1H", title: "1 hour (hotkey H)" },
+  { value: "1Day", label: "1D", title: "1 day (hotkey D)" },
+] as const;
+
+// §17 footer hint "seen" flag — shared across all chart panels. §11 M2: the
+// hint lives in the bottom toolbar, so the state is hoisted here.
+const HINT_SEEN_KEY = "ananke.chart-hint-seen";
 
 // Chart+data region sizing lives in PanelSkeleton.tsx (co-located with the
 // skeleton so the placeholder and the real panel can't drift, §13).
@@ -136,6 +157,26 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
   // intent only — data arrival never mutates either field.
   const [viewportIntent, setViewportIntent] = useState<ViewportIntent>("fit");
   const [intervalMode, setIntervalMode]     = useState<"auto" | "pinned">("auto");
+
+  // §11 M2 footer hint — rendered in the bottom toolbar; shown until the
+  // first hotkey use, then faded out and remembered in localStorage.
+  const [hint, setHint] = useState<"hidden" | "visible" | "fading">("hidden");
+  useEffect(() => {
+    try {
+      if (!window.localStorage.getItem(HINT_SEEN_KEY)) setHint("visible");
+    } catch {
+      /* private mode — hint stays hidden rather than nagging */
+    }
+  }, []);
+  const dismissHint = useCallback(() => {
+    try {
+      window.localStorage.setItem(HINT_SEEN_KEY, "1");
+    } catch {
+      /* best-effort */
+    }
+    setHint((h) => (h === "visible" ? "fading" : h));
+    setTimeout(() => setHint((h) => (h === "fading" ? "hidden" : h)), 800);
+  }, []);
 
   // Layout: vertical height of the whole chart+data region (drag handle at
   // the bottom edge, pointer-capture based). chartHeight is SSR-known from
@@ -715,6 +756,137 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
           {/* Chart panel — grows to fill whatever the data panel leaves free. */}
           <Panel id="chart" minSize="30%" className="relative min-w-0">
             <div className="relative flex h-full min-w-0 flex-col">
+              {/* §11 M2 top icon toolbar — chart type, indicators, compare,
+                  alerts placeholder. Every control writes the SAME panel state
+                  as the controls strip (the legend reads that state too). */}
+              <div
+                data-testid="chart-toolbar"
+                className="flex h-9 shrink-0 items-center gap-0.5 border-b border-border-subtle px-2"
+              >
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <IconButton icon={CandlestickChart} label="Chart type" />
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-36 p-1">
+                    {CHART_TYPES.map((ct) => (
+                      <button
+                        key={ct.value}
+                        type="button"
+                        disabled={isComparing}
+                        onClick={() => setChartType(ct.value)}
+                        className={cn(
+                          "flex w-full items-center rounded px-2 py-1.5 text-xs transition-colors",
+                          "hover:bg-surface-3 disabled:opacity-40",
+                          chartType === ct.value
+                            ? "text-accent-blue"
+                            : "text-text-secondary hover:text-text-primary",
+                        )}
+                      >
+                        {ct.label}
+                      </button>
+                    ))}
+                  </PopoverContent>
+                </Popover>
+
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <IconButton icon={SlidersHorizontal} label="Indicators" />
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-44 p-3">
+                    <div className="flex flex-col gap-2.5">
+                      <Toggle
+                        checked={showSMA}
+                        onChange={setShowSMA}
+                        label="SMA"
+                        disabled={isComparing}
+                      />
+                      <Toggle
+                        checked={showEMA}
+                        onChange={setShowEMA}
+                        label="EMA"
+                        disabled={isComparing}
+                      />
+                      <Toggle
+                        checked={showBB}
+                        onChange={setShowBB}
+                        label="BB"
+                        disabled={isComparing}
+                      />
+                      <Toggle
+                        checked={showRSI}
+                        onChange={setShowRSI}
+                        label="RSI"
+                        disabled={isComparing}
+                      />
+                      <Toggle
+                        checked={showMACD}
+                        onChange={setShowMACD}
+                        label="MACD"
+                        disabled={isComparing}
+                      />
+                    </div>
+                  </PopoverContent>
+                </Popover>
+
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <IconButton icon={GitCompareArrows} label="Compare symbols" />
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-56 p-3">
+                    <div className="flex flex-col gap-2">
+                      {compareSymbols.map((sym, i) => {
+                        const c = chartTheme?.overlays[i % (chartTheme.overlays.length || 1)];
+                        return (
+                          <span
+                            key={sym}
+                            className="flex items-center justify-between gap-1 rounded px-2 py-0.5 text-xs font-mono"
+                            style={
+                              c ? { backgroundColor: withAlpha(c, 0.13), color: c } : undefined
+                            }
+                          >
+                            {sym}
+                            <button
+                              onClick={() =>
+                                setCompareSymbols((prev) => prev.filter((s) => s !== sym))
+                              }
+                            >
+                              <X className="h-2.5 w-2.5" />
+                            </button>
+                          </span>
+                        );
+                      })}
+                      {compareSymbols.length < 4 && (
+                        <form
+                          className="flex gap-1"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            addCompare(compareInput);
+                          }}
+                        >
+                          <Input
+                            value={compareInput}
+                            onChange={(e) => setCompareInput(e.target.value.toUpperCase())}
+                            placeholder="TSLA"
+                            className="h-7 flex-1 font-mono text-xs uppercase"
+                          />
+                          <Button type="submit" size="sm" className="h-7 px-2" variant="outline">
+                            <Plus className="h-3 w-3" />
+                          </Button>
+                        </form>
+                      )}
+                      {isComparing && (
+                        <p className="text-[10px] text-muted-foreground">
+                          Compare mode normalizes all series to % return.
+                        </p>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+
+                <div aria-hidden className="mx-1.5 h-4 w-px bg-border-subtle" />
+                <IconButton icon={Bell} label="Alerts — coming soon" disabled />
+              </div>
+
               <div className="relative flex flex-1 overflow-hidden">
                 {/* Chart content — §6: every non-chart state is an
                     intentional PanelState, never a bare text placeholder. */}
@@ -760,6 +932,7 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
                       symbol={selectedSymbol}
                       showVolume={showVolume}
                       hotkeys={chartHotkeys}
+                      onHotkeyUse={dismissHint}
                     />
                   )}
                   {isFetching && selectedSymbol && (
@@ -787,6 +960,41 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
                     totalBars={bars.length}
                     onUserRange={() => setViewportIntent("anchored")}
                   />
+                )}
+              </div>
+
+              {/* §11 M2 bottom toolbar — Range + Interval segmented controls
+                  on the SAME state path as the §17 hotkeys (handleIntervalSelect
+                  pins; AUTO unpins and re-derives), so toolbar and hotkeys can
+                  never disagree. The footer hint lives at the right edge and
+                  fades on first hotkey use (onHotkeyUse from PriceChart). */}
+              <div
+                data-testid="chart-bottom-toolbar"
+                className="flex h-9 shrink-0 items-center gap-2 border-t border-border-subtle px-2"
+              >
+                <SegmentedControl
+                  ariaLabel="Chart range"
+                  options={RANGE_SEGMENTS}
+                  value={rangePreset === "CUSTOM" ? "" : rangePreset}
+                  onValueChange={(v) => applyPreset(v as Exclude<ChartRangePreset, "CUSTOM">)}
+                />
+                <SegmentedControl
+                  ariaLabel="Chart interval"
+                  options={INTERVAL_SEGMENTS}
+                  value={intervalMode === "auto" ? "AUTO" : interval}
+                  onValueChange={(v) =>
+                    v === "AUTO" ? handleUnpinInterval() : handleIntervalSelect(v as Interval)
+                  }
+                />
+                {hint !== "hidden" && (
+                  <div
+                    className={cn(
+                      "pointer-events-none ml-auto whitespace-nowrap font-mono text-[10px] text-text-muted/60 transition-opacity duration-700",
+                      hint === "fading" && "opacity-0",
+                    )}
+                  >
+                    ←/→ step · R reset · / indicators · type a symbol
+                  </div>
                 )}
               </div>
             </div>

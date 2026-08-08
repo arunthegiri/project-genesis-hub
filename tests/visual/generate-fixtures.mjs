@@ -70,6 +70,93 @@ function generateBars() {
   return bars;
 }
 
+// ── prices-range-multiday.json ────────────────────────────────────────────────
+// Session-shading proof fixture (build doc §11 M2 verify). The 500-bar fixture
+// above spans ONE partial session, so it can never show a regular→extended
+// transition on both sides, nor a day-boundary tick. This one runs full
+// extended hours (04:00–20:00 ET inclusive) across Thu 2026-07-23 and Fri
+// 2026-07-24, which is the minimum window that exercises every case:
+//
+//   · pre-market band  04:00–09:30 ET, twice
+//   · after-hours band 16:00–20:00 ET, twice
+//   · ☀ day tick at Thu 20:00 ET (= Fri 00:00Z — the ET day opening next is
+//     Friday, a trading day)
+//   · ☾ day tick at Fri 20:00 ET (= Sat 00:00Z — the day ahead is a weekend)
+//
+// The week is deliberate, not arbitrary: a Fri→Sat rollover is the only way an
+// equities feed ever produces a ☾ tick (bars exist only on trading days, so the
+// glyph needs a bar landing on 00:00Z Saturday), and the 23rd/24th avoid a
+// month end — on 07-31 the Aug 1 boundary renders as a MONTH tick, which
+// outranks DayOfMonth and swallows the glyph entirely.
+const MULTIDAY_DAYS = ["2026-07-23", "2026-07-24"];
+const MULTIDAY_MINUTES = 16 * 60 + 1; // 04:00 → 20:00 inclusive
+
+const ET_FMT = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+});
+
+function etOffsetMs(ms) {
+  const p = {};
+  for (const part of ET_FMT.formatToParts(new Date(ms))) {
+    if (part.type !== "literal") p[part.type] = Number(part.value);
+  }
+  return Date.UTC(p.year, p.month - 1, p.day, p.hour % 24, p.minute, p.second) - ms;
+}
+
+/** Instant (epoch ms) of an ET wall time on an ET calendar date. */
+function etWallToUtcMs(date, hh, mm) {
+  const naive = Date.parse(`${date}T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00Z`);
+  let guess = naive;
+  for (let i = 0; i < 3; i++) {
+    const next = naive - etOffsetMs(guess);
+    if (next === guess) return next;
+    guess = next;
+  }
+  return guess;
+}
+
+function generateMultidayBars() {
+  const rand = mulberry32(1337);
+  const bars = [];
+  let close = 218.0;
+  for (const date of MULTIDAY_DAYS) {
+    const dayStart = etWallToUtcMs(date, 4, 0);
+    for (let i = 0; i < MULTIDAY_MINUTES; i++) {
+      const t = dayStart + i * 60_000;
+      const open = close;
+      const changePct = (rand() - 0.492) * 0.006;
+      close = round(open * (1 + changePct), 2);
+      const spread = Math.abs(round(open * (rand() - 0.5) * 0.004, 2));
+      const high = round(Math.max(open, close) + spread * rand(), 2);
+      const low = round(Math.min(open, close) - spread * rand(), 2);
+      // Extended hours trade thin — the volume profile makes the shaded bands
+      // legible in the volume pane too, not just behind the candles.
+      const etHour = (i + 4 * 60) / 60;
+      const regular = etHour >= 9.5 && etHour < 16;
+      const volume = Math.round((regular ? 40_000 : 4_000) + rand() * (regular ? 90_000 : 9_000));
+      bars.push({
+        time: new Date(t).toISOString(),
+        symbol: "AAPL",
+        open: round(open, 2),
+        high,
+        low,
+        close,
+        volume,
+        vwap: round((high + low + close) / 3, 4),
+        tradeCount: Math.round((regular ? 180 : 20) + rand() * (regular ? 640 : 70)),
+      });
+    }
+  }
+  return bars;
+}
+
 // ── Static fixtures ───────────────────────────────────────────────────────────
 
 const symbols = [{ symbol: "AAPL" }, { symbol: "NVDA" }, { symbol: "MSFT" }];
@@ -164,6 +251,7 @@ const strategiesActive = [
 
 const files = {
   "prices-range.json": generateBars(),
+  "prices-range-multiday.json": generateMultidayBars(),
   "symbols.json": symbols,
   "coverage-blocks.json": coverageBlocks,
   "live-account.json": liveAccount,

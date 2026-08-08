@@ -15,6 +15,7 @@ const readFixture = <T>(name: string): T =>
   JSON.parse(readFileSync(join(FIXTURE_DIR, name), "utf8")) as T;
 
 const pricesFixture = readFixture<PriceBar[]>("prices-range.json");
+const multidayPricesFixture = readFixture<PriceBar[]>("prices-range-multiday.json");
 const symbolsFixture = readFixture<Symbol[]>("symbols.json");
 const coverageFixture = readFixture<CoverageBlockResponse[]>("coverage-blocks.json");
 const accountFixture = readFixture<AccountData>("live-account.json");
@@ -110,6 +111,30 @@ export async function stubApi(page: Page): Promise<{ unmatched: string[] }> {
   );
 
   return { unmatched };
+}
+
+/**
+ * Swap the price stub to the two-day extended-hours fixture (build doc §11 M2
+ * verify: session bands need a window that actually crosses 09:30/16:00 ET).
+ * Re-registering the same pattern is how the override lands — Playwright gives
+ * precedence to the route registered LAST, so this wins over the auto-installed
+ * stub without disturbing the rest of the set or the 404 tripwire.
+ *
+ * Call BEFORE page.goto(). No artificial delay here: unlike the 500-bar case,
+ * this fixture is large enough that parse+layout alone outlasts the race the
+ * 1s delay exists to avoid.
+ */
+export async function stubMultidayPrices(page: Page): Promise<void> {
+  await page.route(/\/api\/prices\/([^/]+)\/range/, (route) => {
+    const symbol = decodeURIComponent(
+      route
+        .request()
+        .url()
+        .match(/\/api\/prices\/([^/]+)\/range/)![1],
+    );
+    const bars = multidayPricesFixture.map((b) => ({ ...b, symbol }));
+    return route.fulfill(json({ data: bars, count: bars.length }));
+  });
 }
 
 /**
