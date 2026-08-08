@@ -59,6 +59,64 @@ export function invalidateChartTheme(): void {
   cache = null;
 }
 
+/* ── §13.4 ChartThemeRegistry ──────────────────────────────────────────────
+   Every live chart registers an applier; when a theme attribute on <html>
+   changes (data-theme / data-convention / data-cb), a MutationObserver calls
+   applyAllChartThemes(): invalidate the cache, re-resolve once, then push the
+   new theme into every applier (chart-level applyOptions from useChartBase)
+   and notify subscribers (the useChartTheme hook — components re-run their
+   theme-colored SERIES effects). Retheme is applyOptions on live instances:
+   no chart recreation, no state loss.
+
+   Kept react-free and DOM-guarded: the node smoke test imports this module. */
+
+/** Applies a freshly resolved theme to one chart (chart- or series-level). */
+export type ChartThemeApplier = (theme: ChartTheme) => void;
+
+const appliers = new Set<ChartThemeApplier>();
+const themeListeners = new Set<() => void>();
+
+/** Registers a chart's applier; returns the unregister (call on chart destroy). */
+export function registerChartTheme(apply: ChartThemeApplier): () => void {
+  appliers.add(apply);
+  startChartThemeSync();
+  return () => {
+    appliers.delete(apply);
+  };
+}
+
+/** For non-chart consumers (the useChartTheme hook): called after every
+    applyAll — resolveChartTheme() is guaranteed re-resolved by then. */
+export function subscribeChartTheme(listener: () => void): () => void {
+  themeListeners.add(listener);
+  return () => {
+    themeListeners.delete(listener);
+  };
+}
+
+export function applyAllChartThemes(): void {
+  invalidateChartTheme();
+  const theme = resolveChartTheme();
+  for (const apply of appliers) apply(theme);
+  for (const l of themeListeners) l();
+}
+
+const THEME_ATTRIBUTES = ["data-theme", "data-convention", "data-cb"];
+
+let observer: MutationObserver | null = null;
+
+/** Starts the <html> attribute watcher (idempotent, client-only). Called
+    lazily by registerChartTheme so no app-shell wiring is required. */
+export function startChartThemeSync(): void {
+  if (observer) return;
+  if (typeof document === "undefined" || typeof MutationObserver === "undefined") return;
+  observer = new MutationObserver(() => applyAllChartThemes());
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: THEME_ATTRIBUTES,
+  });
+}
+
 /**
  * Pure builder, injectable so the smoke test can run without a DOM (node has
  * no getComputedStyle). Token values are read by name; the extended overlay

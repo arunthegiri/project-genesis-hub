@@ -64,10 +64,12 @@ src/
   lib/python-export.ts ← generates pandas + SQLAlchemy snippets mirroring the UI query
   lib/command-registry.ts ← §17 command registry (registerCommands on mount/cleanup, stable IDs, recents in localStorage) + palette open state + hotkey scope stack
   lib/active-chart-panel.ts ← §17 active-panel signal: palette symbol jumps apply to the last-interacted ChartPanel; off "/", a pending symbol is stashed and consumed by the charts page
+  lib/theme.ts        ← §13 theme prefs store (theme/convention/colorblind in the ui.theme cookie), no-flash script source; no localStorage
   components/
     PriceChart.tsx  ← lightweight-charts wrapper; one chart instance with native panes (volume, RSI, MACD); focusable chart surface with §17 hotkeys + footer hint
     ChartPanel.tsx  ← chart panel with controls, indicator toggles, data panel (react-resizable-panels v4 Group/Panel/Separator; split layout cookie-persisted via useDefaultLayout + §13 cookie storage); registers its own palette commands
     CommandPalette.tsx ← §17 ⌘K palette on cmdk (local commands + debounced symbol jump)
+    ThemeSettings.tsx ← §13.3 settings popover (4-theme picker + market-convention + colorblind toggles); mounted in TopBar's left slot
     BacktestingChart.tsx ← candlestick chart for backtesting replay
     EquityChart.tsx ← equity curve chart
     SymbolPicker.tsx
@@ -77,10 +79,12 @@ src/
     backtesting/    ← backtesting sub-components (TradeLog, RunHistory)
     ui/             ← shadcn/ui components (don't edit manually — use shadcn CLI)
   hooks/
-    useChartBase.ts ← shared chart lifecycle: CHART_OPTIONS, toTs, chart create/destroy
+    useChartBase.ts ← shared chart lifecycle: chartOptions(), toTs, chart create/destroy; registers each chart with the §13.4 ChartThemeRegistry
+    useChartTheme.ts ← reactive §3.4 chart theme for components (re-resolves on theme/convention/cb attribute change)
+    useThemePrefs.ts ← useSyncExternalStore binding for the §13 theme store (server snapshot = root loader value)
     useHotkeys.ts   ← §17 scoped chart single-keys (1/5/15/H/D interval pin, R reset, V volume, / indicators, bare letter → symbol jump)
   routes/
-    __root.tsx      ← layout shell: QueryClientProvider + AppSidebar + <Outlet> + global ⌘K handler & CommandPalette
+    __root.tsx      ← layout shell: QueryClientProvider + AppSidebar + <Outlet> + global ⌘K handler & CommandPalette; root loader reads ui.theme server-side and the shell stamps data-theme/data-convention/data-cb (+ inline no-flash script)
     index.tsx       → /            Charts page (live)
     data.tsx        → /data        Raw data explorer with virtualised table (live)
     backtesting.tsx → /backtesting Backtesting replay + strategy runner (live)
@@ -93,8 +97,17 @@ src/
 ### SSR notes
 - This is TanStack Start SSR — client-only state is handled two ways (build doc §13: "URL = where you are; cookie = how the workspace is arranged; server = what the data is"): workspace arrangement (panel set, chart height) lives in `ui.*` cookies (`src/lib/cookie-state.ts`) and is read server-side by the `/` route loader via `readUiCookieServerFn` (createServerFn + getCookie), so first paint is SSR-correct; per-panel internals restore post-mount behind ChartPanel's `mounted` gate, which renders the geometry-identical `PanelSkeleton` (sizing co-located in `src/components/PanelSkeleton.tsx`) until then. No render-then-snap, no `skipPersist`.
 - Location-like view state belongs in `validateSearch` (see `/backtesting`, `/data`), with relative defaults resolved at parse time.
+- Theme prefs (`ui.theme` cookie) are read by the ROOT route loader via the same `readUiCookieServerFn` path; the shell stamps `data-theme`/`data-convention`/`data-cb` on `<html>` server-side, with an inline pre-paint script (`NOFLASH_SCRIPT` from `lib/theme.ts`) as the fallback that also resolves `prefers-color-scheme`. `<html>` carries `suppressHydrationWarning` for the no-cookie media-default case (next-themes pattern); post-hydration the `useThemePrefs` store re-stamps attributes declaratively.
 - `lightweight-charts` at 5.2.x (build doc §10) — minor upgrades require re-running chart visual baselines
 - Unused shadcn scaffold deps (`embla-carousel-react`, `vaul`, `input-otp`) are accepted scaffold — leave installed; removing them risks shadcn regen churn for zero runtime win
+
+### Theme system (M4, build doc §13)
+
+Four themes — `terminal-dark` (default), `paper-light`, `high-contrast`, `graphite-neutral` — selected by `data-theme` on `<html>`; token values live in per-theme blocks in `src/styles.css` (plan §5.4, WCAG-verified — don't retune). Two more independent axes compose via small CSS blocks: `data-convention="east-asian"` swaps `--dir-up`/`--dir-down` (red up), `data-cb="on"` swaps in the Okabe-Ito pair; precedence is by specificity (`[data-cb][data-convention]` (0,3,0) > single-axis (0,2,0) > base :root) so **colorblind always wins over convention**, source-order independent. Theme blocks store the raw pairs in `--_dir-*` privates (a swapped `--dir-up: var(--dir-down)` self-map would be a var() cycle). Components only consume tokens — nothing component-side changes per theme.
+
+- Prefs persist in ONE `ui.theme` JSON cookie (`{ theme, convention, cb }`); the `theme` key is omitted until explicitly picked — an unset key is what keeps the `prefers-color-scheme` default + its change listener alive (listener detached on first explicit pick; re-clicking the active tab also counts as a pick).
+- `.dark` class is kept on the three dark themes only (shadcn `dark:` variants, e.g. `ui/alert`, gate on it; sonner's `Toaster` theme follows the same `isDarkTheme()`).
+- Charts: `chart-theme.ts`'s ChartThemeRegistry — `useChartBase` registers each chart's chart-level `applyOptions(chartOptions(theme))`; a `MutationObserver` on the three `<html>` attributes calls `applyAllChartThemes()` (invalidate → resolve once → apply to all + notify). Series-level colors re-apply via `useChartTheme()` (PriceChart re-runs its theme-dep effects; BacktestingChart/EquityChart `applyOptions` in place). No chart recreation, no state loss, no localStorage.
 
 ### Chart architecture
 

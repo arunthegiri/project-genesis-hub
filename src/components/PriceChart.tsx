@@ -20,10 +20,11 @@ import type { BacktestTrade } from "@/lib/api/strategies";
 import { sma, ema, bollinger, rsi, macd } from "@/lib/indicators";
 import { intervalForSpan } from "@/lib/price-bars";
 import { useChartBase, toTs } from "@/hooks/useChartBase";
+import { useChartTheme } from "@/hooks/useChartTheme";
 import { useRafCoalescer } from "@/hooks/useRafCoalescer";
 import { useChartHotkeys, type ChartHotkeyHandlers } from "@/hooks/useHotkeys";
 import type { InteractionStore } from "@/lib/stores/chart-interaction";
-import { resolveChartTheme, withAlpha, type ChartTheme } from "@/lib/chart-theme";
+import { withAlpha } from "@/lib/chart-theme";
 import { ChartLegend, type ChartLegendHandle, type LegendIndicatorRow } from "@/components/ChartLegend";
 
 export type ChartType = "candlestick" | "line" | "bar" | "area";
@@ -125,16 +126,17 @@ export function PriceChart({
   // v5 markers plugin attached to the main series (was series.setMarkers in v4).
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
 
-  // §3.4 chart theme — resolved from computed style on the FIRST client
-  // render (SSR-guarded: this component only mounts behind ChartPanel's
-  // mounted gate, but render must stay window-free for the server). Being
-  // available in the mount commit matters: the main-series lifecycle effect
-  // creates the series and the data effect feeds it in the same commit —
-  // resolving any later would leave the series empty (the blank-chart bug).
-  const theme = useMemo<ChartTheme | null>(
-    () => (typeof window === "undefined" ? null : resolveChartTheme()),
-    [],
-  );
+  // §3.4 chart theme, resolved from computed style (SSR-guarded: this
+  // component only mounts behind ChartPanel's mounted gate). REACTIVE (§13.4
+  // useChartTheme): a theme/convention/cb switch re-resolves it, and every
+  // theme-colored series effect below re-runs — the main series is recreated
+  // with new colors and refed in the same commit (its data effect now also
+  // depends on `theme`), overlays re-apply color in place, panes/markers
+  // rebuild. Being available in the mount commit still matters: the
+  // main-series lifecycle effect creates the series and the data effect feeds
+  // it in the same commit — resolving any later would leave the series empty
+  // (the blank-chart bug).
+  const theme = useChartTheme();
 
   // Stable refs to latest callbacks — avoids re-subscribing on every render
   const onAutoIntervalRef  = useRef(onAutoInterval);
@@ -519,7 +521,12 @@ export function PriceChart({
     } else {
       ts.fitContent();
     }
-  }, [bars, times, chartType, isComparing]);
+    // `theme` in deps: a §13.4 theme switch recreates the main series (its
+    // lifecycle effect depends on theme), so this effect must refeed it in
+    // the same commit — otherwise the recreated series stays empty. With
+    // 'anchored' intent the visible range is saved/restored as usual, so a
+    // retheme preserves the user's zoom.
+  }, [bars, times, chartType, isComparing, theme]);
 
   // ── Volume PANE lifecycle (§10) — a real pane directly under the price pane
   // on the same chart instance (replaces the v4 blank-priceScale overlay +
@@ -589,7 +596,9 @@ export function PriceChart({
   }, [macdEnabled, scaleMode]);
 
   // ── Indicator overlays — recreate only when the overlay SET changes; else
-  // just push new data into the existing line series (no flicker).
+  // just push new data into the existing line series (no flicker). A §13.4
+  // theme switch changes only the COLORS (same keys) — re-applied via
+  // applyOptions on the live series.
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
@@ -599,7 +608,10 @@ export function PriceChart({
     const sameShape = prevKeys.length === newKeys.length && prevKeys.every((k, i) => k === newKeys[i]);
 
     if (sameShape) {
-      overlaySpecs.forEach((spec, i) => overlaysRef.current[i]?.setData(spec.data));
+      overlaySpecs.forEach((spec, i) => {
+        overlaysRef.current[i]?.applyOptions({ color: spec.color });
+        overlaysRef.current[i]?.setData(spec.data);
+      });
       return;
     }
 

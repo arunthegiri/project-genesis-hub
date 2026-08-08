@@ -9,6 +9,7 @@ import {
 } from "lightweight-charts";
 import type { PriceBar, Trade } from "@/lib/api/types";
 import { useChartBase, toTs } from "@/hooks/useChartBase";
+import { useChartTheme } from "@/hooks/useChartTheme";
 import { resolveChartTheme } from "@/lib/chart-theme";
 
 interface Props {
@@ -110,6 +111,8 @@ export function BacktestingChart({ bars, visibleCount, trades, height = "100%", 
   const prevLenRef      = useRef(0);
   const prevFirstTime   = useRef("");
   const onRangeChangeRef = useRef(onRangeChange);
+  // §13.4 reactive chart theme — drives the in-place re-theme effect below.
+  const theme = useChartTheme();
   useEffect(() => { onRangeChangeRef.current = onRangeChange; }, [onRangeChange]);
 
   // Ascending bar times (ms) for the FULL stable array — memo keys on the
@@ -124,13 +127,13 @@ export function BacktestingChart({ bars, visibleCount, trades, height = "100%", 
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
-    const theme = resolveChartTheme();
+    const initialTheme = resolveChartTheme();
     const series = chart.addSeries(CandlestickSeries, {
-      upColor: theme.up,
-      downColor: theme.down,
+      upColor: initialTheme.up,
+      downColor: initialTheme.down,
       borderVisible: false,
-      wickUpColor: theme.up,
-      wickDownColor: theme.down,
+      wickUpColor: initialTheme.up,
+      wickDownColor: initialTheme.down,
     });
     seriesRef.current = series;
     return () => {
@@ -145,6 +148,19 @@ export function BacktestingChart({ bars, visibleCount, trades, height = "100%", 
       prevFirstTime.current = "";
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // §13.4: re-theme the live series in place — recreating it here would
+  // reset the replay cursor bookkeeping (prevLenRef) and the user's range.
+  // The markers effect below re-resolves marker colors via its theme dep.
+  useEffect(() => {
+    if (!theme) return;
+    seriesRef.current?.applyOptions({
+      upColor: theme.up,
+      downColor: theme.down,
+      wickUpColor: theme.up,
+      wickDownColor: theme.down,
+    });
+  }, [theme]);
 
   // Emit logical range for scrollbar
   useEffect(() => {
@@ -215,7 +231,8 @@ export function BacktestingChart({ bars, visibleCount, trades, height = "100%", 
   // markers plugin attaches LAZILY, only while there are markers to show:
   // in v5.2.0 its pane view calls series.data() on every update cycle (an
   // O(bars) copy per pan/zoom/replay frame even with zero markers), so an
-  // idle plugin is a perf tax at replay bar counts.
+  // idle plugin is a perf tax at replay bar counts. `theme` dep: a §13.4
+  // retheme rebuilds marker colors (buildMarkers re-resolves post-invalidate).
   useEffect(() => {
     const series = seriesRef.current;
     if (!series) return;
@@ -231,7 +248,7 @@ export function BacktestingChart({ bars, visibleCount, trades, height = "100%", 
     }
     if (!markersRef.current) markersRef.current = createSeriesMarkers(series, []);
     markersRef.current.setMarkers(markers);
-  }, [trades, barTimesMs, lastVisibleMs]);
+  }, [trades, barTimesMs, lastVisibleMs, theme]);
 
   return <div ref={containerRef} style={{ height }} className="w-full" />;
 }

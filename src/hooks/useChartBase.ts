@@ -6,7 +6,12 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import type { RefObject } from "react";
-import { resolveChartTheme, withAlpha, type ChartTheme } from "@/lib/chart-theme";
+import {
+  registerChartTheme,
+  resolveChartTheme,
+  withAlpha,
+  type ChartTheme,
+} from "@/lib/chart-theme";
 
 /**
  * Chart surface options, fed from the §3.4 chart theme registry (tokens are
@@ -60,7 +65,13 @@ export function useChartBase(containerRef: RefObject<HTMLDivElement | null>) {
     if (!containerRef.current) return;
     const chart = createChart(containerRef.current, chartOptions());
     chartRef.current = chart;
+    // §13.4: register for theme changes — the registry re-applies the full
+    // chart-level options (layout/grid/scales) via applyOptions on the LIVE
+    // instance; the chart is never recreated and keeps its data + viewport.
+    // Series-level colors re-apply through the useChartTheme hook.
+    const unregister = registerChartTheme((theme) => chart.applyOptions(chartOptions(theme)));
     return () => {
+      unregister();
       chart.remove();
       chartRef.current = null;
     };

@@ -7,8 +7,9 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Quant Trading Terminal — dark, Webull-inspired design system.
- * All colors in oklch. Use semantic tokens; never hardcode hex/rgb in components.
+ * Quant Trading Terminal — Webull-inspired design system, four themes
+ * (build doc §13; terminal-dark is the default). All colors in oklch/hex
+ * tokens. Use semantic tokens; never hardcode hex/rgb in components.
  */
 
 @theme inline {
@@ -87,12 +88,20 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-/* Force dark-only terminal aesthetic */
-:root {
-  --radius: 0.375rem;
+/* ════════════════════════════════════════════════════════════════════════
+   Theme system (build doc §13 / plan §5.4) — four themes selected by
+   data-theme on <html>. Per-theme blocks hold the primitive tokens; the
+   theme-agnostic :root block further down keeps control geometry and the
+   §3.2 legacy alias layer. Values are WCAG-verified in the plan — do not
+   retune without re-running the contrast check.
+   ════════════════════════════════════════════════════════════════════════ */
 
-  /* ── Terminal surface ladder (build doc §3.1; WCAG-verified values —  */
-  /*    do not retune without re-running the contrast check)             */
+/* Theme 1 — terminal-dark (default; the Webull-style reference). Bare
+   `:root` in the selector list is the no-attribute fallback (dark on tie) —
+   every [data-theme] block outranks it on specificity. */
+:root,
+:root[data-theme="terminal-dark"] {
+  /* ── Terminal surface ladder (build doc §3.1; WCAG-verified values) ── */
   --surface-0: #0C0F16;   /* app shell / gutters (darkest)    */
   --surface-1: #12161F;   /* panel body                       */
   --surface-2: #1A2029;   /* panel header + active tab        */
@@ -104,13 +113,16 @@
   --text-secondary: #A6AEBD;  /*  6.3:1 min             */
   --text-muted:     #8F98AA;  /*  4.85:1 min (AA floor) */
 
-  /* ── Direction / financial semantics ─────────────────────── */
-  --dir-up:    #35C77A;   /* teal-leaning green, 6.4:1 min  */
-  --dir-down:  #F86177;   /* pink-leaning red, 4.67:1 min   */
+  /* ── Direction / financial semantics (raw pairs — the §13.3 axis
+        blocks below compose these into --dir-up/--dir-down; the
+        underscore privates exist because a swapped --dir-up: var(--dir-down)
+        self-mapping would be a var() cycle) ─────────────────────────── */
+  --_dir-up:    #35C77A;   /* western up: teal-leaning green, 6.4:1 min */
+  --_dir-down:  #F86177;   /* western down: pink-leaning red, 4.67:1 min */
+  --_dir-up-cb:   #3FBF97; /* colorblind pair (Okabe-Ito–derived)        */
+  --_dir-down-cb: #F07B4D;
   --dir-flat:  #8F98AA;   /* unchanged = de-emphasized gray */
   --warning:   #E3B341;   /* caution / session PRE-POST     */
-  --dir-up-cb:   #3FBF97; /* colorblind pair (Okabe-Ito–    */
-  --dir-down-cb: #F07B4D; /* derived), swapped by pref      */
 
   /* ── Accent & overlays ───────────────────────────────────── */
   --accent-blue: #4C9AFF;
@@ -119,6 +131,142 @@
 
   /* Canvas grid (fed to charts via lib/chart-theme.ts) */
   --grid-line: rgba(255,255,255,0.04);
+
+  /* Theme-dependent legacy aliases (§3.2) */
+  --secondary: oklch(0.24 0.01 240); /* not remapped in §3.2 — unchanged */
+  --primary-foreground: oklch(0.12 0.01 240); /* dark text on accent buttons */
+}
+
+/* Theme 2 — paper-light (plan §5.4; surfaces L0→L3 light-to-white; all
+   text/semantic tokens ≥4.5:1 on L1/L2, ≥4.4 on L3) */
+:root[data-theme="paper-light"] {
+  --surface-0: #E8EBF0;
+  --surface-1: #F5F7FA;
+  --surface-2: #FFFFFF;
+  --surface-3: #DCE3EC;
+  --border-subtle: #C7D0DC;
+
+  --text-primary:   #1A2330;
+  --text-secondary: #4A5568;
+  --text-muted:     #5B6675;
+
+  --_dir-up:    #0B6E4F;
+  --_dir-down:  #B42318;
+  /* Plan gap (no cb pair listed): Okabe-Ito bluish-green/vermillion darkened
+     to AA — the cb pair replaces dir-up/down EVERYWHERE incl. text when
+     data-cb="on", so it needs the same 4.5:1 floor as the main pair
+     (#00755A: 5.3:1 on L1, 4.4:1 on L3; #A84400: 5.6:1 on L1, 4.7:1 on L3). */
+  --_dir-up-cb:   #00755A;
+  --_dir-down-cb: #A84400;
+  --dir-flat:  #5B6675;
+  --warning:   #B54708;
+
+  --accent-blue: #175CD3;
+  --overlay-primary:   #DB2777;
+  --overlay-secondary: #7C3AED;
+  /* Plan gap: dark grid line at the dark theme's alpha. */
+  --grid-line: rgba(26,35,48,0.06);
+
+  --secondary: var(--surface-3);
+  --primary-foreground: #FFFFFF; /* white on #175CD3 ≈ 6:1 */
+}
+
+/* Theme 3 — high-contrast (plan §5.4; true black base, AAA-grade text) */
+:root[data-theme="high-contrast"] {
+  --surface-0: #000000;
+  --surface-1: #0A0A0A;
+  --surface-2: #161616;
+  --surface-3: #242424;
+  --border-subtle: #5A5A5A; /* raised for visibility */
+
+  --text-primary:   #FFFFFF;
+  --text-secondary: #D9D9D9;
+  --text-muted:     #B8B8B8; /* plan gap — AAA floor on black (≈9:1) */
+
+  --_dir-up:    #00E08A;
+  --_dir-down:  #FF5C7A;
+  /* Plan gap: inherit the Okabe-Ito pair (8.6:1 / 7:1 on black). */
+  --_dir-up-cb:   #3FBF97;
+  --_dir-down-cb: #F07B4D;
+  --dir-flat:  #B8B8B8;
+  --warning:   #E3B341; /* plan gap — dark value already ≈10:1 on black */
+
+  --accent-blue: #66B3FF;
+  --overlay-primary:   #FF7AC8;
+  --overlay-secondary: #B9A0FF;
+  /* Plan gap: alpha raised one step so the grid survives on pure black. */
+  --grid-line: rgba(255,255,255,0.06);
+
+  --secondary: var(--surface-3);
+  --primary-foreground: #000000; /* black on #66B3FF ≈ 9.4:1 */
+}
+
+/* Theme 4 — graphite-neutral (plan §5.4: identical lightness ladder with
+   chroma ≈ 0 — the control group for A/B-ing the §3.1 blue-shift). The plan
+   lists only surfaces/border/text/dir pair; the remaining tokens inherit
+   terminal-dark values (each gap noted inline). */
+:root[data-theme="graphite-neutral"] {
+  --surface-0: #101113;
+  --surface-1: #161719;
+  --surface-2: #1D1F22;
+  --surface-3: #26292D;
+  --border-subtle: #31353B;
+
+  --text-primary:   #ECEDEF;
+  --text-secondary: #ACB0B6;
+  --text-muted:     #9298A0;
+
+  --_dir-up:    #35C77A;  /* plan: identical to terminal-dark */
+  --_dir-down:  #F86177;
+  --_dir-up-cb:   #3FBF97; /* gap — inherit terminal-dark cb pair */
+  --_dir-down-cb: #F07B4D;
+  --dir-flat:  #9298A0;   /* gap — = text-muted, mirroring dark's flat==muted */
+  --warning:   #E3B341;   /* gap — inherit terminal-dark */
+
+  /* gap — keep the functional accent/overlays; the A/B is the surface
+     blue-shift, not the CTA or indicator hues. */
+  --accent-blue: #4C9AFF;
+  --overlay-primary:   #F472B6;
+  --overlay-secondary: #A78BFA;
+  --grid-line: rgba(255,255,255,0.04);
+
+  --secondary: var(--surface-3);
+  --primary-foreground: oklch(0.12 0.01 240);
+}
+
+/* ── §13.3 direction axes — small composing blocks keyed off the extra
+   <html> attributes, so 4 themes × 2 conventions × cb on/off compose
+   instead of multiplying token blocks. Cascade precedence is by
+   SPECIFICITY, not source order:
+     base :root (0,1,0)
+       < [data-convention] (0,2,0) = [data-cb] (0,2,0)
+       < [data-cb][data-convention] (0,3,0)
+   → the colorblind pair ALWAYS wins over the market convention. */
+:root {
+  --dir-up:   var(--_dir-up);    /* western default: green up / red down */
+  --dir-down: var(--_dir-down);
+  --dir-up-cb:   var(--_dir-up-cb);
+  --dir-down-cb: var(--_dir-down-cb);
+}
+:root[data-convention="east-asian"] {
+  --dir-up:   var(--_dir-down);  /* red up / green down */
+  --dir-down: var(--_dir-up);
+}
+:root[data-cb="on"] {
+  --dir-up:   var(--_dir-up-cb);
+  --dir-down: var(--_dir-down-cb);
+}
+:root[data-cb="on"][data-convention="east-asian"] {
+  --dir-up:   var(--_dir-down-cb);
+  --dir-down: var(--_dir-up-cb);
+}
+
+/* ── Theme-agnostic tokens + the §3.2 legacy alias layer ─────────────────
+   Aliases resolve through the per-theme primitives above, so they follow
+   the active theme; only --secondary and --primary-foreground were
+   theme-dependent literals and moved into the theme blocks. */
+:root {
+  --radius: 0.375rem;
 
   /* ── Control geometry ────────────────────────────────────── */
   --control-h-sm: 24px; --control-h-md: 32px; --control-h-lg: 40px;
@@ -138,9 +286,10 @@
   --popover-foreground: var(--text-primary);
 
   --primary: var(--accent-blue);
-  --primary-foreground: oklch(0.12 0.01 240); /* dark text on accent buttons */
+  /* --primary-foreground lives in the theme blocks (dark text on the dark
+     themes' accent, white on paper-light's, black on high-contrast's). */
 
-  --secondary: oklch(0.24 0.01 240); /* not remapped in §3.2 — unchanged */
+  /* --secondary lives in the theme blocks (dark gray vs light surface-3). */
   --secondary-foreground: var(--text-primary);
 
   --muted: var(--surface-2);

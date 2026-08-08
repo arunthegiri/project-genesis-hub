@@ -6,13 +6,15 @@ import { liveApi } from "@/lib/api/live";
 import { getEndpointStatus, subscribeProbe } from "@/lib/api/health-probe";
 import { togglePalette } from "@/lib/command-registry";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ThemeSettings } from "@/components/ThemeSettings";
 import { cn } from "@/lib/utils";
 
 /**
  * Top bar (build doc §5.3) — 48px global chrome above the rail + main split.
+ * Left: the §13.3 theme/display settings popover (its reserved home).
  * Center: a search-field replica (button styled like an input) that toggles
  * the §17 command palette. Right: account equity + day PnL readouts.
- * The brand glyph's one home is the rail top, so the left stays a spacer.
+ * The brand glyph's one home is the rail top.
  *
  * SSR: fixed height; the readout cluster renders its skeleton server-side, so
  * first paint and hydration agree and nothing shifts.
@@ -20,7 +22,9 @@ import { cn } from "@/lib/utils";
 export function TopBar() {
   return (
     <header className="flex h-12 shrink-0 items-center gap-4 border-b border-border-subtle bg-surface-0 px-3">
-      <div className="flex-1" />
+      <div className="flex flex-1 items-center">
+        <ThemeSettings />
+      </div>
       <button
         type="button"
         data-testid="global-search"

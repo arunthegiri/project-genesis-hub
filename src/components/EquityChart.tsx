@@ -7,7 +7,8 @@ import {
 } from "lightweight-charts";
 import type { EquityPoint } from "@/lib/api/strategies";
 import { useChartBase, toTs } from "@/hooks/useChartBase";
-import { resolveChartTheme } from "@/lib/chart-theme";
+import { useChartTheme } from "@/hooks/useChartTheme";
+import { resolveChartTheme, withAlpha } from "@/lib/chart-theme";
 
 interface Props {
   equityCurve: EquityPoint[];
@@ -21,28 +22,32 @@ export function EquityChart({ equityCurve, buyHoldCurve, height = 200 }: Props) 
   const seriesRef    = useRef<ISeriesApi<"Line"> | null>(null);
   const zeroRef      = useRef<ISeriesApi<"Line"> | null>(null);
   const bahRef       = useRef<ISeriesApi<"Line"> | null>(null);
+  // §13.4 reactive chart theme — drives the in-place re-theme effect below.
+  const theme = useChartTheme();
 
-  // Create series once on mount (chart created by useChartBase)
+  // Create series once on mount (chart created by useChartBase). The zero and
+  // buy-&-hold lines derive from theme.text (alpha-stepped) — the old
+  // white-ish rgba literals were invisible on the light themes.
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
-    const theme = resolveChartTheme();
+    const initialTheme = resolveChartTheme();
 
     seriesRef.current = chart.addSeries(LineSeries, {
-      color: theme.accent,
+      color: initialTheme.accent,
       lineWidth: 2,
       priceLineVisible: false,
       title: "Strategy",
     });
     zeroRef.current = chart.addSeries(LineSeries, {
-      color: "rgba(255,255,255,0.15)",
+      color: withAlpha(initialTheme.text, 0.2),
       lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: false,
       crosshairMarkerVisible: false,
     });
     bahRef.current = chart.addSeries(LineSeries, {
-      color: "rgba(156,163,175,0.65)",
+      color: withAlpha(initialTheme.text, 0.65),
       lineWidth: 1,
       lineStyle: LineStyle.Dashed,
       priceLineVisible: false,
@@ -57,6 +62,15 @@ export function EquityChart({ equityCurve, buyHoldCurve, height = 200 }: Props) 
       bahRef.current = null;
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // §13.4: re-theme the live series in place — no recreation, so the equity
+  // data effects and the user's range are untouched.
+  useEffect(() => {
+    if (!theme) return;
+    seriesRef.current?.applyOptions({ color: theme.accent });
+    zeroRef.current?.applyOptions({ color: withAlpha(theme.text, 0.2) });
+    bahRef.current?.applyOptions({ color: withAlpha(theme.text, 0.65) });
+  }, [theme]);
 
   // Strategy equity curve
   useEffect(() => {

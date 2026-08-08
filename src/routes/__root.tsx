@@ -13,6 +13,15 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { runHealthProbe } from "@/lib/api/health-probe";
 import { togglePalette } from "@/lib/command-registry";
 import { startLoafInstrumentation } from "@/lib/perf/loaf";
+import { readUiCookieServerFn, THEME_UI_COOKIE } from "@/lib/cookie-state";
+import {
+  DEFAULT_THEME_PREFS,
+  NOFLASH_SCRIPT,
+  isDarkTheme,
+  normalizeThemePrefs,
+  type ThemePrefs,
+} from "@/lib/theme";
+import { useThemePrefs } from "@/hooks/useThemePrefs";
 
 function NotFoundComponent() {
   return (
@@ -34,6 +43,20 @@ function NotFoundComponent() {
 }
 
 export const Route = createRootRouteWithContext<RouterContext>()({
+  // §13 M4: the ui.theme cookie is read inside the SSR request context so the
+  // shell stamps data-theme/data-convention/data-cb on <html> server-side —
+  // first paint is already the right theme (no flash). With no cookie the
+  // server emits the dark default; the inline NOFLASH_SCRIPT below then
+  // resolves prefers-color-scheme client-side before paint.
+  loader: async (): Promise<ThemePrefs> => {
+    const raw = await readUiCookieServerFn({ data: THEME_UI_COOKIE });
+    if (!raw) return DEFAULT_THEME_PREFS;
+    try {
+      return normalizeThemePrefs(JSON.parse(raw));
+    } catch {
+      return DEFAULT_THEME_PREFS;
+    }
+  },
   head: () => ({
     meta: [
       { charSet: "utf-8" },
@@ -52,10 +75,32 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 });
 
 function RootShell({ children }: { children: React.ReactNode }) {
+  // SSR/hydration render from the loader's cookie read (byte-identical);
+  // post-mount the client store (same cookie) takes over, so the settings
+  // popover re-stamps these attributes declaratively — no imperative DOM
+  // writes that a later shell re-render could clobber with stale loader data.
+  // suppressHydrationWarning: with no cookie the NOFLASH_SCRIPT may stamp a
+  // prefers-color-scheme theme the server couldn't know; the post-mount store
+  // sync converges on the same value with no visual change.
+  const loaderPrefs = Route.useLoaderData();
+  const prefs = useThemePrefs(loaderPrefs);
   return (
-    <html lang="en" className="dark">
+    <html
+      lang="en"
+      // shadcn `dark:` variants (ui/alert) gate on .dark — kept for the dark
+      // themes only; paper-light must not match them.
+      className={isDarkTheme(prefs.theme) ? "dark" : undefined}
+      data-theme={prefs.theme}
+      data-convention={prefs.convention}
+      data-cb={prefs.cb ? "on" : "off"}
+      suppressHydrationWarning
+    >
       <head>
         <HeadContent />
+        {/* §13.2 no-flash fallback: synchronous, so the attributes land before
+            first paint even when the SSR HTML couldn't know the cookie (and
+            resolves prefers-color-scheme when no explicit choice exists). */}
+        <script dangerouslySetInnerHTML={{ __html: NOFLASH_SCRIPT }} />
       </head>
       <body className="bg-background text-foreground">
         {children}
@@ -67,6 +112,8 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const loaderPrefs = Route.useLoaderData();
+  const prefs = useThemePrefs(loaderPrefs);
 
   // Boot-time endpoint health probe (client-only; results feed inline
   // "endpoint missing" notices and, later, the status rail — never toasts).
@@ -104,7 +151,7 @@ function RootComponent() {
         <StatusRail />
       </div>
       <CommandPalette />
-      <Toaster theme="dark" position="bottom-right" />
+      <Toaster theme={isDarkTheme(prefs.theme) ? "dark" : "light"} position="bottom-right" />
     </QueryClientProvider>
   );
 }
