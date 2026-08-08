@@ -21,6 +21,10 @@ export default defineConfig({
     baseURL: "http://localhost:3201",
     viewport: { width: 1600, height: 900 }, // desktop-first terminal
     screenshot: "only-on-failure",
+    // M4: with no ui.theme cookie the app follows prefers-color-scheme —
+    // pin dark so baselines stay on the terminal-dark home theme
+    // (Playwright's default emulation is light).
+    colorScheme: "dark",
     // Pin locale/timezone so toLocaleString / datetime formatting in
     // screenshots is stable across machines, not just across runs.
     locale: "en-US",
