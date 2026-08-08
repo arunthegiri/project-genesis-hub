@@ -216,8 +216,13 @@ test("toolbar and hotkeys never disagree", async ({ page }) => {
 
   await expect(segment("5m")).toHaveAttribute("data-state", "on");
   await expect(segment("AUTO")).toHaveAttribute("data-state", "off");
-  // The controls-strip select is the same state path — it must have moved too.
-  await expect(page.getByText(/5 minute/).first()).toBeVisible();
+
+  // M2a: the toolbar is now the ONLY surface writing range/interval/type —
+  // the legacy control bar that mirrored all three is gone. Two live surfaces
+  // on one state path is the disagreement risk this test exists to catch, so
+  // assert the duplicates stay dead rather than that they stay in sync.
+  await expect(page.getByRole("combobox").filter({ hasText: /minute|hour|day/i })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Custom", exact: true })).toHaveCount(0);
 
   // …and back: the toolbar drives the same handler the hotkey does.
   await segment("15m").click();

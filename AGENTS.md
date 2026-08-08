@@ -76,7 +76,7 @@ src/
   lib/theme.ts        ← §13 theme prefs store (theme/convention/colorblind in the ui.theme cookie), no-flash script source; no localStorage
   components/
     PriceChart.tsx  ← lightweight-charts wrapper; one chart instance with native panes (volume, RSI, MACD) + §11 M2 primitives (session bands, price pill); focusable chart surface with §17 hotkeys
-    ChartPanel.tsx  ← chart panel with controls, indicator toggles, data panel (react-resizable-panels v4 Group/Panel/Separator; split layout cookie-persisted via useDefaultLayout + §13 cookie storage); §11 M2 top icon toolbar + bottom Range/Interval SegmentedControl toolbar (same state path as the hotkeys); registers its own palette commands
+    ChartPanel.tsx  ← chart panel + data panel (react-resizable-panels v4 Group/Panel/Separator; split layout cookie-persisted via useDefaultLayout + §13 cookie storage); ALL chart controls live on the §11 M2 toolbars — top icon row (type, indicators, compare, alerts) and bottom row (Range + Dates + Interval), one state path shared with the §17 hotkeys. The pre-terminal shadcn control bar they replaced is gone (M2a); no `Custom` range segment by design — editing a date sets rangePreset=CUSTOM and deselects every segment. Registers its own palette commands
     CommandPalette.tsx ← §17 ⌘K palette on cmdk (local commands + debounced symbol jump)
     ThemeSettings.tsx ← §13.3 settings popover (4-theme picker + market-convention + colorblind toggles); mounted in TopBar's left slot
     BacktestingChart.tsx ← candlestick chart for backtesting replay; §11 M2 price pill carries the replay position (`Bar X / N`)

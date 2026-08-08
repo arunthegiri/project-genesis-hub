@@ -19,11 +19,10 @@ import { EquityChart } from "@/components/EquityChart";
 import { pricesApi } from "@/lib/api/prices";
 import { symbolsApi, normalizeSymbols } from "@/lib/api/symbols";
 import { strategiesApi } from "@/lib/api/strategies";
-import { INTERVALS, type Interval } from "@/lib/api/types";
+import { type Interval } from "@/lib/api/types";
 import { applyCapitalConstraints } from "@/lib/backtest-capital";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -606,133 +605,6 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
         </div>
       </div>
 
-      {/* Controls */}
-      <div className="flex flex-wrap items-end gap-3 border-b border-border p-3">
-        <Field label="Range">
-          <div className="flex flex-wrap gap-1">
-            {RANGE_PRESETS.map(preset => (
-              <Button
-                key={preset}
-                size="sm"
-                variant={rangePreset === preset ? "default" : "outline"}
-                onClick={() => applyPreset(preset)}
-                className="h-7 min-w-10 text-xs"
-              >
-                {preset}
-              </Button>
-            ))}
-            <Button
-              size="sm"
-              variant={rangePreset === "CUSTOM" ? "default" : "outline"}
-              onClick={() => setRangePreset("CUSTOM")}
-              className="h-7 text-xs"
-            >
-              Custom
-            </Button>
-          </div>
-        </Field>
-
-        <Field label="Dates">
-          <DateRangePicker
-            startDate={startDate}
-            endDate={endDate}
-            onChange={({ startDate: s, endDate: e }) => {
-              setRangePreset("CUSTOM");
-              setStartDate(s);
-              setEndDate(e);
-            }}
-          />
-        </Field>
-
-        <Field label="Interval">
-          <div className="flex items-center gap-1">
-            <Select value={interval} onValueChange={v => handleIntervalSelect(v as Interval)}>
-              <SelectTrigger className="h-8 w-[130px] text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {INTERVALS.map(item => (
-                  <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {intervalMode === "pinned" && (
-              <button
-                type="button"
-                onClick={handleUnpinInterval}
-                title="Return to automatic interval selection"
-                className="rounded border border-border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground hover:text-foreground"
-              >
-                Auto
-              </button>
-            )}
-          </div>
-        </Field>
-
-        <Field label="Type">
-          <div className="flex gap-1">
-            {CHART_TYPES.map(ct => (
-              <Button
-                key={ct.value}
-                size="sm"
-                variant={chartType === ct.value ? "default" : "outline"}
-                onClick={() => setChartType(ct.value)}
-                disabled={isComparing}
-                className="h-7 text-xs"
-              >
-                {ct.label}
-              </Button>
-            ))}
-            {isComparing && (
-              <span className="ml-1 self-center rounded bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
-                % return
-              </span>
-            )}
-          </div>
-        </Field>
-
-        <Field label="Compare">
-          <div className="flex flex-wrap items-center gap-1">
-            {compareSymbols.map((sym, i) => {
-              const c = chartTheme?.overlays[i % (chartTheme.overlays.length || 1)];
-              return (
-              <span
-                key={sym}
-                className="flex items-center gap-1 rounded px-2 py-0.5 text-xs font-mono"
-                style={c ? { backgroundColor: withAlpha(c, 0.13), color: c } : undefined}
-              >
-                {sym}
-                <button onClick={() => setCompareSymbols(prev => prev.filter(s => s !== sym))}>
-                  <X className="h-2.5 w-2.5" />
-                </button>
-              </span>
-              );
-            })}
-            {compareSymbols.length < 4 && (
-              <form className="flex gap-1" onSubmit={e => { e.preventDefault(); addCompare(compareInput); }}>
-                <Input
-                  value={compareInput}
-                  onChange={e => setCompareInput(e.target.value.toUpperCase())}
-                  placeholder="TSLA"
-                  className="h-7 w-16 font-mono text-xs uppercase"
-                />
-                <Button type="submit" size="sm" className="h-7 px-2" variant="outline">
-                  <Plus className="h-3 w-3" />
-                </Button>
-              </form>
-            )}
-          </div>
-        </Field>
-
-        <div className="ml-auto flex items-center gap-3 text-xs">
-          <Toggle checked={showSMA}  onChange={setShowSMA}  label="SMA"  disabled={isComparing} />
-          <Toggle checked={showEMA}  onChange={setShowEMA}  label="EMA"  disabled={isComparing} />
-          <Toggle checked={showBB}   onChange={setShowBB}   label="BB"   disabled={isComparing} />
-          <Toggle checked={showRSI}  onChange={setShowRSI}  label="RSI"  disabled={isComparing} />
-          <Toggle checked={showMACD} onChange={setShowMACD} label="MACD" disabled={isComparing} />
-        </div>
-      </div>
-
       {/* Chart + data region.
           A fixed-height wrapper (drag the bottom handle to resize, persisted in
           the ui.charts cookie) that also gives the chart a *definite* height to
@@ -967,7 +839,14 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
                   on the SAME state path as the §17 hotkeys (handleIntervalSelect
                   pins; AUTO unpins and re-derives), so toolbar and hotkeys can
                   never disagree. The footer hint lives at the right edge and
-                  fades on first hotkey use (onHotkeyUse from PriceChart). */}
+                  fades on first hotkey use (onHotkeyUse from PriceChart).
+
+                  §11.4 follow-up: this row SUPERSEDES the old top control bar,
+                  which is gone. Dates moved here because it is the one control
+                  that bar owned outright — and it belongs next to Range: the
+                  two are the same question. There is no "Custom" segment by
+                  design; editing a date sets rangePreset to CUSTOM, which
+                  deselects every Range segment. That is the reachable path. */}
               <div
                 data-testid="chart-bottom-toolbar"
                 className="flex h-9 shrink-0 items-center gap-2 border-t border-border-subtle px-2"
@@ -978,6 +857,17 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
                   value={rangePreset === "CUSTOM" ? "" : rangePreset}
                   onValueChange={(v) => applyPreset(v as Exclude<ChartRangePreset, "CUSTOM">)}
                 />
+                <div aria-hidden className="h-4 w-px bg-border-subtle" />
+                <DateRangePicker
+                  startDate={startDate}
+                  endDate={endDate}
+                  onChange={({ startDate: s, endDate: e }) => {
+                    setRangePreset("CUSTOM");
+                    setStartDate(s);
+                    setEndDate(e);
+                  }}
+                />
+                <div aria-hidden className="h-4 w-px bg-border-subtle" />
                 <SegmentedControl
                   ariaLabel="Chart interval"
                   options={INTERVAL_SEGMENTS}
@@ -1131,15 +1021,6 @@ function StoreConnectedScrollbar({
         onUserRange();
       }}
     />
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</Label>
-      {children}
-    </div>
   );
 }
 
