@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import {
+  LineSeries,
   LineStyle,
   type ISeriesApi,
   type Time,
@@ -27,20 +28,20 @@ export function EquityChart({ equityCurve, buyHoldCurve, height = 200 }: Props) 
     if (!chart) return;
     const theme = resolveChartTheme();
 
-    seriesRef.current = chart.addLineSeries({
+    seriesRef.current = chart.addSeries(LineSeries, {
       color: theme.accent,
       lineWidth: 2,
       priceLineVisible: false,
       title: "Strategy",
     });
-    zeroRef.current = chart.addLineSeries({
+    zeroRef.current = chart.addSeries(LineSeries, {
       color: "rgba(255,255,255,0.15)",
       lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: false,
       crosshairMarkerVisible: false,
     });
-    bahRef.current = chart.addLineSeries({
+    bahRef.current = chart.addSeries(LineSeries, {
       color: "rgba(156,163,175,0.65)",
       lineWidth: 1,
       lineStyle: LineStyle.Dashed,

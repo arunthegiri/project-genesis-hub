@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useRef } from "react";
-import { type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
+import {
+  CandlestickSeries,
+  createSeriesMarkers,
+  type ISeriesApi,
+  type ISeriesMarkersPluginApi,
+  type Time,
+  type UTCTimestamp,
+} from "lightweight-charts";
 import type { PriceBar, Trade } from "@/lib/api/types";
 import { useChartBase, toTs } from "@/hooks/useChartBase";
 import { resolveChartTheme } from "@/lib/chart-theme";
@@ -99,6 +106,7 @@ export function BacktestingChart({ bars, visibleCount, trades, height = "100%", 
   const containerRef    = useRef<HTMLDivElement>(null);
   const { chartRef }    = useChartBase(containerRef);
   const seriesRef       = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const prevLenRef      = useRef(0);
   const prevFirstTime   = useRef("");
   const onRangeChangeRef = useRef(onRangeChange);
@@ -117,7 +125,7 @@ export function BacktestingChart({ bars, visibleCount, trades, height = "100%", 
     const chart = chartRef.current;
     if (!chart) return;
     const theme = resolveChartTheme();
-    const series = chart.addCandlestickSeries({
+    const series = chart.addSeries(CandlestickSeries, {
       upColor: theme.up,
       downColor: theme.down,
       borderVisible: false,
@@ -126,6 +134,12 @@ export function BacktestingChart({ bars, visibleCount, trades, height = "100%", 
     });
     seriesRef.current = series;
     return () => {
+      try {
+        markersRef.current?.detach();
+      } catch {
+        /* plugin already gone */
+      }
+      markersRef.current = null;
       seriesRef.current = null;
       prevLenRef.current = 0;
       prevFirstTime.current = "";
@@ -197,9 +211,26 @@ export function BacktestingChart({ bars, visibleCount, trades, height = "100%", 
     prevFirstTime.current = firstTime;
   }, [bars, visibleCount]);
 
-  // Update trade markers whenever visible trades or bars change
+  // Update trade markers whenever visible trades or bars change. The v5
+  // markers plugin attaches LAZILY, only while there are markers to show:
+  // in v5.2.0 its pane view calls series.data() on every update cycle (an
+  // O(bars) copy per pan/zoom/replay frame even with zero markers), so an
+  // idle plugin is a perf tax at replay bar counts.
   useEffect(() => {
-    seriesRef.current?.setMarkers(buildMarkers(trades, barTimesMs, lastVisibleMs));
+    const series = seriesRef.current;
+    if (!series) return;
+    const markers = buildMarkers(trades, barTimesMs, lastVisibleMs);
+    if (!markers.length) {
+      try {
+        markersRef.current?.detach();
+      } catch {
+        /* plugin already gone */
+      }
+      markersRef.current = null;
+      return;
+    }
+    if (!markersRef.current) markersRef.current = createSeriesMarkers(series, []);
+    markersRef.current.setMarkers(markers);
   }, [trades, barTimesMs, lastVisibleMs]);
 
   return <div ref={containerRef} style={{ height }} className="w-full" />;

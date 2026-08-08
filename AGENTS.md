@@ -43,7 +43,7 @@ This is a **desktop-first dark trading terminal** — a TanStack Start SSR app (
 | Router | TanStack Router (file-based, `src/routes/`) |
 | Data fetching | TanStack Query (React Query) |
 | UI components | shadcn/ui (Radix UI primitives + Tailwind v4) |
-| Charts | `lightweight-charts` v4 (TradingView) |
+| Charts | `lightweight-charts` v5 (TradingView) |
 | Build | Vite via `@lovable.dev/vite-tanstack-config` |
 | Deployment | Cloudflare Workers (via `wrangler.jsonc`) |
 
@@ -65,7 +65,7 @@ src/
   lib/command-registry.ts ← §17 command registry (registerCommands on mount/cleanup, stable IDs, recents in localStorage) + palette open state + hotkey scope stack
   lib/active-chart-panel.ts ← §17 active-panel signal: palette symbol jumps apply to the last-interacted ChartPanel; off "/", a pending symbol is stashed and consumed by the charts page
   components/
-    PriceChart.tsx  ← lightweight-charts wrapper; main chart + sub-panes (RSI, MACD); focusable chart surface with §17 hotkeys + footer hint
+    PriceChart.tsx  ← lightweight-charts wrapper; one chart instance with native panes (volume, RSI, MACD); focusable chart surface with §17 hotkeys + footer hint
     ChartPanel.tsx  ← chart panel with controls, indicator toggles, data panel (react-resizable-panels v4 Group/Panel/Separator; split layout cookie-persisted via useDefaultLayout + §13 cookie storage); registers its own palette commands
     CommandPalette.tsx ← §17 ⌘K palette on cmdk (local commands + debounced symbol jump)
     BacktestingChart.tsx ← candlestick chart for backtesting replay
@@ -93,14 +93,17 @@ src/
 ### SSR notes
 - This is TanStack Start SSR — client-only state is handled two ways (build doc §13: "URL = where you are; cookie = how the workspace is arranged; server = what the data is"): workspace arrangement (panel set, chart height) lives in `ui.*` cookies (`src/lib/cookie-state.ts`) and is read server-side by the `/` route loader via `readUiCookieServerFn` (createServerFn + getCookie), so first paint is SSR-correct; per-panel internals restore post-mount behind ChartPanel's `mounted` gate, which renders the geometry-identical `PanelSkeleton` (sizing co-located in `src/components/PanelSkeleton.tsx`) until then. No render-then-snap, no `skipPersist`.
 - Location-like view state belongs in `validateSearch` (see `/backtesting`, `/data`), with relative defaults resolved at parse time.
-- `lightweight-charts` is pinned at 4.2.0 — do not upgrade
+- `lightweight-charts` at 5.2.x (build doc §10) — minor upgrades require re-running chart visual baselines
 - Unused shadcn scaffold deps (`embla-carousel-react`, `vaul`, `input-otp`) are accepted scaffold — leave installed; removing them risks shadcn regen churn for zero runtime win
 
 ### Chart architecture
 
-`PriceChart` manages multiple `lightweight-charts` instances via `useChartBase`:
-1. **Main chart** — candlestick + overlay series (SMA, EMA, Bollinger). Chart created once via `useChartBase`; series recreated only on type/compare-mode change; data updates via `setData()`.
-2. **Sub-panes** — RSI and MACD each get their own DOM-appended `<div>` and chart instance, created/destroyed on enable toggle. Time scales are **not** synchronised — known limitation.
+`PriceChart` manages ONE `lightweight-charts` v5 instance via `useChartBase` with **native panes** (build doc §10):
+1. **Price pane (pane 0)** — candlestick + overlay series (SMA, EMA, Bollinger). Chart created once via `useChartBase`; series recreated only on type/compare-mode change; data updates via `setData()`. Series are created with the unified v5 API: `chart.addSeries(CandlestickSeries, opts)` / `LineSeries` / `AreaSeries` / `BarSeries` / `HistogramSeries` (the v4 `addCandlestickSeries`-style methods are gone).
+2. **Volume pane (pane 1)** — real pane holding a volume histogram (the v4 blank-`priceScaleId` overlay + `scaleMargins { top: 0.7 }` hack is deleted; the price scale keeps default margins). The series rides a custom overlay scale id (`priceScaleId: "volume"`) so it draws no axis — do NOT hide a pane's price scale with `visible: false`: in 5.2.0 that crashes the layout pass (`adjustSizeImpl` → "Value is null") whenever another pane's scale on the same side is visible.
+3. **RSI / MACD panes** — real panes on the same instance, created/destroyed on indicator toggle (`chart.addPane()` + `pane.moveTo()` keep a canonical volume→RSI→MACD order; cleanup is `chart.removePane(pane.paneIndex())`, StrictMode-safe). Crosshair and visible-range sync across panes are native in v5 — the v4 `ChartSyncGroup` (`src/lib/chart-sync.ts`) and the separate sub-chart divs/instances are removed entirely.
+4. **Markers** — trade entry/exit markers (PriceChart, BacktestingChart) use the v5 `createSeriesMarkers` plugin, attached LAZILY only while trades exist: in 5.2.0 the plugin's pane view calls `series.data()` on every update cycle (an O(bars) copy per pan/zoom frame even with zero markers), so an idle plugin measurably hurts at high bar counts.
+5. **v5.2.0 gotchas (verified against typings + runtime):** pane 0's default stretch factor is **2**, not 1 (size sub-pane `setStretchFactor` calls against that); `timeScale.enableConflation` defaults to **false** despite the "automatic at high bar counts" docs impression — `useChartBase` opts in explicitly (the 100k+-bar story); `timeVisible`/`secondsVisible` were NOT renamed.
 
 Client-side interval aggregation (`aggregatePriceBars`) runs on raw 1-minute bars from the API and buckets them into the selected interval. The API always returns 1-minute data; resampling happens entirely in the browser.
 

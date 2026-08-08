@@ -58,7 +58,7 @@
     "date-fns": "^4.1.0",
     "embla-carousel-react": "^8.6.0",
     "input-otp": "^1.4.2",
-    "lightweight-charts": "4.2.0",
+    "lightweight-charts": "5.2.0",
     "lucide-react": "^1.8.0",
     "react": "^19.2.0",
     "react-day-picker": "^9.14.0",

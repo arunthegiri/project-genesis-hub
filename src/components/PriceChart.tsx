@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  createChart,
+  AreaSeries,
+  BarSeries,
+  CandlestickSeries,
+  createSeriesMarkers,
+  HistogramSeries,
+  LineSeries,
   PriceLineSource,
   PriceScaleMode,
-  type IChartApi,
+  type IPaneApi,
   type ISeriesApi,
+  type ISeriesMarkersPluginApi,
   type MouseEventParams,
   type SeriesMarker,
   type Time,
@@ -13,12 +19,11 @@ import type { Interval, PriceBar } from "@/lib/api/types";
 import type { BacktestTrade } from "@/lib/api/strategies";
 import { sma, ema, bollinger, rsi, macd } from "@/lib/indicators";
 import { intervalForSpan } from "@/lib/price-bars";
-import { useChartBase, toTs, chartOptions } from "@/hooks/useChartBase";
+import { useChartBase, toTs } from "@/hooks/useChartBase";
 import { useRafCoalescer } from "@/hooks/useRafCoalescer";
 import { useChartHotkeys, type ChartHotkeyHandlers } from "@/hooks/useHotkeys";
 import type { InteractionStore } from "@/lib/stores/chart-interaction";
 import { resolveChartTheme, withAlpha, type ChartTheme } from "@/lib/chart-theme";
-import { ChartSyncGroup } from "@/lib/chart-sync";
 import { ChartLegend, type ChartLegendHandle, type LegendIndicatorRow } from "@/components/ChartLegend";
 
 export type ChartType = "candlestick" | "line" | "bar" | "area";
@@ -102,21 +107,23 @@ export function PriceChart({
   const overlaysRef    = useRef<ISeriesApi<"Line">[]>([]);
   const overlayKeysRef = useRef<string[]>([]);
   const compareSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
-  const rsiSubRef  = useRef<{ chart: IChartApi; series: ISeriesApi<"Line"> } | null>(null);
-  const macdSubRef = useRef<{
-    chart: IChartApi;
+  const hostRef          = useRef<HTMLDivElement>(null);
+  const volumeSeriesRef  = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const legendRef        = useRef<ChartLegendHandle>(null);
+  // §10 (lwc v5): volume/RSI/MACD are native panes on the ONE chart instance —
+  // crosshair + visible-range sync across them is built in, so the v4
+  // ChartSyncGroup and the separate sub-chart DOM divs/instances are gone.
+  // Pane order is canonical (volume, RSI, MACD) regardless of toggle order.
+  const volumePaneRef = useRef<IPaneApi<Time> | null>(null);
+  const rsiPaneRef = useRef<{ pane: IPaneApi<Time>; series: ISeriesApi<"Line"> } | null>(null);
+  const macdPaneRef = useRef<{
+    pane: IPaneApi<Time>;
     lineMacd: ISeriesApi<"Line">;
     lineSignal: ISeriesApi<"Line">;
     hist: ISeriesApi<"Histogram">;
   } | null>(null);
-  const rsiPaneRef  = useRef<HTMLDivElement>(null);
-  const macdPaneRef = useRef<HTMLDivElement>(null);
-  const hostRef          = useRef<HTMLDivElement>(null);
-  const volumeSeriesRef  = useRef<ISeriesApi<"Histogram"> | null>(null);
-  const legendRef        = useRef<ChartLegendHandle>(null);
-  // §10b — one sync group per PriceChart; the main chart is the reference
-  // (registers first, in the main-series lifecycle effect below).
-  const [syncGroup]      = useState(() => new ChartSyncGroup());
+  // v5 markers plugin attached to the main series (was series.setMarkers in v4).
+  const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
 
   // §3.4 chart theme — resolved from computed style on the FIRST client
   // render (SSR-guarded: this component only mounts behind ChartPanel's
@@ -326,8 +333,9 @@ export function PriceChart({
     return () => chart.unsubscribeCrosshairMove(handler);
   }, [interactionStore, pushLegend]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Cleanup series refs on unmount (charts themselves are cleaned up by
-  // useChartBase and the sub-pane lifecycle effects' cleanup functions)
+  // Cleanup series refs on unmount (the chart itself — and its panes with it —
+  // is cleaned up by useChartBase; each pane lifecycle effect also has its own
+  // removePane cleanup)
   useEffect(() => () => {
     mainSeriesRef.current = null;
     overlaysRef.current = [];
@@ -412,33 +420,61 @@ export function PriceChart({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let main: ISeriesApi<any>;
     if (isComparing || chartType === "line") {
-      main = chart.addLineSeries({ color: theme.accent, lineWidth: 2, priceLineVisible: false, lastValueVisible: true });
+      main = chart.addSeries(LineSeries, {
+        color: theme.accent,
+        lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: true,
+      });
     } else if (chartType === "area") {
-      main = chart.addAreaSeries({ lineColor: theme.accent, topColor: withAlpha(theme.accent, 0.25), bottomColor: withAlpha(theme.accent, 0), lineWidth: 2 });
+      main = chart.addSeries(AreaSeries, {
+        lineColor: theme.accent,
+        topColor: withAlpha(theme.accent, 0.25),
+        bottomColor: withAlpha(theme.accent, 0),
+        lineWidth: 2,
+      });
     } else if (chartType === "bar") {
-      main = chart.addBarSeries({ upColor: theme.up, downColor: theme.down });
+      main = chart.addSeries(BarSeries, { upColor: theme.up, downColor: theme.down });
     } else {
-      main = chart.addCandlestickSeries({ upColor: theme.up, downColor: theme.down, borderVisible: false, wickUpColor: theme.up, wickDownColor: theme.down });
+      main = chart.addSeries(CandlestickSeries, {
+        upColor: theme.up,
+        downColor: theme.down,
+        borderVisible: false,
+        wickUpColor: theme.up,
+        wickDownColor: theme.down,
+      });
     }
     mainSeriesRef.current = main;
-    // §10b: main chart is the sync group's reference — it registers first, so
-    // panes that mount later adopt its current visible range.
-    syncGroup.register(chart, main);
 
-    // §9: leave the bottom ~30% of the pane to the volume overlay; last-price
-    // line + axis tag from the last bar (compare mode keeps its own tags).
-    main.priceScale().applyOptions({ scaleMargins: { top: 0.1, bottom: 0.3 } });
+    // §9: last-price line + axis tag from the last bar (compare mode keeps its
+    // own tags). §10: volume is a real pane now, so the price scale keeps its
+    // DEFAULT margins — the v4 bottom-30% overlay reservation is deleted.
     if (!isComparing) {
-      main.applyOptions({ priceLineVisible: true, lastValueVisible: true, priceLineSource: PriceLineSource.LastBar });
+      main.applyOptions({
+        priceLineVisible: true,
+        lastValueVisible: true,
+        priceLineSource: PriceLineSource.LastBar,
+      });
     }
 
     return () => {
-      syncGroup.unregister(chart);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      try { chart.removeSeries(main as ISeriesApi<any>); } catch {}
+      // Detach a lazily-attached markers plugin before its series dies (the
+      // markers effect below owns creation; detach is idempotent-guarded here).
+      try {
+        markersRef.current?.detach();
+      } catch {
+        /* plugin already gone */
+      }
+      markersRef.current = null;
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        chart.removeSeries(main as ISeriesApi<any>);
+      } catch {
+        /* series already gone (chart removed) */
+      }
       if (mainSeriesRef.current === main) mainSeriesRef.current = null;
     };
-  }, [chartType, isComparing, syncGroup, theme]);
+  }, [chartType, isComparing, theme, chartRef]);
 
   // ── Main series DATA — setData on bars/type change; never recreates.
   useEffect(() => {
@@ -485,47 +521,57 @@ export function PriceChart({
     }
   }, [bars, times, chartType, isComparing]);
 
-  // ── Volume overlay LIFECYCLE (§9) — a blank-priceScale histogram pinned to
-  // the bottom of the price pane (v4 has no panes; the blank overlay scale is
-  // the documented approach). Created once, like the main series.
+  // ── Volume PANE lifecycle (§10) — a real pane directly under the price pane
+  // on the same chart instance (replaces the v4 blank-priceScale overlay +
+  // scaleMargins hack). Toggled by the §17 V hotkey / palette command; hidden
+  // in compare mode (percent-normalized data has no volume meaning).
   useEffect(() => {
     const chart = chartRef.current;
-    if (!chart) return;
-    const vol = chart.addHistogramSeries({
-      priceScaleId: "", // blank = overlay, no axis
+    if (!chart || !showVolume || isComparing || !theme) return;
+    const pane = chart.addPane();
+    pane.moveTo(1); // canonical order: volume sits directly under price
+    // v5 gotcha: pane 0's default stretch factor is 2 (DEFAULT_STRETCH_FACTOR
+    // * 2), not 1 — 0.85 gives volume ~30% of total height, matching the old
+    // in-pane band.
+    pane.setStretchFactor(0.85);
+    const vol = pane.addSeries(HistogramSeries, {
+      // Custom scale id = overlay scale (v5 idiom): autoscaled inside its pane,
+      // no axis labels for the series. NOTE: hiding the pane's right price
+      // scale outright (visible:false) crashes v5.2.0's layout pass
+      // (adjustSizeImpl ensureNotNull on the missing axis widget → "Value is
+      // null"), so the axis stays visible-but-empty instead.
+      priceScaleId: "volume",
       priceFormat: { type: "volume" },
       lastValueVisible: false,
       priceLineVisible: false,
     });
-    vol.priceScale().applyOptions({ scaleMargins: { top: 0.7, bottom: 0 } });
+    volumePaneRef.current = pane;
     volumeSeriesRef.current = vol;
     return () => {
-      try { chart.removeSeries(vol); } catch {}
+      try {
+        chart.removePane(pane.paneIndex());
+      } catch {
+        /* pane already gone (chart removed) */
+      }
+      if (volumePaneRef.current === pane) volumePaneRef.current = null;
       if (volumeSeriesRef.current === vol) volumeSeriesRef.current = null;
     };
-  }, []);
+  }, [showVolume, isComparing, theme, chartRef]);
 
-  // Volume DATA — own effect, never touches the time scale. Hidden in compare
-  // mode (percent-normalized data has no volume meaning) and by the §17
-  // showVolume toggle (V hotkey / palette command).
+  // Volume DATA — own effect, never touches the time scale. Runs after the
+  // lifecycle effect in the same commit on toggle/theme change, so a recreated
+  // pane gets its data immediately.
   useEffect(() => {
     const vol = volumeSeriesRef.current;
-    if (!vol) return;
-    if (isComparing || !bars.length || !showVolume || !theme) { vol.setData([]); return; }
-    vol.setData(bars.map((b, i) => ({
-      time: times[i] as Time,
-      value: b.volume,
-      color: b.close >= b.open ? theme.upDim : theme.downDim,
-    })));
-  }, [bars, times, isComparing, showVolume, theme]);
-
-  // Volume toggle also releases the bottom band the §9 margins reserve for
-  // the overlay, so hiding volume gives the price series its space back.
-  useEffect(() => {
-    mainSeriesRef.current?.priceScale().applyOptions({
-      scaleMargins: { top: 0.1, bottom: showVolume ? 0.3 : 0.03 },
-    });
-  }, [showVolume]);
+    if (!vol || !theme) return;
+    vol.setData(
+      bars.map((b, i) => ({
+        time: times[i] as Time,
+        value: b.volume,
+        color: b.close >= b.open ? theme.upDim : theme.downDim,
+      })),
+    );
+  }, [bars, times, showVolume, isComparing, theme]);
 
   // ── Scale-mode toggle (§9) — A/L/% applied to the right price scale. In
   // compare mode the series are already %-normalized: Percentage is forced and
@@ -559,7 +605,7 @@ export function PriceChart({
 
     overlaysRef.current.forEach(s => { try { chart.removeSeries(s); } catch {} });
     overlaysRef.current = overlaySpecs.map(spec => {
-      const s = chart.addLineSeries({ color: spec.color, lineWidth: 2, priceLineVisible: false, lastValueVisible: false, title: spec.title });
+      const s = chart.addSeries(LineSeries, { color: spec.color, lineWidth: 2, priceLineVisible: false, lastValueVisible: false, title: spec.title });
       s.setData(spec.data);
       return s;
     });
@@ -580,7 +626,7 @@ export function PriceChart({
       if (!cb.length) return;
       const fc = cb[0].close;
       const ct = cb.map(b => toTs(b.time));
-      const s = chart.addLineSeries({
+      const s = chart.addSeries(LineSeries, {
         color: theme.overlays[idx % theme.overlays.length],
         lineWidth: 2,
         title: symbol,
@@ -592,65 +638,106 @@ export function PriceChart({
     });
   }, [compareData, isComparing, theme]);
 
-  // ── RSI sub-pane lifecycle — create/destroy against the React-rendered pane
-  // div (§10a). Idempotent pair: cleanup destroys exactly what this run made.
+  // ── RSI PANE lifecycle (§10) — a native pane on the main chart instance.
+  // Crosshair + visible-range sync across panes is built into v5, so no sync
+  // group and no separate chart/div. Idempotent pair: cleanup removes exactly
+  // the pane this run created (StrictMode double-mount safe).
   useEffect(() => {
-    const pane = rsiPaneRef.current;
-    if (!rsiEnabled || !pane || !theme) return;
-    const chart = createChart(pane, chartOptions(theme));
-    const series = chart.addLineSeries({ color: theme.overlays[1], lineWidth: 2, title: "RSI" });
-    rsiSubRef.current = { chart, series };
-    syncGroup.register(chart, series);
+    const chart = chartRef.current;
+    if (!chart || !rsiEnabled || !theme) return;
+    const pane = chart.addPane();
+    // Canonical sub-pane order (volume, RSI, MACD) even when toggles fire in
+    // arbitrary order — refs of the panes above are live at this point.
+    pane.moveTo(Math.min(1 + (volumePaneRef.current ? 1 : 0), chart.panes().length - 1));
+    pane.setStretchFactor(0.8);
+    const series = pane.addSeries(LineSeries, {
+      color: theme.overlays[1],
+      lineWidth: 2,
+      title: "RSI",
+    });
+    rsiPaneRef.current = { pane, series };
     return () => {
-      syncGroup.unregister(chart);
-      chart.remove();
-      rsiSubRef.current = null;
+      try {
+        chart.removePane(pane.paneIndex());
+      } catch {
+        /* pane already gone (chart removed) */
+      }
+      rsiPaneRef.current = null;
     };
-  }, [rsiEnabled, syncGroup, theme]);
+  }, [rsiEnabled, theme, chartRef]);
 
-  // RSI data
+  // RSI data — theme/enabled in deps so a recreated pane is refilled in the
+  // same commit (the data effect runs after the lifecycle effect).
   useEffect(() => {
-    rsiSubRef.current?.series.setData(rsiData);
-  }, [rsiData]);
+    rsiPaneRef.current?.series.setData(rsiData);
+  }, [rsiData, rsiEnabled, theme]);
 
-  // ── MACD sub-pane lifecycle — create/destroy against the React-rendered
-  // pane div (§10a). Idempotent pair: cleanup destroys exactly what this run made.
+  // ── MACD PANE lifecycle (§10) — same native-pane pattern as RSI.
   useEffect(() => {
-    const pane = macdPaneRef.current;
-    if (!macdEnabled || !pane || !theme) return;
-    const chart = createChart(pane, chartOptions(theme));
-    const lineMacd   = chart.addLineSeries({ color: theme.accent, lineWidth: 2, title: "MACD" });
-    const lineSignal = chart.addLineSeries({ color: theme.overlays[3], lineWidth: 2, title: "Signal" });
-    const hist       = chart.addHistogramSeries({ color: theme.flat });
-    macdSubRef.current = { chart, lineMacd, lineSignal, hist };
-    syncGroup.register(chart, lineMacd);
+    const chart = chartRef.current;
+    if (!chart || !macdEnabled || !theme) return;
+    const pane = chart.addPane();
+    pane.moveTo(
+      Math.min(
+        1 + (volumePaneRef.current ? 1 : 0) + (rsiPaneRef.current ? 1 : 0),
+        chart.panes().length - 1,
+      ),
+    );
+    pane.setStretchFactor(0.9);
+    const lineMacd = pane.addSeries(LineSeries, {
+      color: theme.accent,
+      lineWidth: 2,
+      title: "MACD",
+    });
+    const lineSignal = pane.addSeries(LineSeries, {
+      color: theme.overlays[3],
+      lineWidth: 2,
+      title: "Signal",
+    });
+    const hist = pane.addSeries(HistogramSeries, { color: theme.flat });
+    macdPaneRef.current = { pane, lineMacd, lineSignal, hist };
     return () => {
-      syncGroup.unregister(chart);
-      chart.remove();
-      macdSubRef.current = null;
+      try {
+        chart.removePane(pane.paneIndex());
+      } catch {
+        /* pane already gone (chart removed) */
+      }
+      macdPaneRef.current = null;
     };
-  }, [macdEnabled, syncGroup, theme]);
+  }, [macdEnabled, theme, chartRef]);
 
   // MACD data
   useEffect(() => {
-    const sub = macdSubRef.current;
+    const sub = macdPaneRef.current;
     if (!sub) return;
     sub.lineMacd.setData(macdData?.macd ?? []);
     sub.lineSignal.setData(macdData?.signal ?? []);
     sub.hist.setData(macdData?.hist ?? []);
-  }, [macdData]);
+  }, [macdData, macdEnabled, theme]);
 
-  // ── Trade markers — re-applied after the main series is (re)created, so they
-  // survive a chartType/compare switch.
+  // ── Trade markers (§10: createSeriesMarkers plugin) — re-applied after the
+  // main series is (re)created, so they survive a chartType/compare switch.
+  // The plugin attaches LAZILY, only while trades exist: in v5.2.0 its pane
+  // view calls series.data() on EVERY update cycle — an O(bars) allocation per
+  // pan/zoom frame even with zero markers — so an idle plugin is a real perf
+  // tax at high bar counts (verified via CDP profile at 100k bars).
   useEffect(() => {
-    const series = mainSeriesRef.current;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const series = mainSeriesRef.current as ISeriesApi<any> | null;
     if (!series || !theme) return;
 
     if (!trades.length) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (series as ISeriesApi<any>).setMarkers([]);
+      try {
+        markersRef.current?.detach();
+      } catch {
+        /* plugin already gone */
+      }
+      markersRef.current = null;
       return;
     }
+
+    if (!markersRef.current) markersRef.current = createSeriesMarkers(series, []);
+    const plugin = markersRef.current;
 
     const markers: SeriesMarker<Time>[] = [];
     for (const t of trades) {
@@ -674,8 +761,7 @@ export function PriceChart({
     }
 
     markers.sort((a, b) => (a.time as number) - (b.time as number));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (series as ISeriesApi<any>).setMarkers(markers);
+    plugin.setMarkers(markers);
   }, [trades, bars, chartType, isComparing, theme]);
 
   return (
@@ -719,20 +805,6 @@ export function PriceChart({
           </div>
         )}
       </div>
-      {rsiEnabled && (
-        <div
-          ref={rsiPaneRef}
-          className="w-full shrink-0"
-          style={{ height: 120, borderTop: "1px solid rgba(255,255,255,0.06)" }}
-        />
-      )}
-      {macdEnabled && (
-        <div
-          ref={macdPaneRef}
-          className="w-full shrink-0"
-          style={{ height: 140, borderTop: "1px solid rgba(255,255,255,0.06)" }}
-        />
-      )}
     </div>
   );
 }
