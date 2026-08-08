@@ -7,6 +7,7 @@ import { ChevronDown, ChevronUp, GripHorizontal, Loader2, Plus, X } from "lucide
 
 import { PriceChart, type IndicatorConfig, type ChartType, type ViewportIntent } from "@/components/PriceChart";
 import { ChartScrollbar } from "@/components/ChartScrollbar";
+import { TerminalPanel } from "@/components/terminal/TerminalPanel";
 import { PythonExport } from "@/components/PythonExport";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { StrategySelector } from "@/components/StrategySelector";
@@ -33,7 +34,7 @@ import {
 } from "@/lib/date-range";
 import { aggregatePriceBars, intervalForSpan } from "@/lib/price-bars";
 import { intervalMs, snapRange } from "@/lib/interval-policy";
-import { resolveChartTheme, withAlpha, type ChartTheme } from "@/lib/chart-theme";
+import { resolveChartTheme, subscribeChartTheme, withAlpha, type ChartTheme } from "@/lib/chart-theme";
 import { registerCommands } from "@/lib/command-registry";
 import { registerChartPanel, setActiveChartPanel } from "@/lib/active-chart-panel";
 import { createInteractionStore, type InteractionStore } from "@/lib/stores/chart-interaction";
@@ -191,6 +192,11 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
     setMounted(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Keep theme-derived colors (compare badges, line 649 area) in sync on live
+  // theme switches — the mount effect above resolves once; the M4 registry
+  // notifies on data-theme/data-convention/data-cb attribute changes.
+  useEffect(() => subscribeChartTheme(() => setChartTheme(resolveChartTheme())), []);
 
   // Auto-pick interval whenever the date range changes — but only in auto
   // mode; a pinned (manually selected) interval survives range nudges. The
@@ -503,10 +509,15 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
   }
 
   return (
-    <div
-      className="flex flex-col rounded-md border border-border bg-card"
+    // §4.2: every chart panel mounts in a TerminalPanel — single-tab title
+    // strip showing the live symbol. onPointerDownCapture passes through to
+    // the panel root (§17 active-panel signal).
+    <TerminalPanel
+      tabs={[{ id: "chart", label: selectedSymbol || "Chart" }]}
+      activeTab="chart"
       onPointerDownCapture={() => setActiveChartPanel(panelKey)}
-    >      {/* Panel header */}
+    >
+      {/* Panel header */}
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
         <Select value={selectedSymbol} onValueChange={handleSymbolChange}>
           <SelectTrigger className="h-8 w-36 font-mono text-sm">
@@ -857,7 +868,7 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
       {selectedStrategy && equityCurve.length > 0 && (
         <EquityChart equityCurve={equityCurve} height={180} />
       )}
-    </div>
+    </TerminalPanel>
   );
 }
 

@@ -2,10 +2,11 @@ import { useMemo, useRef } from "react";
 import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
 import type { Trade } from "@/lib/api/types";
 import type { BacktestTrade } from "@/lib/api/strategies";
+import { UnderlineTabs } from "@/components/terminal/UnderlineTabs";
 import { fmtPnl, fmtPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-type TradeFilter = "all" | "winning" | "losing";
+export type TradeFilter = "all" | "winning" | "losing";
 
 // Fixed row height — density is a feature (build doc §11). Rows are px-3 py-2
 // with a text-xs line and two text-[10px] lines → 66px content + 1px border.
@@ -95,7 +96,13 @@ export function TradeLog({ trades }: { trades: Trade[] }) {
   );
 }
 
-export function StrategyTradeLog({ trades, filter }: { trades: BacktestTrade[]; filter: TradeFilter }) {
+export function StrategyTradeLog({ trades, filter, counts, onFilterChange }: {
+  trades: BacktestTrade[];
+  filter: TradeFilter;
+  /** Unfiltered counts shown in-label on the filter tabs: All (n) etc. */
+  counts: Record<TradeFilter, number>;
+  onFilterChange: (f: TradeFilter) => void;
+}) {
   // Newest-first, computed once per trades change — not per render.
   const rows = useMemo(() => [...trades].reverse(), [trades]);
   const { total, wins } = useMemo(() => ({
@@ -113,9 +120,17 @@ export function StrategyTradeLog({ trades, filter }: { trades: BacktestTrade[]; 
 
   return (
     <div className="flex flex-col overflow-hidden rounded-md border border-border bg-card">
-      <div className="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {filter === "all" ? "All Trades" : filter === "winning" ? "Winning Trades" : "Losing Trades"}
-        {trades.length > 0 && <span className="ml-1 text-foreground">{trades.length}</span>}
+      {/* §4.2: All/Winning/Losing filter = in-body UnderlineTabs with counts. */}
+      <div className="border-b border-border px-3">
+        <UnderlineTabs
+          tabs={[
+            { id: "all", label: "All", count: counts.all },
+            { id: "winning", label: "Winning", count: counts.winning },
+            { id: "losing", label: "Losing", count: counts.losing },
+          ]}
+          activeTab={filter}
+          onTabChange={(id) => onFilterChange(id as TradeFilter)}
+        />
       </div>
       <VirtualizedRows
         rows={rows}

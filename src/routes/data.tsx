@@ -9,6 +9,7 @@ import { SymbolPicker } from "@/components/SymbolPicker";
 import { PythonExport } from "@/components/PythonExport";
 import { BackfillPanel } from "@/components/BackfillPanel";
 import { CoverageTimeline } from "@/components/CoverageTimeline";
+import { TerminalPanel } from "@/components/terminal/TerminalPanel";
 import { pricesApi } from "@/lib/api/prices";
 import { INTERVALS, type Interval, type PriceBar } from "@/lib/api/types";
 import { Input } from "@/components/ui/input";
@@ -174,7 +175,16 @@ function DataPage() {
           </div>
         </div>
 
-        <CoverageTimeline from={fromApi} to={toApi} />
+        {/* §4.2: coverage and backfill regions each mount in a TerminalPanel.
+            [&>*]:border-0 drops the wrapped component's own card border so
+            the panel chrome is the single frame (bg-card aliases surface-1). */}
+        <TerminalPanel
+          tabs={[{ id: "coverage", label: "Coverage" }]}
+          activeTab="coverage"
+          bodyClassName="[&>*]:rounded-none [&>*]:border-0"
+        >
+          <CoverageTimeline from={fromApi} to={toApi} />
+        </TerminalPanel>
 
         <div className="flex min-h-0 flex-1 flex-col rounded-md border border-border bg-card">
           <div className="flex items-center justify-between border-b border-border px-3 py-2 text-xs">
@@ -224,7 +234,13 @@ function DataPage() {
           </div>
         </div>
 
-        <BackfillPanel symbol={symbol} />
+        <TerminalPanel
+          tabs={[{ id: "backfill", label: "Backfill" }]}
+          activeTab="backfill"
+          bodyClassName="[&>*]:rounded-none [&>*]:border-0"
+        >
+          <BackfillPanel symbol={symbol} />
+        </TerminalPanel>
 
         <PythonExport code={pythonCode} filename={`${symbol || "query"}_data.py`} />
       </section>

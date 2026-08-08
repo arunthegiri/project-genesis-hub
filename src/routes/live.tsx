@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { liveApi, type AccountData, type PositionData, type ActiveStrategy } from "@/lib/api/live";
 import { fmtPct, fmtPnl, fmtPrice, fmtSize } from "@/lib/format";
 import { MetaGrid, type MetaGridItem } from "@/components/terminal/MetaGrid";
+import { TerminalPanel } from "@/components/terminal/TerminalPanel";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/live")({
@@ -117,7 +119,7 @@ function PortfolioOverview({ account }: { account: AccountData | null }) {
 function PositionsTable({ positions }: { positions: PositionData[] }) {
   if (positions.length === 0) {
     return (
-      <div className="rounded-lg border border-border bg-card/50 p-6 text-center text-sm text-muted-foreground">
+      <div className="p-6 text-center text-sm text-muted-foreground">
         No open positions
       </div>
     );
@@ -128,42 +130,40 @@ function PositionsTable({ positions }: { positions: PositionData[] }) {
   );
 
   return (
-    <div className="rounded-lg border border-border overflow-hidden">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-border bg-muted/30">
-            <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Symbol</th>
-            <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground">Side</th>
-            <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground">Qty</th>
-            <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground">Price</th>
-            <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground">Market Value</th>
-            <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground">P&L</th>
-            <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground">P&L %</th>
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="border-b border-border bg-muted/30">
+          <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Symbol</th>
+          <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground">Side</th>
+          <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground">Qty</th>
+          <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground">Price</th>
+          <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground">Market Value</th>
+          <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground">P&L</th>
+          <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground">P&L %</th>
+        </tr>
+      </thead>
+      <tbody>
+        {sorted.map((p) => (
+          <tr key={p.symbol} className="border-b border-border/50 hover:bg-muted/10">
+            <td className="px-3 py-2 font-medium">{p.symbol}</td>
+            <td className="px-3 py-2 text-right">
+              <span className={p.side === "long" ? "text-bull" : "text-bear"}>
+                {p.side?.toUpperCase()}
+              </span>
+            </td>
+            <td className="px-3 py-2 text-right tabular-nums">{fmtSize(p.qty)}</td>
+            <td className="px-3 py-2 text-right tabular-nums">${fmtPrice(p.currentPrice)}</td>
+            <td className="px-3 py-2 text-right tabular-nums">{fmtPnl(p.marketValue, { plus: false })}</td>
+            <td className={cn("px-3 py-2 text-right tabular-nums", pnlColor(p.unrealizedPl))}>
+              {fmtPnl(p.unrealizedPl)}
+            </td>
+            <td className={cn("px-3 py-2 text-right tabular-nums", pnlColor(p.unrealizedPlPct))}>
+              {p.unrealizedPlPct != null ? fmtPct(parseFloat(p.unrealizedPlPct) * 100) : "—"}
+            </td>
           </tr>
-        </thead>
-        <tbody>
-          {sorted.map((p) => (
-            <tr key={p.symbol} className="border-b border-border/50 hover:bg-muted/10">
-              <td className="px-3 py-2 font-medium">{p.symbol}</td>
-              <td className="px-3 py-2 text-right">
-                <span className={p.side === "long" ? "text-bull" : "text-bear"}>
-                  {p.side?.toUpperCase()}
-                </span>
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums">{fmtSize(p.qty)}</td>
-              <td className="px-3 py-2 text-right tabular-nums">${fmtPrice(p.currentPrice)}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{fmtPnl(p.marketValue, { plus: false })}</td>
-              <td className={cn("px-3 py-2 text-right tabular-nums", pnlColor(p.unrealizedPl))}>
-                {fmtPnl(p.unrealizedPl)}
-              </td>
-              <td className={cn("px-3 py-2 text-right tabular-nums", pnlColor(p.unrealizedPlPct))}>
-                {p.unrealizedPlPct != null ? fmtPct(parseFloat(p.unrealizedPlPct) * 100) : "—"}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -217,6 +217,11 @@ function ActiveStrategiesTable({ strategies }: { strategies: ActiveStrategy[] })
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 function LivePage() {
+  // §4.2: Positions/Orders share one TerminalPanel with two PanelTabs. The
+  // active tab is arrangement-like (no shared-link requirement), so it stays
+  // component-local rather than in the URL.
+  const [bookTab, setBookTab] = useState<"positions" | "orders">("positions");
+
   const accountQ = useQuery({
     queryKey: ["live", "account"],
     queryFn: liveApi.account,
@@ -255,14 +260,31 @@ function LivePage() {
           )}
         </Section>
 
-        {/* 4B — Positions */}
-        <Section title="Open Positions">
-          {positionsQ.isLoading ? (
-            <div className="text-sm text-muted-foreground">Loading positions…</div>
+        {/* 4B — Positions / Orders (§4.2: one TerminalPanel, two PanelTabs) */}
+        <TerminalPanel
+          tabs={[
+            {
+              id: "positions",
+              label: "Positions",
+              count: positionsQ.data && positionsQ.data.length > 0 ? positionsQ.data.length : undefined,
+            },
+            { id: "orders", label: "Orders" },
+          ]}
+          activeTab={bookTab}
+          onTabChange={(id) => setBookTab(id as "positions" | "orders")}
+        >
+          {bookTab === "positions" ? (
+            positionsQ.isLoading ? (
+              <div className="p-4 text-sm text-muted-foreground">Loading positions…</div>
+            ) : (
+              <PositionsTable positions={positionsQ.data ?? []} />
+            )
           ) : (
-            <PositionsTable positions={positionsQ.data ?? []} />
+            <div className="p-6 text-center text-sm text-muted-foreground">
+              No orders — the backend does not expose an orders endpoint yet.
+            </div>
           )}
-        </Section>
+        </TerminalPanel>
 
         {/* 4C — Active strategies */}
         <Section title="Active Strategies">

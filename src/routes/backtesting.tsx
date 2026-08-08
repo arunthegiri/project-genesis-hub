@@ -19,7 +19,8 @@ import { toast } from "sonner";
 
 import { BacktestingChart } from "@/components/BacktestingChart";
 import { ChartScrollbar } from "@/components/ChartScrollbar";
-import { TradeLog, StrategyTradeLog } from "@/components/backtesting/TradeLog";
+import { TradeLog, StrategyTradeLog, type TradeFilter } from "@/components/backtesting/TradeLog";
+import { TerminalPanel, type PanelTab } from "@/components/terminal/TerminalPanel";
 import { RunHistory } from "@/components/backtesting/RunHistory";
 import { HermesModelPanel } from "@/components/backtesting/HermesModelPanel";
 import type { RunRecord } from "@/components/backtesting/RunHistory";
@@ -46,7 +47,7 @@ import { cn } from "@/lib/utils";
 const SPEEDS = [0.5, 1, 2, 5, 10, 25, 50] as const;
 type Speed = (typeof SPEEDS)[number];
 type Tab = "data" | "strategies" | "results" | "models";
-type TradeFilter = "all" | "winning" | "losing";
+const TABS: Tab[] = ["data", "strategies", "results", "models"];
 
 // Date defaults resolve relative to *now* — never constants — so a clean URL
 // opens on a range ending today. Explicit from/to in the URL still override.
@@ -69,6 +70,8 @@ export const Route = createFileRoute("/backtesting")({
     loaded:            search.loaded === "true" || search.loaded === true,
     startingCapital:   clampCapital(Number(search.startingCapital ?? DEFAULT_CAPITAL)),
     comparisonVisible: search.comparisonVisible !== false && search.comparisonVisible !== "false",
+    // §4.2: the main tab is location-like state — a shared link lands on it.
+    tab: TABS.includes(search.tab as Tab) ? (search.tab as Tab) : ("data" as Tab),
   }),
   head: () => ({ meta: [{ title: "Backtesting — Quant Trading Platform" }] }),
   component: BacktestingPage,
@@ -123,8 +126,9 @@ function BacktestingPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Tab state ────────────────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<Tab>("data");
+  // ── Tab state — location-like, lives in the URL (§4.2); writes replace. ────
+  const activeTab = search.tab;
+  const setActiveTab = useCallback((tab: Tab) => setSearch({ tab }), [setSearch]);
 
   // ── Symbols ──────────────────────────────────────────────────────────────────
   const { data: rawSymbols } = useQuery({ queryKey: ["symbols"], queryFn: symbolsApi.list });
@@ -265,6 +269,16 @@ function BacktestingPage() {
     return true;
   }), [allStratTrades, tradeFilter]);
 
+  // Unfiltered counts for the TradeLog UnderlineTabs (in-label counts, §4.1).
+  const tradeCounts = useMemo(
+    () => ({
+      all: allStratTrades.length,
+      winning: allStratTrades.filter((t) => t.win === true).length,
+      losing: allStratTrades.filter((t) => t.win === false).length,
+    }),
+    [allStratTrades],
+  );
+
   // Price bars for Strategies tab (own query)
   const stratFromIso = stratLoaded ? new Date(stratFrom).toISOString() : "";
   const stratToIso   = stratLoaded ? new Date(stratTo).toISOString()   : "";
@@ -321,7 +335,7 @@ function BacktestingPage() {
     setSelectedStrategy(record.strategyName);
     setTradeFilter("all");
     setActiveTab("strategies");
-  }, []);
+  }, [setActiveTab]);
 
   // Replay logic for Strategies tab
   const stopStratTimer = useCallback(() => {
@@ -484,32 +498,24 @@ function BacktestingPage() {
   useEffect(() => { setVisibleRange(null); }, [activeTab]);
 
   // ── Render ────────────────────────────────────────────────────────────────────
+  // §4.2: the Data/Strategies/Results/Models tab block is a TerminalPanel with
+  // PanelTabs; the active tab is URL state (validateSearch), so a shared link
+  // lands on the right tab and switches replace history instead of pushing.
+  const panelTabs: PanelTab[] = [
+    { id: "data", label: "Data" },
+    { id: "strategies", label: "Strategies" },
+    { id: "results", label: "Results", count: runHistory.length || undefined },
+    { id: "models", label: "Models" },
+  ];
+
   return (
-    <div className="flex h-full flex-col gap-3 overflow-hidden p-3">
-
-      {/* ── Tab bar ──────────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-1 self-start rounded-md border border-border bg-card p-1">
-        {(["data", "strategies", "results", "models"] as Tab[]).map(tab => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={cn(
-              "rounded px-3 py-1 text-xs font-medium capitalize transition-colors",
-              activeTab === tab
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {tab}
-            {tab === "results" && runHistory.length > 0 && (
-              <span className="ml-1.5 rounded-full bg-primary/20 px-1.5 py-0.5 text-[10px] font-normal text-primary">
-                {runHistory.length}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
+    <TerminalPanel
+      tabs={panelTabs}
+      activeTab={activeTab}
+      onTabChange={(id) => setActiveTab(id as Tab)}
+      className="h-full"
+      bodyClassName="gap-3 overflow-hidden p-3"
+    >
       {/* ══ DATA TAB ═══════════════════════════════════════════════════════════ */}
       {activeTab === "data" && (
         <>
@@ -751,23 +757,6 @@ function BacktestingPage() {
                   {comparisonVisible ? "B&H ✓" : "vs B&H"}
                 </button>
               )}
-              {/* Trade filter pills */}
-              <div className="ml-auto flex items-center gap-1">
-                {(["all", "winning", "losing"] as TradeFilter[]).map(f => (
-                  <button key={f} onClick={() => setTradeFilter(f)}
-                    className={cn(
-                      "rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors",
-                      tradeFilter === f
-                        ? f === "winning" ? "bg-bull/20 text-bull"
-                          : f === "losing" ? "bg-bear/20 text-bear"
-                          : "bg-primary/20 text-primary"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {f === "all" ? "All" : f === "winning" ? "Winning ✓" : "Losing ✗"}
-                  </button>
-                ))}
-              </div>
             </div>
           )}
 
@@ -834,7 +823,12 @@ function BacktestingPage() {
                 </>
               )}
             </div>
-            <StrategyTradeLog trades={stratVisibleTrades} filter={tradeFilter} />
+            <StrategyTradeLog
+              trades={stratVisibleTrades}
+              filter={tradeFilter}
+              counts={tradeCounts}
+              onFilterChange={setTradeFilter}
+            />
           </div>
 
           {!selectedStrategy && (
@@ -858,7 +852,7 @@ function BacktestingPage() {
 
       {/* ══ MODELS TAB ════════════════════════════════════════════════════════ */}
       {activeTab === "models" && <HermesModelPanel />}
-    </div>
+    </TerminalPanel>
   );
 }
 
