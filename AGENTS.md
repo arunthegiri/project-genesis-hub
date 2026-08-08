@@ -4,7 +4,15 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## Commands
 
+**Node 24 (`.nvmrc`); minimum 22.12 (`engines`).** vite 7 requires ≥20.19/≥22.12 and Node 18 is
+EOL, so an 18.x shell cannot build this repo at all — `npm run build` dies in the vite config load
+with an `ERR_REQUIRE_ESM` stack trace that looks like a dependency bug rather than a version
+problem. `nvm use` before anything. This bites the Playwright harness hardest: `playwright.config
+.ts` has a `webServer` block, so on a stale shell the suite spawns its own dev server, fails at
+startup, and reads as a broken harness.
+
 ```bash
+nvm use              # Node 24, per .nvmrc — do this first in a new shell
 npm run dev          # start Vite dev server (defaults to port 3000 or 5173)
 npm run build        # production build
 npm run build:dev    # development build
