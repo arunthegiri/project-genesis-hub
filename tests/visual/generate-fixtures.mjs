@@ -157,6 +157,59 @@ function generateMultidayBars() {
   return bars;
 }
 
+// ── live-positions-stress.json ────────────────────────────────────────────────
+// 5,000-row stress fixture for the §8.3 W6 scroll budget (≤8ms React work per
+// tick). Built BEFORE the TerminalTable adopters on purpose: a memo contract
+// validated on the 2-row happy-path fixture and merely hoped for at 5,000 is
+// exactly the kind of thing that passes review and then stutters in the app.
+//
+// Shapes matter as much as the count. The distribution deliberately produces
+// rows where per-cell coloring DISAGREES within the row — last up on the day
+// while unrealized PnL is red, and vice versa — which is the §8.3 reference
+// behavior the audit must show rather than "fix".
+const STRESS_ROWS = 5000;
+
+function generateStressPositions() {
+  const rand = mulberry32(90210);
+  const rows = [];
+  for (let i = 0; i < STRESS_ROWS; i++) {
+    // Synthetic but plausible tickers, unique per row (they are the row ids).
+    const a = String.fromCharCode(65 + Math.floor(rand() * 26));
+    const b = String.fromCharCode(65 + Math.floor(rand() * 26));
+    const c = String.fromCharCode(65 + Math.floor(rand() * 26));
+    const symbol = `${a}${b}${c}${String(i).padStart(4, "0")}`;
+
+    const side = rand() < 0.82 ? "long" : "short";
+    const qty = Math.round(5 + rand() * 2000);
+    const lastdayPrice = round(8 + rand() * 900, 2);
+    // Day move and holding-period move are drawn INDEPENDENTLY so the two
+    // colored columns disagree on roughly half the rows.
+    const dayPct = (rand() - 0.5) * 0.09;
+    const currentPrice = round(lastdayPrice * (1 + dayPct), 2);
+    const entryPrice = round(currentPrice * (1 + (rand() - 0.5) * 0.4), 2);
+
+    const costBasis = round(entryPrice * qty, 2);
+    const marketValue = round(currentPrice * qty, 2);
+    const dir = side === "long" ? 1 : -1;
+    const unrealizedPl = round((marketValue - costBasis) * dir, 2);
+    const unrealizedPlPct = costBasis === 0 ? 0 : round(unrealizedPl / costBasis, 6);
+
+    rows.push({
+      symbol,
+      side,
+      qty: String(qty),
+      marketValue: marketValue.toFixed(2),
+      costBasis: costBasis.toFixed(2),
+      unrealizedPl: unrealizedPl.toFixed(2),
+      unrealizedPlPct: String(unrealizedPlPct),
+      currentPrice: currentPrice.toFixed(2),
+      lastdayPrice: lastdayPrice.toFixed(2),
+      changeToday: String(round(dayPct, 6)),
+    });
+  }
+  return rows;
+}
+
 // ── Static fixtures ───────────────────────────────────────────────────────────
 
 const symbols = [{ symbol: "AAPL" }, { symbol: "NVDA" }, { symbol: "MSFT" }];
@@ -256,6 +309,7 @@ const files = {
   "coverage-blocks.json": coverageBlocks,
   "live-account.json": liveAccount,
   "live-positions.json": livePositions,
+  "live-positions-stress.json": generateStressPositions(),
   "strategies.json": strategies,
   "strategies-active.json": strategiesActive,
 };

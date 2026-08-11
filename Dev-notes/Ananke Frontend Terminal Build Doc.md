@@ -411,6 +411,17 @@ export const TerminalRow = memo(function TerminalRow(props: {
 2. **TradeLog chrome** (already virtualized — port onto TerminalRow + cells, keep behavior incl. auto-scroll/pause-on-scroll).
 3. Column presets defined as data so B1 (strategy table) and B2 (ranking table) are configuration, not new code (M6).
 
+> **§8.2 item 2 amendment** (settled 2026-08-10, shipped with the port). The item assumed a
+> table-shaped trade log; the actual log lives in a ~260px side rail as a 3-line card
+> (side+P&L, In line, Out line) that columns cannot hold. Settled as: **single-line rows**
+> (side badge · `HH:mm→HH:mm` · P&L) via a `presets/trades.ts` column preset, and the rail
+> widens 260→280px to fit them. Entry/exit **prices are dropped from the log** — they stay
+> visible as chart markers. The "auto-scroll/pause-on-scroll" behavior the item says to keep
+> does not exist in the current implementation (no code ever scrolled the log), so there was
+> nothing to preserve. Both `TradeLog` (live `Trade`) and `StrategyTradeLog` (`BacktestTrade`)
+> normalize onto one `TradeLogRow` shape; headers are deliberately unsortable (newest-first
+> is the behavior), rows render at compact density.
+
 ### §8.3 Verify (W6)
 
 - [ ] Sort by every column; selection survives sort; multi-select (B2 path) with shift-click range.

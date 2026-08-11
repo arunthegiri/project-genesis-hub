@@ -85,8 +85,8 @@ src/
     DateRangePicker.tsx
     PythonExport.tsx
     PendingPage.tsx ← placeholder for routes missing backend endpoints
-    terminal/       ← §4/§6 terminal chrome: TerminalPanel, PanelTabs, UnderlineTabs, IconButton, MetaGrid, PanelState (+ art/ — 96×96 hand-drawn state SVGs), controls/SegmentedControl (W7 primitive, built early for M2)
-    backtesting/    ← backtesting sub-components (TradeLog, RunHistory)
+    terminal/       ← §4/§6 terminal chrome: TerminalPanel, PanelTabs, UnderlineTabs, IconButton, MetaGrid, PanelState (+ art/ — 96×96 hand-drawn state SVGs), controls/SegmentedControl (W7 primitive, built early for M2), table/ (§8 W6: TerminalTable + TerminalRow memo boundary + cells.tsx + density.tsx + presets/ — new tables are preset arrays, never new components)
+    backtesting/    ← backtesting sub-components (TradeLog on §8 TerminalTable via presets/trades.ts — single-line rows, no prices; RunHistory)
     ui/             ← shadcn/ui components (don't edit manually — use shadcn CLI)
   hooks/
     useChartBase.ts ← shared chart lifecycle: chartOptions(), toTs, chart create/destroy; registers each chart with the §13.4 ChartThemeRegistry

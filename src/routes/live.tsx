@@ -1,11 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { liveApi, type AccountData, type PositionData, type ActiveStrategy } from "@/lib/api/live";
-import { fmtPct, fmtPnl, fmtPrice, fmtSize } from "@/lib/format";
+import { fmtPct, fmtPnl } from "@/lib/format";
 import { MetaGrid, type MetaGridItem } from "@/components/terminal/MetaGrid";
 import { PanelState } from "@/components/terminal/PanelState";
 import { TerminalPanel } from "@/components/terminal/TerminalPanel";
+import { TerminalTable } from "@/components/terminal/table/TerminalTable";
+import { DensityProvider, type Density } from "@/components/terminal/table/density";
+import { POSITION_COLUMNS } from "@/components/terminal/table/presets/positions";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/live")({
@@ -117,50 +120,47 @@ function PortfolioOverview({ account }: { account: AccountData | null }) {
 
 // ── Positions table ───────────────────────────────────────────────────────────
 
+/**
+ * §8.2 adopter 1 — the hand-rolled <table> is gone; this is TerminalTable plus
+ * the POSITION_COLUMNS preset and nothing else. Default sort (market value,
+ * descending) is expressed as initial sorting state rather than a pre-sorted
+ * array, so clicking a header takes over cleanly instead of fighting a sort
+ * the component already applied.
+ */
 function PositionsTable({ positions }: { positions: PositionData[] }) {
-  if (positions.length === 0) {
-    return <PanelState kind="empty" art="table" message="No open positions" />;
-  }
-
-  const sorted = [...positions].sort(
-    (a, b) => parseFloat(b.marketValue ?? "0") - parseFloat(a.marketValue ?? "0"),
-  );
+  const getRowId = useCallback((p: PositionData) => p.symbol, []);
+  const [density, setDensity] = useState<Density>("default");
 
   return (
-    <table className="w-full text-sm">
-      <thead>
-        <tr className="border-b border-border bg-muted/30">
-          <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Symbol</th>
-          <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground">Side</th>
-          <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground">Qty</th>
-          <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground">Price</th>
-          <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground">Market Value</th>
-          <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground">P&L</th>
-          <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground">P&L %</th>
-        </tr>
-      </thead>
-      <tbody>
-        {sorted.map((p) => (
-          <tr key={p.symbol} className="border-b border-border/50 hover:bg-muted/10">
-            <td className="px-3 py-2 font-medium">{p.symbol}</td>
-            <td className="px-3 py-2 text-right">
-              <span className={p.side === "long" ? "text-bull" : "text-bear"}>
-                {p.side?.toUpperCase()}
-              </span>
-            </td>
-            <td className="px-3 py-2 text-right tabular-nums">{fmtSize(p.qty)}</td>
-            <td className="px-3 py-2 text-right tabular-nums">${fmtPrice(p.currentPrice)}</td>
-            <td className="px-3 py-2 text-right tabular-nums">{fmtPnl(p.marketValue, { plus: false })}</td>
-            <td className={cn("px-3 py-2 text-right tabular-nums", pnlColor(p.unrealizedPl))}>
-              {fmtPnl(p.unrealizedPl)}
-            </td>
-            <td className={cn("px-3 py-2 text-right tabular-nums", pnlColor(p.unrealizedPlPct))}>
-              {p.unrealizedPlPct != null ? fmtPct(parseFloat(p.unrealizedPlPct) * 100) : "—"}
-            </td>
-          </tr>
+    <DensityProvider density={density}>
+      <div className="flex items-center justify-end gap-1 px-2 py-1">
+        {(["default", "compact"] as const).map((d) => (
+          <button
+            key={d}
+            type="button"
+            data-testid={`density-${d}`}
+            onClick={() => setDensity(d)}
+            aria-pressed={density === d}
+            className={cn(
+              "rounded px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider transition-colors",
+              density === d
+                ? "bg-accent-blue/20 text-accent-blue"
+                : "text-text-muted hover:text-text-primary",
+            )}
+          >
+            {d === "default" ? "Comfortable" : "Compact"}
+          </button>
         ))}
-      </tbody>
-    </table>
+      </div>
+      <TerminalTable
+        rows={positions}
+        columns={POSITION_COLUMNS}
+        getRowId={getRowId}
+        initialSorting={[{ id: "marketValue", desc: true }]}
+        maxBodyHeight={420}
+        empty={<PanelState kind="empty" art="table" message="No open positions" />}
+      />
+    </DensityProvider>
   );
 }
 

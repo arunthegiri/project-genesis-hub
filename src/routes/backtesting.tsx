@@ -579,7 +579,7 @@ function BacktestingPage() {
           )}
 
           {/* Chart + trade log */}
-          <div className="grid min-h-0 flex-1 grid-cols-[1fr_260px] gap-3">
+          <div className="grid min-h-0 flex-1 grid-cols-[1fr_280px] gap-3">
             <div className="flex overflow-hidden rounded-md border border-border bg-card">
               {!loaded || allBars.length === 0 ? (
                 <div className="flex h-full flex-1 items-center justify-center text-sm text-muted-foreground">
@@ -793,7 +793,7 @@ function BacktestingPage() {
           )}
 
           {/* Chart + trade log */}
-          <div className="grid min-h-0 flex-1 grid-cols-[1fr_260px] gap-3">
+          <div className="grid min-h-0 flex-1 grid-cols-[1fr_280px] gap-3">
             <div className="flex overflow-hidden rounded-md border border-border bg-card">
               {stratBars.length === 0 ? (
                 <div className="flex h-full flex-1 items-center justify-center text-sm text-muted-foreground">

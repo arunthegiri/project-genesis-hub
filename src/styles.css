@@ -376,6 +376,26 @@
     text-align: right;
   }
 
+  /* §8.1 TerminalRow drag handle. Drawn as two columns of dots in a gradient
+     rather than an icon component: at ~22 virtualized rows on screen, one SVG
+     component per row was measurable mount cost in the §8.3 scroll budget, for
+     a decoration that is transparent until the row is hovered. Colour comes
+     from the token layer, so it themes like everything else. */
+  .terminal-grip {
+    align-self: stretch;
+    background-image: radial-gradient(
+      circle at center,
+      var(--text-muted) 0.8px,
+      transparent 0.9px
+    );
+    background-size: 3px 4px;
+    background-repeat: repeat-y;
+    background-position: center;
+    /* Two dot columns, 6px of texture, centred in the 18px gutter. */
+    background-clip: content-box;
+    padding: 12px 6px;
+  }
+
   ::-webkit-scrollbar {
     width: 10px;
     height: 10px;

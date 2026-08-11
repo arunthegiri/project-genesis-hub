@@ -137,6 +137,68 @@ export async function stubMultidayPrices(page: Page): Promise<void> {
   });
 }
 
+const stressPositionsFixture = readFixture<PositionData[]>("live-positions-stress.json");
+
+/**
+ * Swap the positions stub to the 5,000-row stress fixture (build doc §8.3).
+ * Re-registering the same pattern wins over the auto-installed stub, as with
+ * stubMultidayPrices. Call BEFORE page.goto().
+ *
+ * With `mutateOneAfterFirst`, every response after the first changes exactly
+ * ONE row's price (and the P&L that follows from it) and leaves the other 4,999
+ * byte-identical. Positions poll on a 15s interval, so the second response
+ * arrives by itself — that is the §8.3 memo audit's "tick one cell". Returns
+ * the mutated symbol for the assertion message.
+ */
+export async function stubStressPositions(
+  page: Page,
+  opts?: { mutateOneAfterFirst?: boolean; maxRows?: number },
+): Promise<string> {
+  // The audit requires the mutated row to be RENDERED — an unmounted virtual
+  // row cannot re-render, and with every other row memo-rejected the tally
+  // would read 0 forever (the original fixture-index-3 choice failed exactly
+  // this way). The positions table's initial sort is market value DESC, so
+  // the fixture's largest position is the top row at scrollTop 0; the bump
+  // only grows its market value, keeping it there.
+  const mutatedIndex = stressPositionsFixture.reduce(
+    (top, r, i) =>
+      parseFloat(r.marketValue ?? "0") > parseFloat(stressPositionsFixture[top].marketValue ?? "0")
+        ? i
+        : top,
+    0,
+  );
+  const mutated = stressPositionsFixture[mutatedIndex];
+  // maxRows trims the dataset for tests that need every row MOUNTED — at 5,000
+  // rows a re-sort can virtualize a selected row out of the DOM entirely,
+  // which is correct table behaviour but makes its aria-selected unreachable.
+  // (12 rows × 42px fits inside the visible window + overscan.)
+  const source = opts?.maxRows
+    ? stressPositionsFixture.slice(0, opts.maxRows)
+    : stressPositionsFixture;
+  let served = 0;
+
+  await page.route(/\/api\/positions(\?|$)/, (route) => {
+    served += 1;
+    if (!opts?.mutateOneAfterFirst || served === 1) {
+      return route.fulfill(json({ data: source, count: source.length }));
+    }
+    // Structural sharing everywhere except one row: same array, one new object.
+    const rows = source.slice();
+    const price = parseFloat(mutated.currentPrice) + 0.37 * served;
+    const qty = parseFloat(mutated.qty);
+    const basis = parseFloat(mutated.costBasis);
+    rows[mutatedIndex] = {
+      ...mutated,
+      currentPrice: price.toFixed(2),
+      marketValue: (price * qty).toFixed(2),
+      unrealizedPl: (price * qty - basis).toFixed(2),
+    };
+    return route.fulfill(json({ data: rows, count: rows.length }));
+  });
+
+  return mutated.symbol;
+}
+
 /**
  * Elements that legitimately change every run (build doc §2 step 4). The
  * session clock/countdown and per-symbol staleness ages live in StatusRail
