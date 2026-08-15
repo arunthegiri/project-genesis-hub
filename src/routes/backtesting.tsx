@@ -32,6 +32,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SegmentedControl } from "@/components/terminal/controls/SegmentedControl";
+import { UnitInput } from "@/components/terminal/controls/UnitInput";
+import { QuickFillRow } from "@/components/terminal/controls/QuickFillRow";
 import { pricesApi } from "@/lib/api/prices";
 import { symbolsApi, normalizeSymbols } from "@/lib/api/symbols";
 import { strategiesApi } from "@/lib/api/strategies";
@@ -46,6 +49,14 @@ import { cn } from "@/lib/utils";
 
 const SPEEDS = [0.5, 1, 2, 5, 10, 25, 50] as const;
 type Speed = (typeof SPEEDS)[number];
+// W7: replay speed is a SegmentedControl (build doc §9) — enumerated, so no Select.
+const SPEED_OPTIONS = SPEEDS.map((s) => ({ value: String(s), label: `${s}×` }));
+const CAPITAL_PRESETS = [
+  { label: "1k", value: 1_000 },
+  { label: "10k", value: 10_000 },
+  { label: "100k", value: 100_000 },
+  { label: "1M", value: 1_000_000 },
+] as const;
 type Tab = "data" | "strategies" | "results" | "models";
 const TABS: Tab[] = ["data", "strategies", "results", "models"];
 
@@ -140,8 +151,9 @@ function BacktestingPage() {
   const [capitalRaw, setCapitalRaw] = useState(() => startingCapital.toLocaleString("en-US"));
   useEffect(() => { setCapitalRaw(startingCapital.toLocaleString("en-US")); }, [startingCapital]);
 
-  const handleCapitalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value.replace(/[^0-9,]/g, "");
+  // W7: UnitInput owns the input; its onChange passes the raw string (no event).
+  const handleCapitalChange = (value: string) => {
+    const raw = value.replace(/[^0-9,]/g, "");
     setCapitalRaw(raw);
     const num = parseInt(raw.replace(/,/g, ""), 10);
     if (!isNaN(num) && num >= MIN_CAPITAL && num <= MAX_CAPITAL) {
@@ -540,10 +552,12 @@ function BacktestingPage() {
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs text-muted-foreground">Speed (bars/s)</label>
-              <Select value={String(speed)} onValueChange={v => setSearch({ speed: Number(v) as Speed })}>
-                <SelectTrigger className="h-8 w-24 text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>{SPEEDS.map(s => <SelectItem key={s} value={String(s)} className="text-xs">{s}×</SelectItem>)}</SelectContent>
-              </Select>
+              <SegmentedControl
+                ariaLabel="Replay speed"
+                options={SPEED_OPTIONS}
+                value={String(speed)}
+                onValueChange={(v) => setSearch({ speed: Number(v) as Speed })}
+              />
             </div>
             <Button size="sm" onClick={handleLoad} className="h-8 self-end text-xs">Load</Button>
             {loaded && allBars.length > 0 && (
@@ -658,26 +672,30 @@ function BacktestingPage() {
             {/* Speed (shared with Data tab) */}
             <div className="flex flex-col gap-1">
               <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Speed</label>
-              <Select value={String(speed)} onValueChange={v => setSearch({ speed: Number(v) as Speed })}>
-                <SelectTrigger className="h-8 w-20 text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>{SPEEDS.map(s => <SelectItem key={s} value={String(s)} className="text-xs">{s}×</SelectItem>)}</SelectContent>
-              </Select>
+              <SegmentedControl
+                ariaLabel="Replay speed"
+                options={SPEED_OPTIONS}
+                value={String(speed)}
+                onValueChange={(v) => setSearch({ speed: Number(v) as Speed })}
+              />
             </div>
 
-            {/* Starting capital */}
+            {/* Starting capital — W7 UnitInput + QuickFillRow presets (§9) */}
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Starting Capital ($)</label>
-              <div className="relative">
-                <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-xs text-muted-foreground">$</span>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={capitalRaw}
-                  onChange={handleCapitalChange}
-                  onBlur={handleCapitalBlur}
-                  className="h-8 w-32 rounded-md border border-border bg-background pl-5 pr-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                />
-              </div>
+              <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Starting Capital</label>
+              <UnitInput
+                ariaLabel="Starting capital"
+                prefix="$"
+                value={capitalRaw}
+                onChange={handleCapitalChange}
+                onBlur={handleCapitalBlur}
+                inputClassName="w-32"
+              />
+              <QuickFillRow
+                ariaLabel="Capital presets"
+                presets={CAPITAL_PRESETS}
+                onFill={(v) => setSearch({ startingCapital: v })}
+              />
             </div>
 
             {/* Run button */}
