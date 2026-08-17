@@ -97,7 +97,7 @@ src/
     __root.tsx      ← layout shell: QueryClientProvider + AppSidebarWithHealth (§6.4: health-probe failures dot the owning nav icons) + <Outlet> + global ⌘K handler & CommandPalette; root loader reads ui.theme server-side and the shell stamps data-theme/data-convention/data-cb (+ inline no-flash script)
     index.tsx       → /            Charts page (live)
     data.tsx        → /data        Raw data explorer with virtualised table (live)
-    backtesting.tsx → /backtesting Backtesting replay + strategy runner (live; §9 W7: replay speed is a SegmentedControl, starting capital a UnitInput + QuickFillRow presets — both write straight to URL search params)
+    backtesting.tsx → /backtesting Backtesting replay + strategy runner (live; §9 W7: replay speed is a SegmentedControl, starting capital a UnitInput + QuickFillRow presets — both write straight to URL search params; §12 M3: `cursor` + `view` replay params — cursor writes in the rAF flush, view debounced 300ms, both replace-only; view restores via BacktestingChart's initialRange prop, never through visibleRange state)
     live.tsx        → /live        Live portfolio + positions (live)
     metrics.tsx     → /metrics     §6 PanelState kind="pending" inside a TerminalPanel
     models.tsx      → /models      Model registry (live)

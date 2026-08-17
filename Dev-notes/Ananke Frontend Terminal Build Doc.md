@@ -543,6 +543,17 @@ Restore order on load: parse → load run (existing `loaded=true` path) → appl
 - [ ] Clean URL (`/backtesting`) still opens with defaults and zero params.
 - [ ] Visual: `replay-restored.png` vs a control screenshot of the source state.
 
+> **Amendment (built):** the `ind` row is deferred — the backtesting chart has no
+> indicator overlays (indicators live on the charts page's ChartPanel, whose state
+> is cookie/workspace-scoped, not URL), so there was nothing for `ind` to bind to.
+> It lands when/if BacktestingChart gains indicator toggles. `view` uses the doc's
+> literal `from.to` format — two logical-index floats fixed to 2dp, dot-joined
+> ("-5.00.120.00"); logical `from` may be negative (left whitespace is valid).
+> Scope is the Data-tab run (the `loaded=true` flow); Strategies-tab pans stay
+> local. The ChartScrollbar mounts WITH the chart rather than on the first range
+> event — a late mount resizes the pane and clobbers a just-restored view
+> (autoSize keeps the right edge, so the restored `from` collapses).
+
 ---
 
 ## §13. M4 — Theme system (dark default + light + high-contrast + graphite)

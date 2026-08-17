@@ -30,6 +30,14 @@ interface Props {
   height?: number | string;
   onRangeChange?: (from: number, to: number) => void;
   visibleRange?: { from: number; to: number };
+  /**
+   * §12 M3: range to apply INSTEAD of fitContent when a fresh dataset lands
+   * (URL-restored view). Applied imperatively inside the series-data effect so
+   * mount-time range events can't race it (they converge ON the restored
+   * range), and re-applied on a StrictMode remount for the same reason.
+   * Consumed only on the new-dataset path — later pans never retrigger it.
+   */
+  initialRange?: { from: number; to: number } | null;
 }
 
 function toBar(b: PriceBar) {
@@ -108,7 +116,7 @@ function buildMarkers(trades: Trade[], sortedBarMs: number[], lastVisibleMs: num
   return markers.sort((a, b) => (a.time as number) - (b.time as number));
 }
 
-export function BacktestingChart({ bars, visibleCount, trades, height = "100%", onRangeChange, visibleRange }: Props) {
+export function BacktestingChart({ bars, visibleCount, trades, height = "100%", onRangeChange, visibleRange, initialRange }: Props) {
   const containerRef    = useRef<HTMLDivElement>(null);
   const { chartRef }    = useChartBase(containerRef);
   const seriesRef       = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -124,6 +132,10 @@ export function BacktestingChart({ bars, visibleCount, trades, height = "100%", 
   const prevLenRef      = useRef(0);
   const prevFirstTime   = useRef("");
   const onRangeChangeRef = useRef(onRangeChange);
+  // initialRange is consumed only on the new-dataset path, so it must NOT be an
+  // effect dep (a pan updates it via the URL and would retrigger the effect).
+  const initialRangeRef = useRef(initialRange);
+  useEffect(() => { initialRangeRef.current = initialRange; }, [initialRange]);
   // §13.4 reactive chart theme — drives the in-place re-theme effect below.
   const theme = useChartTheme();
   useEffect(() => { onRangeChangeRef.current = onRangeChange; }, [onRangeChange]);
@@ -249,8 +261,17 @@ export function BacktestingChart({ bars, visibleCount, trades, height = "100%", 
       // seek frequency; it's the per-tick allocation that was the defect).
       series.setData(bars.slice(0, visibleLen).map(toBar));
       if (isNewDataset || prevLenRef.current === 0) {
-        // Fresh dataset — fit all bars so user sees the full range
-        chart.timeScale().fitContent();
+        // §12 M3: a URL-restored view replaces fitContent on a fresh dataset
+        // (clamped to the loaded window; negative `from` is legit whitespace).
+        if (initialRangeRef.current) {
+          const to = Math.min(initialRangeRef.current.to, bars.length - 1);
+          const from = Math.min(initialRangeRef.current.from, to);
+          if (from < to) chart.timeScale().setVisibleLogicalRange({ from, to });
+          else chart.timeScale().fitContent();
+        } else {
+          // Fresh dataset — fit all bars so user sees the full range
+          chart.timeScale().fitContent();
+        }
       } else {
         // Replay restarted — show a window with room for bars to grow into
         // rather than fitContent on 1-2 bars which zooms in microscopically

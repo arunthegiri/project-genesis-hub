@@ -72,6 +72,26 @@ const DEFAULT_CAPITAL       = 10_000;
 const MIN_CAPITAL           = 100;
 const MAX_CAPITAL           = 10_000_000;
 
+// §12 M3: cursor = absolute bar index (never a timestamp, so it survives zoom
+// and interval changes). Omitted from the URL at the default (-1 = live end).
+function parseCursor(v: unknown): number | undefined {
+  if (v == null) return undefined;
+  const n = Number(v);
+  return isFinite(n) ? Math.max(0, Math.floor(n)) : undefined;
+}
+
+// §12 M3: view = "from.to" — two logical-index floats fixed to 2dp and joined
+// by a dot ("10.50.20.75"). Logical indices are what getVisibleLogicalRange
+// already speaks, so restore needs no time→index mapping.
+function parseView(v: unknown): { from: number; to: number } | undefined {
+  if (typeof v !== "string") return undefined;
+  const m = v.match(/^(-?\d+(?:\.\d+)?)\.(-?\d+(?:\.\d+)?)$/);
+  if (!m) return undefined;
+  const from = Number(m[1]);
+  const to = Number(m[2]);
+  return isFinite(from) && isFinite(to) && to > from ? { from, to } : undefined;
+}
+
 export const Route = createFileRoute("/backtesting")({
   validateSearch: (search: Record<string, unknown>) => ({
     symbol:            (search.symbol  as string | undefined) ?? "",
@@ -83,6 +103,9 @@ export const Route = createFileRoute("/backtesting")({
     comparisonVisible: search.comparisonVisible !== false && search.comparisonVisible !== "false",
     // §4.2: the main tab is location-like state — a shared link lands on it.
     tab: TABS.includes(search.tab as Tab) ? (search.tab as Tab) : ("data" as Tab),
+    // §12 M3 replay state — additive, all optional, all omitted when default.
+    cursor:            parseCursor(search.cursor),
+    view:              typeof search.view === "string" && parseView(search.view) ? search.view : undefined,
   }),
   head: () => ({ meta: [{ title: "Backtesting — Quant Trading Platform" }] }),
   component: BacktestingPage,
@@ -420,14 +443,21 @@ function BacktestingPage() {
   // receives it plus a visibleCount. All cursor writes (interval ticks, seeks,
   // resets) go through setCursor — a ref holds the authoritative value and an
   // rAF coalescer commits to React state at most once per frame.
-  const [currentIdx, setCurrentIdx] = useState(-1);
+  // §12 M3: the same rAF flush mirrors the cursor into the URL (`cursor` is an
+  // absolute bar index; -1 = live end = param omitted). One history REPLACEMENT
+  // per frame at most — playback never pushes.
+  const initialCursor = search.loaded && search.cursor != null ? search.cursor : -1;
+  const [currentIdx, setCurrentIdx] = useState(initialCursor);
   const [playing, setPlaying]       = useState(false);
   const [jumpTo, setJumpTo]         = useState("");
 
   const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevDataKey = useRef("");
-  const cursorRef   = useRef(-1);
-  const flushCursor = useRafCoalescer<number>(setCurrentIdx);
+  const cursorRef   = useRef(initialCursor);
+  const flushCursor = useRafCoalescer<number>((v) => {
+    setCurrentIdx(v);
+    setSearch({ cursor: v >= 0 ? v : undefined });
+  });
   const setCursor   = useCallback((v: number) => {
     cursorRef.current = v;
     flushCursor(v);
@@ -435,12 +465,22 @@ function BacktestingPage() {
 
   useEffect(() => {
     const key = `${selectedSymbol}|${fromIso}|${toIso}`;
+    // Mount: adopt the key WITHOUT resetting — a §12 URL-restored cursor
+    // (?loaded=true&cursor=N) must survive the first data load.
+    if (prevDataKey.current === "") { prevDataKey.current = key; return; }
     if (key !== prevDataKey.current && loaded) {
       setCursor(-1);
       setPlaying(false);
       prevDataKey.current = key;
     }
   }, [selectedSymbol, fromIso, toIso, loaded, setCursor]);
+
+  // §12 guard: a cursor beyond the (re)loaded dataset clamps to the last bar.
+  useEffect(() => {
+    if (loaded && allBars.length > 0 && currentIdx >= allBars.length) {
+      setCursor(allBars.length - 1);
+    }
+  }, [loaded, allBars.length, currentIdx, setCursor]);
 
   const resolvedIdx = currentIdx === -1 ? Math.max(0, allBars.length - 1) : currentIdx;
 
@@ -470,7 +510,9 @@ function BacktestingPage() {
     setPlaying(false);
     setCursor(-1);
     const next = { symbol: selectedSymbol, from, to, speed, loaded: true };
-    setSearch(next);
+    // A fresh run starts at the live end at fit-content — stale replay params
+    // from a previous run must not leak into the new URL.
+    setSearch({ ...next, cursor: undefined, view: undefined });
     writeUiCookie(BACKTESTING_UI_COOKIE, JSON.stringify(next));
   };
 
@@ -504,10 +546,55 @@ function BacktestingPage() {
 
   // ── Chart scrollbar state ────────────────────────────────────────────────────
   const [visibleRange, setVisibleRange] = useState<{ from: number; to: number } | null>(null);
-  const handleRangeChange = useCallback((f: number, t: number) => setVisibleRange({ from: f, to: t }), []);
 
-  // Reset visible range when switching tabs so chart re-fits
-  useEffect(() => { setVisibleRange(null); }, [activeTab]);
+  // §12 M3: view mirrors to the URL debounced 300 ms, replace-only. Omitted at
+  // the fit-content default (range covers the loaded window). Playback's
+  // per-tick scrollToPosition is not a user pan/zoom — suppressed while playing.
+  const viewTimerRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const playingRef       = useRef(playing);
+  // "Fit-content default" is judged against the FULL loaded window, not the
+  // replay cursor's visibleCount — a paused mid-replay window (e.g. from -5 to
+  // 120 on 500 bars) is a real view worth restoring, not the default.
+  const barCountRef      = useRef(allBars.length);
+  useEffect(() => { playingRef.current = playing; }, [playing]);
+  useEffect(() => { barCountRef.current = allBars.length; }, [allBars.length]);
+
+  const writeViewParam = useCallback(
+    (range: { from: number; to: number } | null) => {
+      if (viewTimerRef.current) clearTimeout(viewTimerRef.current);
+      viewTimerRef.current = setTimeout(() => {
+        if (range === null) { setSearch({ view: undefined }); return; }
+        const last = Math.max(0, barCountRef.current - 1);
+        const isFull = range.from <= 0.75 && range.to >= last - 0.75;
+        setSearch({ view: isFull ? undefined : `${range.from.toFixed(2)}.${range.to.toFixed(2)}` });
+      }, 300);
+    },
+    [setSearch],
+  );
+
+  const handleRangeChange = useCallback(
+    (f: number, t: number) => {
+      setVisibleRange({ from: f, to: t });
+      if (!playingRef.current) writeViewParam({ from: f, to: t });
+    },
+    [writeViewParam],
+  );
+
+  // Reset visible range when switching tabs so chart re-fits (skip the mount
+  // run — that would clear a §12 URL view before the restore effect applies it).
+  const tabMountedRef = useRef(false);
+  useEffect(() => {
+    if (!tabMountedRef.current) { tabMountedRef.current = true; return; }
+    setVisibleRange(null);
+    writeViewParam(null);
+  }, [activeTab, writeViewParam]);
+
+  // §12 M3 restore: the URL view flows to the chart as initialRange — applied
+  // imperatively in the series-data effect INSTEAD of fitContent when a fresh
+  // dataset lands. Routing it through visibleRange state loses a race against
+  // the mount/StrictMode range events, which would overwrite the restored
+  // value before the chart ever applies it.
+  const initialView = parseView(search.view) ?? null;
 
   // ── Render ────────────────────────────────────────────────────────────────────
   // §4.2: the Data/Strategies/Results/Models tab block is a TerminalPanel with
@@ -519,6 +606,14 @@ function BacktestingPage() {
     { id: "results", label: "Results", count: runHistory.length || undefined },
     { id: "models", label: "Models" },
   ];
+
+  // Strategies tab pans are LOCAL only — §12 URL replay state is scoped to the
+  // Data-tab run (its restore path is the loaded=true flow; the restore key is
+  // the Data-tab symbol/range, so a strat-dataset range would never apply).
+  const handleStratRangeChange = useCallback(
+    (f: number, t: number) => setVisibleRange({ from: f, to: t }),
+    [],
+  );
 
   return (
     <TerminalPanel
@@ -562,12 +657,12 @@ function BacktestingPage() {
             <Button size="sm" onClick={handleLoad} className="h-8 self-end text-xs">Load</Button>
             {loaded && allBars.length > 0 && (
               <div className="ml-auto flex items-center gap-1">
-                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={restart}><RotateCcw className="h-4 w-4" /></Button>
-                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={stepBack}><ChevronLeft className="h-4 w-4" /></Button>
-                <Button size="icon" variant="default" className="h-8 w-8" onClick={togglePlay}>
+                <Button size="icon" variant="ghost" className="h-8 w-8" aria-label="Restart replay" onClick={restart}><RotateCcw className="h-4 w-4" /></Button>
+                <Button size="icon" variant="ghost" className="h-8 w-8" aria-label="Step back" onClick={stepBack}><ChevronLeft className="h-4 w-4" /></Button>
+                <Button size="icon" variant="default" className="h-8 w-8" aria-label={playing ? "Pause replay" : "Play replay"} onClick={togglePlay}>
                   {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                 </Button>
-                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={stepForward}><ChevronRight className="h-4 w-4" /></Button>
+                <Button size="icon" variant="ghost" className="h-8 w-8" aria-label="Step forward" onClick={stepForward}><ChevronRight className="h-4 w-4" /></Button>
               </div>
             )}
           </div>
@@ -603,11 +698,15 @@ function BacktestingPage() {
                 <>
                   <div className="min-w-0 flex-1">
                     <BacktestingChart bars={allBars} visibleCount={visibleCount} trades={visibleTrades}
-                      onRangeChange={handleRangeChange} visibleRange={visibleRange ?? undefined} />
+                      onRangeChange={handleRangeChange} visibleRange={visibleRange ?? undefined} initialRange={initialView} />
                   </div>
-                  {visibleCount > 0 && visibleRange && (
-                    <ChartScrollbar totalBars={visibleCount} from={visibleRange.from} to={visibleRange.to}
-                      onRangeChange={(f, t) => setVisibleRange({ from: f, to: t })} />
+                  {/* §12 M3: the scrollbar mounts WITH the chart (not gated on
+                      the first range event) so its width is already priced into
+                      the geometry when a URL view restores — a late mount would
+                      resize the pane and clobber the restored range. */}
+                  {visibleCount > 0 && (
+                    <ChartScrollbar totalBars={visibleCount} from={visibleRange?.from ?? 0} to={visibleRange?.to ?? visibleCount - 1}
+                      onRangeChange={(f, t) => { setVisibleRange({ from: f, to: t }); writeViewParam({ from: f, to: t }); }} />
                   )}
                 </>
               )}
@@ -826,15 +925,15 @@ function BacktestingPage() {
                       bars={stratBars}
                       visibleCount={stratVisibleCount}
                       trades={strategyChartTrades}
-                      onRangeChange={handleRangeChange}
+                      onRangeChange={handleStratRangeChange}
                       visibleRange={visibleRange ?? undefined}
                     />
                   </div>
-                  {stratVisibleCount > 0 && visibleRange && (
+                  {stratVisibleCount > 0 && (
                     <ChartScrollbar
                       totalBars={stratVisibleCount}
-                      from={visibleRange.from}
-                      to={visibleRange.to}
+                      from={visibleRange?.from ?? 0}
+                      to={visibleRange?.to ?? stratVisibleCount - 1}
                       onRangeChange={(f, t) => setVisibleRange({ from: f, to: t })}
                     />
                   )}
