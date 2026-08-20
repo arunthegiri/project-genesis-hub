@@ -56,6 +56,16 @@ export function fmtSize(value: NumLike): string {
 }
 
 /**
+ * Unitless ratio (Sharpe, profit factor, beta): exactly 2 decimals, no
+ * grouping, no sign. Added for §15.2 — routing Sharpe through fmtSize rendered
+ * 1.84 as "2", which is a different claim about a strategy.
+ */
+export function fmtRatio(value: NumLike): string {
+  const n = toNumber(value);
+  return n === null ? "—" : n.toFixed(2);
+}
+
+/**
  * PnL dollars: explicit sign before the `$`, grouped 2dp
  * (`+$1,234.56` / `-$1,234.56`). `{ plus: false }` drops the positive sign for
  * plain dollar amounts that aren't a gain/loss (`$1,234.56`).

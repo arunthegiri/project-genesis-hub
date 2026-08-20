@@ -6,6 +6,7 @@ import { fmtPct, fmtPnl } from "@/lib/format";
 import { MetaGrid, type MetaGridItem } from "@/components/terminal/MetaGrid";
 import { PanelState } from "@/components/terminal/PanelState";
 import { TerminalPanel } from "@/components/terminal/TerminalPanel";
+import { EventCalendar } from "@/components/terminal/EventCalendar";
 import { TerminalTable } from "@/components/terminal/table/TerminalTable";
 import { DensityProvider, type Density } from "@/components/terminal/table/density";
 import { POSITION_COLUMNS } from "@/components/terminal/table/presets/positions";
@@ -271,7 +272,16 @@ function LivePage() {
             {
               id: "positions",
               label: "Positions",
-              count: positionsQ.data && positionsQ.data.length > 0 ? positionsQ.data.length : undefined,
+              // Behind the same `mounted` gate as everything else fed by a
+              // query on this page. The route subtree hydrates lazily, so by
+              // the time it does the cache can already be warm (the §14.1
+              // ticker polls the same key globally) — without the gate the
+              // count renders on the client and not in the streamed HTML,
+              // which is a hydration mismatch on an otherwise idle page.
+              count:
+                mounted && positionsQ.data && positionsQ.data.length > 0
+                  ? positionsQ.data.length
+                  : undefined,
             },
             { id: "orders", label: "Orders" },
           ]}
@@ -292,6 +302,17 @@ function LivePage() {
               detail={["GET /api/orders"]}
             />
           )}
+        </TerminalPanel>
+
+        {/* 4D — §15.3 B5 economic calendar. It lives on /live rather than in
+            the analysis workspace because its output is a trading constraint:
+            "do not be in the market at 08:30 on CPI day" is a decision made
+            here, next to the positions it applies to. */}
+        <TerminalPanel
+          tabs={[{ id: "calendar", label: "Economic Calendar" }]}
+          activeTab="calendar"
+        >
+          <EventCalendar />
         </TerminalPanel>
 
         {/* 4C — Active strategies */}

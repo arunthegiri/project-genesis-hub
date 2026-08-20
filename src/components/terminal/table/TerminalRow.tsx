@@ -69,7 +69,16 @@ function TerminalRowImpl({
       aria-selected={isSelected}
       data-testid="terminal-row"
       data-row-id={rowId}
-      onMouseDown={(e) => onSelect?.(rowId, { shift: e.shiftKey, meta: e.metaKey || e.ctrlKey })}
+      onMouseDown={(e) => {
+        // A click on the §15.2 checkbox toggles that one row; anywhere else
+        // keeps the plain-click-replaces-selection rule. Reading it off the
+        // event target keeps `cells` free of callbacks (§8.1: primitives only).
+        const onCheckbox = !!(e.target as HTMLElement).closest("[data-check]");
+        onSelect?.(rowId, {
+          shift: e.shiftKey,
+          meta: onCheckbox || e.metaKey || e.ctrlKey,
+        });
+      }}
       className={cn(
         "group absolute left-0 top-0 flex w-full items-center border-b border-border-subtle",
         // Selected wins over hover; both are surface steps, never accent fills.
@@ -97,6 +106,7 @@ function TerminalRowImpl({
           // One style object per cell per render is unavoidable, but the class
           // strings above are module constants so cn() has nothing to join.
           { width: widths[i] },
+          isSelected,
         ),
       )}
     </div>

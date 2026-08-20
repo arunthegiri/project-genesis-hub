@@ -1,0 +1,36 @@
+[
+ {
+  "id": 1,
+  "name": "rf",
+  "version": "v1",
+  "strategyName": "rf_v1",
+  "status": "ACTIVE",
+  "deployMode": "PAPER",
+  "featureCount": 18,
+  "sharpeRatio": "1.62",
+  "winRate": "56.5",
+  "totalPnlPct": "14.8",
+  "profitFactor": "1.7",
+  "maxDrawdown": "7.4",
+  "totalTrades": 142,
+  "createdAt": "2026-05-20T10:00:00.000Z",
+  "updatedAt": "2026-06-06T12:00:00.000Z"
+ },
+ {
+  "id": 2,
+  "name": "gbm",
+  "version": "v3",
+  "strategyName": "gbm_v3",
+  "status": "EXPORTED",
+  "deployMode": null,
+  "featureCount": 24,
+  "sharpeRatio": "0.81",
+  "winRate": "48.2",
+  "totalPnlPct": "-2.6",
+  "profitFactor": "0.95",
+  "maxDrawdown": "12.9",
+  "totalTrades": 88,
+  "createdAt": "2026-06-11T10:00:00.000Z",
+  "updatedAt": "2026-06-30T12:00:00.000Z"
+ }
+]
