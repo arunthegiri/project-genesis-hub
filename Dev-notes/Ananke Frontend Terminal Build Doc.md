@@ -598,6 +598,29 @@ lib/realtime/
 - [ ] Disconnect → backoff reconnect → data resumes without duplication; flag off → polling path byte-identical to today.
 - [ ] `data-testid`: `ticker` (masked in baselines).
 
+> **Amendment (built 2026-08-19).** Four notes from the implementation.
+>
+> 1. **Tape source.** §14.1 says feed the ticker from the polled last-bar registry; plan §3.3 says
+>    the tape shows live positions. Both shipped, in that order of precedence: positions first,
+>    then the symbols currently on charts (`useTickerItems`). Flat with one chart open still gives
+>    a tape; a funded account gets its book. The registry entry grew `close` + `prevClose` to
+>    carry a price and a change reference (`trailingPrevClose` resolves one ET midnight and walks
+>    back numerically, so it costs integer compares, not an Intl call per bar).
+> 2. **Staleness moved to reporting by exception.** The tape needed the flexible middle of the
+>    rail, which the per-symbol staleness strip owned. Fresh symbols now say nothing; only aging
+>    and stale ones render, keeping their tier colour and the `staleness` testid.
+> 3. **Flash is an effect, not a render-time class.** The obvious implementation — compare against
+>    a ref mutated during render — is not idempotent, so React's dev double-render sets the ref on
+>    pass 1 and finds no change on pass 2, and the flash silently never appears. `useFlashOnChange`
+>    writes the class in an effect instead. The `-a`/`-b` alternation is load-bearing for a
+>    different reason: an element whose computed `animation-name` does not change *continues* its
+>    running animation rather than restarting, so one class flashes once and then goes quiet under
+>    a fast feed.
+> 4. **"Only changed cells re-render" is asserted, not eyeballed.** `tests/visual/realtime.spec.ts`
+>    runs the mock feed and fails if `__terminalRowRenders` moves at all while prices tick — the
+>    hot value never travels through row props, so the number is zero, not "small". The flag-off
+>    case is asserted too: no WebSocket is constructed at all.
+
 ---
 
 ## §15. M6–M8 — Data panels (strategy/ranking tables, heatmap, calendar, latency, PnL)
@@ -626,6 +649,51 @@ Latency: horizontal stacked bar per order event (arrival → signal → order �
 - [ ] Calendar: blackout windows serialize to the exact shape the risk manager consumes (unit-test the pure function).
 - [ ] Visual baselines per panel.
 
+> **Amendment (built 2026-08-19).** §15 specifies the panels but never says where they live, and
+> three data questions only have answers once you build them.
+>
+> **Placement.** `/metrics` — until now a single `pending` card whose copy read "Sharpe, drawdown,
+> hit-rate, latency percentiles, fill quality" — becomes the analysis workspace holding exactly
+> that list: PanelTabs over Strategies (B1) · Universe (B2) · Correlation (B4) · Distributions
+> (B9) · Latency (B7), with `?tab=` and `?strategy=` as URL state. **B5 the event calendar goes on
+> `/live` instead**, because its output is a trading constraint: "do not be in the market at 08:30
+> on CPI day" is a decision made next to the positions it applies to, not in an analytics tab.
+>
+> **B1's data gap.** `GET /api/strategies` returns `{id, name, description, createdAt}` — no
+> metrics at all. Rather than invent summary fields, the panel fans out to
+> `GET /api/strategies/{name}` for `latestResults`. It is an N+1 over single-digit N, cached under
+> the same `["strategy", name]` key `/backtesting` already uses. When the list endpoint grows
+> metrics, one `useQueries` block deletes. Source badge is inferred from the strategy definition
+> (there is no `source` field); mode is only paper/live when there is a real `deployMode`, since a
+> STANDBY strategy with none has been loaded, not deployed.
+>
+> **B2 ranks by running.** "Which symbols does this strategy work on" is answered with
+> `POST /api/strategies/{name}/run` per symbol, through a rolling window of 4 in flight so the
+> table fills in progressively instead of landing a hundred backtests on the backend at once. The
+> plan's sector chip has no data behind it (`Symbol` is `{ symbol }` and nothing else), so that
+> column carries run status — queued/running/failed — which the ranking flow actually produces.
+> Promotion names `POST /api/deploy`; B6, the panel that would own that endpoint, is not scheduled
+> anywhere in this doc.
+>
+> **B4 correlates returns, not prices.** Log returns aligned on common timestamps, not bar index:
+> two trending symbols correlate at ≈ +1 on price levels no matter what they do day to day, and
+> two series with different histories would otherwise be compared Tuesday against Thursday. An
+> undefined pair is `NaN` and paints as background — a fabricated 0 would read as "uncorrelated",
+> which is a claim. The scale midpoint is `--surface-1`, read the way the §11 M2 primitives read
+> tokens (the ChartTheme registry covers series colours, not surfaces).
+>
+> **B5 has no folklore fallback.** The maintained schedule (`lib/data/economic-releases.ts`, FOMC
+> from the Fed's calendar, CPI/NFP from the BLS schedule) carries a `VERIFIED_THROUGH_DATE` the UI
+> warns past, and FRED supersedes it when a key is configured. The tempting third tier — "payrolls
+> are the first Friday" — is deliberately absent: 2026 alone broke that rule three times, and a
+> blackout window derived from folklore is worse than none because it will be trusted. The doc
+> asks for "a maintained JSON checked into lib/"; it is a typed `.ts` module instead, so the shape
+> is compile-checked and `npm run test:calendar` can import it in plain node.
+>
+> **Unit tests.** The §15 verify block asks for one (blackout windows). Three shipped — calendar,
+> correlation, distribution bucketing — all in plain node against the TS sources, all wired into
+> `npm run test:unit`. Every one of them is really a timezone test.
+
 ---
 
 ## §16. M9 — dockview (deferred; D7)
@@ -645,6 +713,42 @@ No work scheduled. If adopted later: serializer (`toJSON`/`fromJSON` via `onDidL
 | Theme switch | no chart recreation, no state loss | manual + baselines |
 | Bundle | flag any dep > 100 kB before adding | `npm run build` output |
 | Fonts | Inter Variable latin only; no CDN fonts | Network panel |
+
+## §17b. Build status (2026-08-19)
+
+Everything scheduled in this doc is built. Items are marked here rather than in each section so
+the sections stay readable as specifications.
+
+| § | Item | State |
+|---|---|---|
+| §2 | W0 Playwright harness | done — 43 tests, `npm run test:visual` |
+| §3 | W1 tokens + alias map + literal sweep | done — sweep returns only the registry |
+| §4 | W2 TerminalPanel + both tab variants | done |
+| §5 | W3 icon rail + top bar | done |
+| §6 | W4 PanelState everywhere | done — `PendingPage` deleted as superseded |
+| §7 | W5 typography | done — `fmtRatio` added in M6 (Sharpe through `fmtSize` printed 1.84 as "2") |
+| §8 | W6 TerminalTable | done + §8.2 amendment; `live` and `check` cell variants added by M5/M6 |
+| §9 | W7 form primitives | done |
+| §10 | M1 lightweight-charts 5.2.0 | done — pin line rewritten in AGENTS.md |
+| §11 | M2 chart surface | done, incl. M2a retiring the legacy control bar |
+| §12 | M3 replay state in the URL | done — `ind` deferred (nothing to bind to; see its amendment) |
+| §13 | M4 theme system | done — 4 themes × convention × colorblind |
+| §14 | M5 ticker + WS hot path | done, flag-gated (`VITE_WS_ENABLED`), polling untouched |
+| §15 | M6–M8 data panels | done — see the §15 amendment for placement and data decisions |
+| §16 | M9 dockview | **not built, by decision D7** — re-evaluate only if fixed splitters prove insufficient |
+
+Two things outside this doc's scope surfaced while building it and are worth naming:
+
+- **Plan §4.6 B6 (strategy deploy panel)** is the one Section-B component this doc never
+  schedules. It is the highest-stakes panel in the product and it needs `POST /api/deploy`. B2's
+  promote action is currently its only entry point, and it says so.
+- **A latent SSR bug, now fixed.** `/data` resolved its relative date defaults inside
+  `validateSearch` and converted them through the runtime's local timezone. Both halves differ
+  between the SSR process and the browser, and the result reached the rendered Python snippet, so
+  every load of `/data` hydrated with a mismatch and React silently re-rendered the subtree.
+  Defaults moved to the route loader, `datetime.ts` interprets wall clocks in ET, and
+  `tests/visual/hydration.spec.ts` now loads all six routes and fails on any mismatch. §1.3 called
+  this non-negotiable; it needed a test, not a rule.
 
 ## §18. Execution order (summary)
 
