@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { format, subDays } from "date-fns";
 
 import { SymbolPicker } from "@/components/SymbolPicker";
 import { PythonExport } from "@/components/PythonExport";
@@ -17,17 +16,28 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { buildPythonSnippet } from "@/lib/python-export";
-import { localDateTimeInputToApiParam } from "@/lib/datetime";
+import { etDateTimeInputToApiParam } from "@/lib/datetime";
+import { etDateTimeInputValue } from "@/lib/market-calendar";
 import { cn } from "@/lib/utils";
 
-// Defaults resolve relative to *now* at parse time — never constants — so a
-// clean URL opens on the last 7 days and the SSR'd first paint already shows
-// the real range (no mount-time snap).
+// Defaults resolve relative to *now* — never constants — so a clean URL opens
+// on the last 7 days and the SSR'd first paint already shows the real range
+// (no mount-time snap).
+//
+// They resolve in the LOADER, not in validateSearch, and that distinction is
+// the whole point. validateSearch runs twice for one page view — once on the
+// server, once again on the client during hydration — so a `new Date()` inside
+// it produces two different answers (different clock, and on a UTC server vs a
+// local browser, a different wall-clock string entirely). The generated Python
+// snippet embeds that range as text, which turned the drift into a real
+// hydration mismatch: React discarded and re-rendered the subtree on every
+// load of /data. Loader data is computed once on the server and dehydrated
+// into the page, so both renders read the same two strings (§1.3).
 function defaultFrom(): string {
-  return format(subDays(new Date(), 7), "yyyy-MM-dd'T'HH:mm");
+  return etDateTimeInputValue(Date.now() - 7 * 86_400_000);
 }
 function defaultTo(): string {
-  return format(new Date(), "yyyy-MM-dd'T'HH:mm");
+  return etDateTimeInputValue(Date.now());
 }
 
 const VALID_INTERVALS = new Set<string>(INTERVALS.map((i) => i.value));
@@ -38,12 +48,14 @@ export const Route = createFileRoute("/data")({
   // (ephemeral in-memory state).
   validateSearch: (search: Record<string, unknown>) => ({
     symbol: typeof search.symbol === "string" ? search.symbol : "",
-    from:   typeof search.from === "string" && search.from ? search.from : defaultFrom(),
-    to:     typeof search.to === "string" && search.to ? search.to : defaultTo(),
+    // Absent = "use the loader's default", not "resolve now" (see above).
+    from:   typeof search.from === "string" && search.from ? search.from : undefined,
+    to:     typeof search.to === "string" && search.to ? search.to : undefined,
     interval: VALID_INTERVALS.has(String(search.interval))
       ? (search.interval as Interval)
       : ("1Hour" as Interval),
   }),
+  loader: () => ({ from: defaultFrom(), to: defaultTo() }),
   head: () => ({
     meta: [
       { title: "Data — Quant Trading Platform" },
@@ -54,7 +66,7 @@ export const Route = createFileRoute("/data")({
 });
 
 const ALL_COLUMNS: { key: keyof PriceBar; label: string; sql: string }[] = [
-  { key: "time", label: "time", sql: "time" },
+  { key: "time", label: "time (ET)", sql: "time" },
   { key: "symbol", label: "symbol", sql: "symbol" },
   { key: "open", label: "open", sql: "open" },
   { key: "high", label: "high", sql: "high" },
@@ -65,11 +77,16 @@ const ALL_COLUMNS: { key: keyof PriceBar; label: string; sql: string }[] = [
   { key: "tradeCount", label: "tradeCount", sql: "trade_count" },
 ];
 
-const DT_FMT_HINT = "YYYY-MM-DDTHH:MM";
+const DT_FMT_HINT = "YYYY-MM-DDTHH:MM (ET)";
 
 function DataPage() {
   // URL = where you are: symbol/from/to/interval come from validateSearch.
-  const { symbol, from, to, interval: barInterval } = Route.useSearch();
+  const { symbol, from: fromParam, to: toParam, interval: barInterval } = Route.useSearch();
+  // URL wins; the loader's server-resolved default fills the gap (§13
+  // precedence, and the reason both renders agree).
+  const defaults = Route.useLoaderData();
+  const from = fromParam ?? defaults.from;
+  const to = toParam ?? defaults.to;
   const navigate = Route.useNavigate();
   const setSearch = useCallback(
     (updates: Partial<{ symbol: string; from: string; to: string; interval: Interval }>) =>
@@ -82,8 +99,8 @@ function DataPage() {
   const [enabledCols, setEnabledCols] = useState<Set<string>>(
     () => new Set(ALL_COLUMNS.map((c) => c.key as string)),
   );
-  const fromApi = localDateTimeInputToApiParam(from);
-  const toApi = localDateTimeInputToApiParam(to);
+  const fromApi = etDateTimeInputToApiParam(from);
+  const toApi = etDateTimeInputToApiParam(to);
 
   const { data: bars = [], isLoading, error, refetch } = useQuery({
     enabled: !!symbol && !!fromApi && !!toApi,
@@ -128,7 +145,7 @@ function DataPage() {
 
       <section className="flex flex-col gap-3 overflow-hidden">
         <div className="flex flex-wrap items-end gap-3 rounded-md border border-border bg-card p-3">
-          <Field label="From" hint={DT_FMT_HINT}>
+          <Field label="From (ET)" hint={DT_FMT_HINT}>
             <Input
               type="datetime-local"
               value={from}
@@ -139,7 +156,7 @@ function DataPage() {
             />
             {fromError && <p className="text-[10px] text-destructive">{fromError}</p>}
           </Field>
-          <Field label="To" hint={DT_FMT_HINT}>
+          <Field label="To (ET)" hint={DT_FMT_HINT}>
             <Input
               type="datetime-local"
               value={to}
@@ -286,7 +303,10 @@ function DataPage() {
 
 function formatCell(v: unknown, key: string): string {
   if (v == null) return "—";
-  if (key === "time") return format(new Date(String(v)), "yyyy-MM-dd HH:mm");
+  // ET, like the range inputs above it and every other timestamp in the app.
+  // Showing bar times in the viewer's local zone next to ET range inputs was
+  // two clocks in one panel.
+  if (key === "time") return etDateTimeInputValue(new Date(String(v)).getTime()).replace("T", " ");
   if (typeof v === "number") {
     if (key === "volume" || key === "tradeCount") return v.toLocaleString();
     return v.toFixed(4);
