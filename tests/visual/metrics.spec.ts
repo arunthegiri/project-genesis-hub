@@ -93,6 +93,9 @@ test("correlation tab: canvas paints and a cell drills through to the charts pag
   await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.15);
   await expect(page.getByTestId("correlation-readout")).toContainText("AAPL · NVDA");
   await expect(page.getByTestId("correlation-readout")).toContainText("ρ = -1.00");
+  // §15 verify: the transposed cell is highlighted too — same coefficient,
+  // confirmed at a glance rather than by counting rows.
+  await expect(page.getByTestId("correlation-mirror")).toBeVisible();
 
   await expect(page).toHaveScreenshot("metrics-correlation.png", { mask: dynamicMasks(page) });
 

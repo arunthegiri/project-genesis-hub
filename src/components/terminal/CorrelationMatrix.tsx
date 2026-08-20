@@ -195,8 +195,11 @@ export function CorrelationMatrix({
               if (hit && onSelectPair) onSelectPair(symbols[hit.i], symbols[hit.j]);
             }}
           />
-          {/* Row/column crosshair: two absolutely-positioned divs, so hovering
-              costs a style write and never a canvas repaint. */}
+          {/* Row/column crosshair plus the MIRRORED cell (§15 verify: "hover
+              highlights symmetric cells" — the matrix is symmetric, so (j,i)
+              carries the same coefficient and confirms it at a glance). All
+              absolutely-positioned divs: hovering costs a style write and never
+              a canvas repaint. */}
           {hover && (
             <>
               <div
@@ -207,6 +210,18 @@ export function CorrelationMatrix({
                 className="pointer-events-none absolute top-0 border-x border-accent-blue/70"
                 style={{ left: hover.j * cell, width: cell, height: n * cell }}
               />
+              {hover.i !== hover.j && (
+                <div
+                  data-testid="correlation-mirror"
+                  className="pointer-events-none absolute border border-accent-blue/70"
+                  style={{
+                    top: hover.j * cell,
+                    left: hover.i * cell,
+                    width: cell - 1,
+                    height: cell - 1,
+                  }}
+                />
+              )}
             </>
           )}
         </div>
