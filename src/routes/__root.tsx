@@ -13,6 +13,7 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { runHealthProbe } from "@/lib/api/health-probe";
 import { togglePalette } from "@/lib/command-registry";
 import { startLoafInstrumentation } from "@/lib/perf/loaf";
+import { startRealtime } from "@/lib/realtime/socket";
 import { readUiCookieServerFn, THEME_UI_COOKIE } from "@/lib/cookie-state";
 import {
   DEFAULT_THEME_PREFS,
@@ -124,6 +125,12 @@ function RootComponent() {
   // Dev-only jank instrumentation (?perf=1) — the ruler for the build doc's
   // perf budgets; no-ops in production and unsupported browsers.
   useEffect(() => startLoafInstrumentation(), []);
+
+  // §14 M5 realtime transport. A no-op unless VITE_WS_ENABLED=1 (or the
+  // dev-only ?wsMock=1 generator), so with the flag off the app keeps its
+  // polling path byte-for-byte — the connection is the addition, never a
+  // replacement.
+  useEffect(() => startRealtime(), []);
 
   // Global ⌘K / Ctrl+K toggles the command palette (§17). Client-only effect;
   // preventDefault beats the browser's own search/shortcut bindings.

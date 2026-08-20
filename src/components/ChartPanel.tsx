@@ -42,6 +42,7 @@ import { registerCommands } from "@/lib/command-registry";
 import { registerChartPanel, setActiveChartPanel } from "@/lib/active-chart-panel";
 import { createInteractionStore, type InteractionStore } from "@/lib/stores/chart-interaction";
 import { setPanelLastBar } from "@/lib/stores/last-bar-registry";
+import { trailingPrevClose } from "@/lib/chart-primitives/session-shading";
 import { CHARTS_UI_COOKIE, layoutCookieStorage, mergeUiCookie, panelUiCookie, readUiCookieJson, writeUiCookie } from "@/lib/cookie-state";
 import {
   PanelSkeleton,
@@ -371,14 +372,6 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
     () => interactionStore.getSnapshot().lastBar,
     () => null,
   );
-  useEffect(() => {
-    setPanelLastBar(
-      panelId,
-      lastBar ? { symbol: selectedSymbol, interval, timeSec: lastBar.time } : null,
-    );
-    return () => setPanelLastBar(panelId, null);
-  }, [panelId, lastBar, selectedSymbol, interval]);
-
   // Vertical handle — pointer-capture drag grows/shrinks the whole region;
   // arrow keys resize in 24px steps (WAI-ARIA separator keyboard pattern).
   // The new height persists to the ui.charts cookie on release.
@@ -472,6 +465,27 @@ export function ChartPanel({ onRemove, canRemove, initialSymbol = "", persistKey
   const isInitialLoad = isPending && !isPlaceholderData;
 
   const bars = useMemo(() => aggregatePriceBars(rawBars, interval), [rawBars, interval]);
+
+  // §14.1: the rail entry now also carries the price and its change reference,
+  // because the ticker tape is fed from this registry. `trailingPrevClose`
+  // resolves one ET midnight and walks back numerically, so adding it costs
+  // integer compares on a data change, not an Intl call per bar.
+  useEffect(() => {
+    setPanelLastBar(
+      panelId,
+      lastBar
+        ? {
+            symbol: selectedSymbol,
+            interval,
+            timeSec: lastBar.time,
+            close: lastBar.close,
+            prevClose: trailingPrevClose(bars),
+          }
+        : null,
+    );
+    return () => setPanelLastBar(panelId, null);
+  }, [panelId, lastBar, selectedSymbol, interval, bars]);
+
 
   // Virtualized data table (§12): rows are pinned to a fixed 25px
   // (text-[11px] + leading-4 + py-1 + 1px border) so the spacer-row

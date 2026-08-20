@@ -1,5 +1,7 @@
-import { memo } from "react";
-import { fmtPct, fmtPnl, fmtPrice, fmtSize } from "@/lib/format";
+import { memo, useSyncExternalStore } from "react";
+import { fmtPct, fmtPnl, fmtPrice, fmtRatio, fmtSize } from "@/lib/format";
+import { getQuote, getServerQuote, subscribeQuote } from "@/lib/realtime/symbol-stores";
+import { useFlashOnChange } from "@/hooks/useFlashOnChange";
 import { cn } from "@/lib/utils";
 
 /**
@@ -23,7 +25,7 @@ export type Tone = "up" | "down" | "flat" | "neutral" | "warn" | "info";
  */
 export type CellRender =
   | { type: "text"; value: string; mono?: boolean; strong?: boolean }
-  | { type: "num"; value: number | null; kind: "price" | "size" | "pnl"; prefix?: string }
+  | { type: "num"; value: number | null; kind: NumKind; prefix?: string }
   /** value is already in percent units (12.34 → +12.34%). */
   | { type: "pct"; value: number | null; plus?: boolean; reference?: number }
   /**
@@ -31,10 +33,32 @@ export type CellRender =
    * is compared against. Passing the comparison in (rather than a pre-computed
    * colour) is what keeps the rule per-cell and auditable.
    */
-  | { type: "dir"; value: number | null; reference: number | null; kind: "price" | "size" | "pnl" }
+  | { type: "dir"; value: number | null; reference: number | null; kind: NumKind }
   | { type: "badge"; value: string; tone: Tone }
   | { type: "spark"; points: number[]; reference: number | null }
-  | { type: "chips"; values: string[] };
+  | { type: "chips"; values: string[] }
+  /**
+   * Selection checkbox (§15.2 B2). Deliberately FIELDLESS: the checked state
+   * is the row's own `isSelected`, which TerminalRow already receives as a
+   * primitive and already memo-compares. Carrying it in the cell instead would
+   * mean rebuilding the cell array (and busting the row cache) on every
+   * selection change, to display something the row was told anyway.
+   */
+  | { type: "check" }
+  /**
+   * Hot cell (§14.2/§8.1): subscribes to its own symbol store and renders the
+   * streamed price when one exists, the polled `fallback` when it does not.
+   * The ROW is not involved — a tick re-renders this leaf only — which is why
+   * "positions read from the store when hot, from Query when cold" needs no
+   * second set of row components.
+   */
+  | {
+      type: "live";
+      symbol: string;
+      fallback: number | null;
+      reference: number | null;
+      kind: NumKind;
+    };
 
 // ── Tone → token ─────────────────────────────────────────────────────────────
 
@@ -65,10 +89,13 @@ export function toneFor(value: number | null, reference: number | null): Tone {
   return "flat";
 }
 
-function formatNum(value: number | null, kind: "price" | "size" | "pnl"): string {
+export type NumKind = "price" | "size" | "pnl" | "ratio";
+
+function formatNum(value: number | null, kind: NumKind): string {
   if (value === null) return "—";
   if (kind === "price") return fmtPrice(value);
   if (kind === "size") return fmtSize(value);
+  if (kind === "ratio") return fmtRatio(value);
   return fmtPnl(value);
 }
 
@@ -124,6 +151,55 @@ const Sparkline = memo(function Sparkline({
   );
 });
 
+// ── Hot cell (§14) ───────────────────────────────────────────────────────────
+
+/**
+ * The leaf that subscribes to a symbol's stream.
+ *
+ * This is the ONE component in the table allowed to hold a subscription. It
+ * sits inside TerminalRow's memo boundary, so a tick re-renders exactly this
+ * span — the row, its siblings, and the table are never told. When the stream
+ * is off (the default, §14 flag), the store is empty and the cell renders the
+ * polled `fallback`, which is why the cold path needs no separate component.
+ *
+ * The flash is the shared useFlashOnChange hook (see its comment for why it
+ * is an effect and not a class computed in render).
+ */
+const LiveCell = memo(function LiveCell({
+  symbol,
+  fallback,
+  reference,
+  kind,
+  className,
+  style,
+}: {
+  symbol: string;
+  fallback: number | null;
+  reference: number | null;
+  kind: NumKind;
+  className: string;
+  style: React.CSSProperties;
+}) {
+  const quote = useSyncExternalStore(
+    subscribeQuote(symbol),
+    () => getQuote(symbol),
+    getServerQuote,
+  );
+  const value = quote.last ?? fallback;
+  const flashRef = useFlashOnChange<HTMLSpanElement>(value);
+
+  return (
+    <span
+      ref={flashRef}
+      data-testid="live-cell"
+      className={cn(className, "tabular font-mono", TONE_TEXT[toneFor(value, reference)])}
+      style={style}
+    >
+      {formatNum(value, kind)}
+    </span>
+  );
+});
+
 // ── The renderer ─────────────────────────────────────────────────────────────
 
 /**
@@ -144,6 +220,8 @@ export function renderCell(
   key: number,
   layout: string,
   style: React.CSSProperties,
+  /** The owning row's selection state — the only input the `check` cell needs. */
+  rowSelected = false,
 ) {
   switch (cell.type) {
     case "text":
@@ -217,6 +295,40 @@ export function renderCell(
         </span>
       );
     }
+
+    case "live":
+      return (
+        <LiveCell
+          key={key}
+          symbol={cell.symbol}
+          fallback={cell.fallback}
+          reference={cell.reference}
+          kind={cell.kind}
+          className={layout}
+          style={style}
+        />
+      );
+
+    case "check":
+      return (
+        <span key={key} className={cn(layout, "inline-flex items-center")} style={style}>
+          {/* data-check marks the hit area TerminalRow reads to give this
+              click toggle (meta) semantics instead of replace semantics. */}
+          <span
+            data-check
+            role="checkbox"
+            aria-checked={rowSelected}
+            className={cn(
+              "inline-flex h-3.5 w-3.5 items-center justify-center rounded-[2px] border text-[9px] leading-none transition-colors",
+              rowSelected
+                ? "border-accent-blue bg-accent-blue/25 text-accent-blue"
+                : "border-border-subtle bg-surface-1",
+            )}
+          >
+            {rowSelected ? "✓" : ""}
+          </span>
+        </span>
+      );
 
     case "chips":
       return (
@@ -300,6 +412,24 @@ export function cellsEqual(a: readonly CellRender[], b: readonly CellRender[]): 
       case "badge": {
         const z = y as Extract<CellRender, { type: "badge" }>;
         if (x.value !== z.value || x.tone !== z.tone) return false;
+        break;
+      }
+      // "check" carries no fields — the row's isSelected drives it, and the
+      // memo comparator already checks that.
+      case "check":
+        break;
+      case "live": {
+        const z = y as Extract<CellRender, { type: "live" }>;
+        // Only the COLD inputs are compared. The hot value lives in the store
+        // and never travels through this array, so a stream tick cannot (and
+        // must not) invalidate the row.
+        if (
+          x.symbol !== z.symbol ||
+          x.fallback !== z.fallback ||
+          x.reference !== z.reference ||
+          x.kind !== z.kind
+        )
+          return false;
         break;
       }
     }

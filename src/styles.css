@@ -411,3 +411,61 @@
     background: var(--muted-foreground);
   }
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   §14 M5 — ticker tape + flash-on-change.
+
+   Both effects are deliberately CSS-only: the tape animates one compositor
+   property on a wrapper (no JS per frame, no layout reads), and the flash is
+   a keyframe on the leaf cell that already re-rendered for the new value, so
+   a row/list never re-renders to show one.
+   ════════════════════════════════════════════════════════════════════════ */
+
+@keyframes ticker-scroll {
+  from { transform: translateX(0); }
+  /* -50% lands copy 2 exactly where copy 1 started — a seamless loop. */
+  to   { transform: translateX(-50%); }
+}
+
+.ticker-track {
+  /* Duration is written once from the measured track width (TickerTape.tsx),
+     so speed is content-independent at ~60px/s. */
+  animation: ticker-scroll var(--ticker-duration, 40s) linear infinite;
+  will-change: transform;
+}
+
+.ticker:hover .ticker-track {
+  animation-play-state: paused;
+}
+
+/* Flash-on-change. The `-a`/`-b` pairs are byte-identical but bound to
+   DIFFERENT keyframe names: an element whose computed animation-name does not
+   change continues its running animation rather than restarting it, so a
+   single class flashes once and then goes quiet under a fast feed. Alternating
+   restarts it without the remove/read-offsetWidth/re-add reflow trick. */
+@keyframes flash-up-a {
+  from { background-color: color-mix(in srgb, var(--dir-up) 12%, transparent); }
+  to   { background-color: transparent; }
+}
+@keyframes flash-up-b {
+  from { background-color: color-mix(in srgb, var(--dir-up) 12%, transparent); }
+  to   { background-color: transparent; }
+}
+@keyframes flash-down-a {
+  from { background-color: color-mix(in srgb, var(--dir-down) 12%, transparent); }
+  to   { background-color: transparent; }
+}
+@keyframes flash-down-b {
+  from { background-color: color-mix(in srgb, var(--dir-down) 12%, transparent); }
+  to   { background-color: transparent; }
+}
+
+.flash-up-a   { animation: flash-up-a   450ms ease-out; }
+.flash-up-b   { animation: flash-up-b   450ms ease-out; }
+.flash-down-a { animation: flash-down-a 450ms ease-out; }
+.flash-down-b { animation: flash-down-b 450ms ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ticker-track { animation: none; }
+  .flash-up-a, .flash-up-b, .flash-down-a, .flash-down-b { animation: none; }
+}

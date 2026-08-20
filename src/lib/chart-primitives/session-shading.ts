@@ -96,6 +96,28 @@ export function prevSessionClose(
   return bars[fromIndex - 1].close;
 }
 
+/**
+ * `prevSessionClose` for the LAST bar, without precomputed day keys (§14.1 —
+ * the ticker needs a change reference and has only the bar array).
+ *
+ * Cost note: it resolves the final bar's ET midnight ONCE and then walks back
+ * with numeric comparisons, so it is O(bars in the last session) integer
+ * compares and exactly one Intl call — not one `etDayKey` per bar. That
+ * matters because this runs on every data refresh of a chart that may hold
+ * 100k bars.
+ */
+export function trailingPrevClose(bars: readonly { time: string; close: number }[]): number | null {
+  if (bars.length < 2) return null;
+  const lastMs = new Date(bars[bars.length - 1].time).getTime();
+  if (Number.isNaN(lastMs)) return null;
+  const dayStart = etWallToUtcMs(etDayKey(lastMs), 0, 0);
+  for (let i = bars.length - 2; i >= 0; i--) {
+    if (new Date(bars[i].time).getTime() < dayStart) return bars[i].close;
+  }
+  // Single-session window: same fallback as prevSessionClose — the bar before.
+  return bars[bars.length - 2].close;
+}
+
 function etOffsetMs(ms: number): number {
   const p = etParts(ms);
   return Date.UTC(p.y, p.mo - 1, p.d, p.hh, p.mm, p.ss) - ms;

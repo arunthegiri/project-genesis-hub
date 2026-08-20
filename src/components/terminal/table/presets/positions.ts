@@ -69,9 +69,14 @@ export const POSITION_COLUMNS: readonly ColumnPreset<PositionData>[] = [
     width: 96,
     align: "right",
     // Compared against the previous close — this cell answers "up today?".
+    //
+    // §14.4: this is the hot column. It renders the streamed price when the
+    // socket is on and the polled `fallback` when it is off — same preset,
+    // same row component, no second code path for "live mode".
     cell: (p) => ({
-      type: "dir",
-      value: num(p.currentPrice),
+      type: "live",
+      symbol: p.symbol,
+      fallback: num(p.currentPrice),
       reference: num(p.lastdayPrice),
       kind: "price",
     }),

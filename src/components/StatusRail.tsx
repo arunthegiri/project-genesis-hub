@@ -5,6 +5,9 @@ import { getSessionInfo, type SessionState } from "@/lib/market-calendar";
 import { connectionReducer } from "@/lib/connection-state";
 import { getEndpointStatus, subscribeProbe, type EndpointName } from "@/lib/api/health-probe";
 import { getRailBarsSnapshot, subscribeRailBars } from "@/lib/stores/last-bar-registry";
+import { getRealtimeState, subscribeRealtime } from "@/lib/realtime/socket";
+import { TickerTape } from "@/components/terminal/TickerTape";
+import { useTickerItems } from "@/hooks/useTickerItems";
 import { intervalMs } from "@/lib/interval-policy";
 import { pricesApi } from "@/lib/api/prices";
 import type { BackfillJob } from "@/lib/api/types";
@@ -83,7 +86,9 @@ export function StatusRail() {
     () => "unknown,unknown,unknown,unknown",
   );
 
-  // Five-state connection model — only polling-era states reachable today.
+  // Five-state connection model. §14 M5 finally supplies the ws-open/ws-close
+  // producer the reducer was written for — and, as promised there, the
+  // consumers below did not change.
   const [conn, dispatch] = useReducer(connectionReducer, "connecting");
   useEffect(() => {
     if (!mounted) return;
@@ -92,6 +97,16 @@ export function StatusRail() {
     if (prices === "ok" || symbols === "ok") dispatch({ type: "poll-ok" });
     else if (prices === "flagged" && symbols === "flagged") dispatch({ type: "poll-fail" });
   }, [probeKey, mounted]);
+
+  const wsState = useSyncExternalStore(subscribeRealtime, getRealtimeState, () => "idle" as const);
+  useEffect(() => {
+    if (!mounted) return;
+    // "idle" means the flag is off and no socket was ever attempted — that is
+    // the polling baseline, NOT a dropped connection, so it dispatches
+    // nothing. Anything else is a real transport transition.
+    if (wsState === "open") dispatch({ type: "ws-open" });
+    else if (wsState === "connecting" || wsState === "backoff") dispatch({ type: "ws-close" });
+  }, [wsState, mounted]);
 
   // Per-active-symbol last bar, mirrored from the §7 interaction stores.
   const railBars = useSyncExternalStore(
@@ -113,7 +128,21 @@ export function StatusRail() {
     })),
   });
 
+  // §14.1 tape source. Gated on `mounted` for the same reason as everything
+  // else here: no client-only query may run during SSR.
+  const tickerItems = useTickerItems(mounted);
+
   const session = mounted ? getSessionInfo(now) : null;
+
+  // Staleness by exception (see the strip below) — computed here so the JSX
+  // stays a map over the few symbols that actually have something to say.
+  const staleBars = railBars
+    .map((bar) => {
+      const age = now - bar.timeSec * 1000;
+      const span = intervalMs(bar.interval);
+      return { bar, age, tier: age > 5 * span ? "stale" : age > 2 * span ? "aging" : "fresh" };
+    })
+    .filter((s) => s.tier !== "fresh");
   const flagged = mounted ? ENDPOINTS.filter((e) => getEndpointStatus(e) === "flagged") : [];
 
   let runningJobs = 0;
@@ -140,31 +169,30 @@ export function StatusRail() {
             <span className="text-muted-foreground/60">{ET_CLOCK_FMT.format(now)} ET</span>
           </span>
 
-          {/* Per-symbol staleness: amber past 2× interval, red past 5× */}
-          {railBars.length > 0 && (
-            <span className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
-              {railBars.map((b) => {
-                const age = now - b.timeSec * 1000;
-                const span = intervalMs(b.interval);
-                const tier = age > 5 * span ? "stale" : age > 2 * span ? "aging" : "fresh";
-                return (
-                  <span
-                    key={b.symbol}
-                    data-testid="staleness"
-                    className={cn(
-                      "whitespace-nowrap",
-                      tier === "stale" && "text-bear",
-                      tier === "aging" && "text-warning",
-                    )}
-                    title={`${b.symbol} · ${b.interval} · last bar updated ${fmtAge(age)} ago`}
-                  >
-                    {b.symbol} {fmtAge(age)} ago
-                  </span>
-                );
-              })}
+          {/* Per-symbol staleness: amber past 2× interval, red past 5×.
+              §14.1 gave the flexible middle to the ticker, so this strip now
+              reports by EXCEPTION — a fresh symbol says nothing, and the
+              symbols that are actually behind keep their colour and age. */}
+          {staleBars.length > 0 && (
+            <span className="flex min-w-0 shrink items-center gap-3 overflow-hidden">
+              {staleBars.map(({ bar, tier, age }) => (
+                <span
+                  key={bar.symbol}
+                  data-testid="staleness"
+                  className={cn(
+                    "whitespace-nowrap",
+                    tier === "stale" ? "text-bear" : "text-warning",
+                  )}
+                  title={`${bar.symbol} · ${bar.interval} · last bar updated ${fmtAge(age)} ago`}
+                >
+                  {bar.symbol} {fmtAge(age)} ago
+                </span>
+              ))}
             </span>
           )}
-          {railBars.length === 0 && <span className="flex-1" />}
+
+          {/* §14.1 ticker tape — positions first, charted symbols after. */}
+          <TickerTape items={tickerItems} />
 
           {/* Backfill activity */}
           {(runningJobs > 0 || failedJobs > 0) && (
@@ -180,7 +208,8 @@ export function StatusRail() {
             <span
               className={cn(
                 conn === "offline" && "text-bear",
-                conn === "connecting" && "text-warning",
+                (conn === "connecting" || conn === "degraded") && "text-warning",
+                conn === "realtime" && "text-bull",
               )}
             >
               API {conn}
