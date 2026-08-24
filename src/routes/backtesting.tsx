@@ -19,8 +19,7 @@ import { toast } from "sonner";
 
 import { BacktestingChart } from "@/components/BacktestingChart";
 import { ChartScrollbar } from "@/components/ChartScrollbar";
-import { TradeLog, StrategyTradeLog, type TradeFilter } from "@/components/backtesting/TradeLog";
-import { TerminalPanel, type PanelTab } from "@/components/terminal/TerminalPanel";
+import { TradeLog, StrategyTradeLog } from "@/components/backtesting/TradeLog";
 import { RunHistory } from "@/components/backtesting/RunHistory";
 import { HermesModelPanel } from "@/components/backtesting/HermesModelPanel";
 import type { RunRecord } from "@/components/backtesting/RunHistory";
@@ -32,9 +31,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { SegmentedControl } from "@/components/terminal/controls/SegmentedControl";
-import { UnitInput } from "@/components/terminal/controls/UnitInput";
-import { QuickFillRow } from "@/components/terminal/controls/QuickFillRow";
 import { pricesApi } from "@/lib/api/prices";
 import { symbolsApi, normalizeSymbols } from "@/lib/api/symbols";
 import { strategiesApi } from "@/lib/api/strategies";
@@ -43,22 +39,13 @@ import type { BacktestTrade, BacktestResults } from "@/lib/api/strategies";
 import type { PriceBar, Trade } from "@/lib/api/types";
 import { applyCapitalConstraints, calcBuyHold } from "@/lib/backtest-capital";
 import { BACKTESTING_UI_COOKIE, readUiCookieJson, writeUiCookie } from "@/lib/cookie-state";
-import { fmtPct, fmtPnl, fmtPrice, fmtSize } from "@/lib/format";
 import { useRafCoalescer } from "@/hooks/useRafCoalescer";
 import { cn } from "@/lib/utils";
 
 const SPEEDS = [0.5, 1, 2, 5, 10, 25, 50] as const;
 type Speed = (typeof SPEEDS)[number];
-// W7: replay speed is a SegmentedControl (build doc §9) — enumerated, so no Select.
-const SPEED_OPTIONS = SPEEDS.map((s) => ({ value: String(s), label: `${s}×` }));
-const CAPITAL_PRESETS = [
-  { label: "1k", value: 1_000 },
-  { label: "10k", value: 10_000 },
-  { label: "100k", value: 100_000 },
-  { label: "1M", value: 1_000_000 },
-] as const;
 type Tab = "data" | "strategies" | "results" | "models";
-const TABS: Tab[] = ["data", "strategies", "results", "models"];
+type TradeFilter = "all" | "winning" | "losing";
 
 // Date defaults resolve relative to *now* — never constants — so a clean URL
 // opens on a range ending today. Explicit from/to in the URL still override.
@@ -72,26 +59,6 @@ const DEFAULT_CAPITAL       = 10_000;
 const MIN_CAPITAL           = 100;
 const MAX_CAPITAL           = 10_000_000;
 
-// §12 M3: cursor = absolute bar index (never a timestamp, so it survives zoom
-// and interval changes). Omitted from the URL at the default (-1 = live end).
-function parseCursor(v: unknown): number | undefined {
-  if (v == null) return undefined;
-  const n = Number(v);
-  return isFinite(n) ? Math.max(0, Math.floor(n)) : undefined;
-}
-
-// §12 M3: view = "from.to" — two logical-index floats fixed to 2dp and joined
-// by a dot ("10.50.20.75"). Logical indices are what getVisibleLogicalRange
-// already speaks, so restore needs no time→index mapping.
-function parseView(v: unknown): { from: number; to: number } | undefined {
-  if (typeof v !== "string") return undefined;
-  const m = v.match(/^(-?\d+(?:\.\d+)?)\.(-?\d+(?:\.\d+)?)$/);
-  if (!m) return undefined;
-  const from = Number(m[1]);
-  const to = Number(m[2]);
-  return isFinite(from) && isFinite(to) && to > from ? { from, to } : undefined;
-}
-
 export const Route = createFileRoute("/backtesting")({
   validateSearch: (search: Record<string, unknown>) => ({
     symbol:            (search.symbol  as string | undefined) ?? "",
@@ -101,11 +68,6 @@ export const Route = createFileRoute("/backtesting")({
     loaded:            search.loaded === "true" || search.loaded === true,
     startingCapital:   clampCapital(Number(search.startingCapital ?? DEFAULT_CAPITAL)),
     comparisonVisible: search.comparisonVisible !== false && search.comparisonVisible !== "false",
-    // §4.2: the main tab is location-like state — a shared link lands on it.
-    tab: TABS.includes(search.tab as Tab) ? (search.tab as Tab) : ("data" as Tab),
-    // §12 M3 replay state — additive, all optional, all omitted when default.
-    cursor:            parseCursor(search.cursor),
-    view:              typeof search.view === "string" && parseView(search.view) ? search.view : undefined,
   }),
   head: () => ({ meta: [{ title: "Backtesting — Quant Trading Platform" }] }),
   component: BacktestingPage,
@@ -125,6 +87,10 @@ function formatTs(iso: string) {
     month: "short", day: "numeric",
     hour: "2-digit", minute: "2-digit", hour12: false,
   });
+}
+
+function formatPnl(pnl: number) {
+  return `${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}`;
 }
 
 function BacktestingPage() {
@@ -160,9 +126,8 @@ function BacktestingPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Tab state — location-like, lives in the URL (§4.2); writes replace. ────
-  const activeTab = search.tab;
-  const setActiveTab = useCallback((tab: Tab) => setSearch({ tab }), [setSearch]);
+  // ── Tab state ────────────────────────────────────────────────────────────────
+  const [activeTab, setActiveTab] = useState<Tab>("data");
 
   // ── Symbols ──────────────────────────────────────────────────────────────────
   const { data: rawSymbols } = useQuery({ queryKey: ["symbols"], queryFn: symbolsApi.list });
@@ -174,9 +139,8 @@ function BacktestingPage() {
   const [capitalRaw, setCapitalRaw] = useState(() => startingCapital.toLocaleString("en-US"));
   useEffect(() => { setCapitalRaw(startingCapital.toLocaleString("en-US")); }, [startingCapital]);
 
-  // W7: UnitInput owns the input; its onChange passes the raw string (no event).
-  const handleCapitalChange = (value: string) => {
-    const raw = value.replace(/[^0-9,]/g, "");
+  const handleCapitalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value.replace(/[^0-9,]/g, "");
     setCapitalRaw(raw);
     const num = parseInt(raw.replace(/,/g, ""), 10);
     if (!isNaN(num) && num >= MIN_CAPITAL && num <= MAX_CAPITAL) {
@@ -304,16 +268,6 @@ function BacktestingPage() {
     return true;
   }), [allStratTrades, tradeFilter]);
 
-  // Unfiltered counts for the TradeLog UnderlineTabs (in-label counts, §4.1).
-  const tradeCounts = useMemo(
-    () => ({
-      all: allStratTrades.length,
-      winning: allStratTrades.filter((t) => t.win === true).length,
-      losing: allStratTrades.filter((t) => t.win === false).length,
-    }),
-    [allStratTrades],
-  );
-
   // Price bars for Strategies tab (own query)
   const stratFromIso = stratLoaded ? new Date(stratFrom).toISOString() : "";
   const stratToIso   = stratLoaded ? new Date(stratTo).toISOString()   : "";
@@ -370,7 +324,7 @@ function BacktestingPage() {
     setSelectedStrategy(record.strategyName);
     setTradeFilter("all");
     setActiveTab("strategies");
-  }, [setActiveTab]);
+  }, []);
 
   // Replay logic for Strategies tab
   const stopStratTimer = useCallback(() => {
@@ -443,21 +397,14 @@ function BacktestingPage() {
   // receives it plus a visibleCount. All cursor writes (interval ticks, seeks,
   // resets) go through setCursor — a ref holds the authoritative value and an
   // rAF coalescer commits to React state at most once per frame.
-  // §12 M3: the same rAF flush mirrors the cursor into the URL (`cursor` is an
-  // absolute bar index; -1 = live end = param omitted). One history REPLACEMENT
-  // per frame at most — playback never pushes.
-  const initialCursor = search.loaded && search.cursor != null ? search.cursor : -1;
-  const [currentIdx, setCurrentIdx] = useState(initialCursor);
+  const [currentIdx, setCurrentIdx] = useState(-1);
   const [playing, setPlaying]       = useState(false);
   const [jumpTo, setJumpTo]         = useState("");
 
   const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevDataKey = useRef("");
-  const cursorRef   = useRef(initialCursor);
-  const flushCursor = useRafCoalescer<number>((v) => {
-    setCurrentIdx(v);
-    setSearch({ cursor: v >= 0 ? v : undefined });
-  });
+  const cursorRef   = useRef(-1);
+  const flushCursor = useRafCoalescer<number>(setCurrentIdx);
   const setCursor   = useCallback((v: number) => {
     cursorRef.current = v;
     flushCursor(v);
@@ -465,22 +412,12 @@ function BacktestingPage() {
 
   useEffect(() => {
     const key = `${selectedSymbol}|${fromIso}|${toIso}`;
-    // Mount: adopt the key WITHOUT resetting — a §12 URL-restored cursor
-    // (?loaded=true&cursor=N) must survive the first data load.
-    if (prevDataKey.current === "") { prevDataKey.current = key; return; }
     if (key !== prevDataKey.current && loaded) {
       setCursor(-1);
       setPlaying(false);
       prevDataKey.current = key;
     }
   }, [selectedSymbol, fromIso, toIso, loaded, setCursor]);
-
-  // §12 guard: a cursor beyond the (re)loaded dataset clamps to the last bar.
-  useEffect(() => {
-    if (loaded && allBars.length > 0 && currentIdx >= allBars.length) {
-      setCursor(allBars.length - 1);
-    }
-  }, [loaded, allBars.length, currentIdx, setCursor]);
 
   const resolvedIdx = currentIdx === -1 ? Math.max(0, allBars.length - 1) : currentIdx;
 
@@ -510,9 +447,7 @@ function BacktestingPage() {
     setPlaying(false);
     setCursor(-1);
     const next = { symbol: selectedSymbol, from, to, speed, loaded: true };
-    // A fresh run starts at the live end at fit-content — stale replay params
-    // from a previous run must not leak into the new URL.
-    setSearch({ ...next, cursor: undefined, view: undefined });
+    setSearch(next);
     writeUiCookie(BACKTESTING_UI_COOKIE, JSON.stringify(next));
   };
 
@@ -546,83 +481,38 @@ function BacktestingPage() {
 
   // ── Chart scrollbar state ────────────────────────────────────────────────────
   const [visibleRange, setVisibleRange] = useState<{ from: number; to: number } | null>(null);
+  const handleRangeChange = useCallback((f: number, t: number) => setVisibleRange({ from: f, to: t }), []);
 
-  // §12 M3: view mirrors to the URL debounced 300 ms, replace-only. Omitted at
-  // the fit-content default (range covers the loaded window). Playback's
-  // per-tick scrollToPosition is not a user pan/zoom — suppressed while playing.
-  const viewTimerRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const playingRef       = useRef(playing);
-  // "Fit-content default" is judged against the FULL loaded window, not the
-  // replay cursor's visibleCount — a paused mid-replay window (e.g. from -5 to
-  // 120 on 500 bars) is a real view worth restoring, not the default.
-  const barCountRef      = useRef(allBars.length);
-  useEffect(() => { playingRef.current = playing; }, [playing]);
-  useEffect(() => { barCountRef.current = allBars.length; }, [allBars.length]);
-
-  const writeViewParam = useCallback(
-    (range: { from: number; to: number } | null) => {
-      if (viewTimerRef.current) clearTimeout(viewTimerRef.current);
-      viewTimerRef.current = setTimeout(() => {
-        if (range === null) { setSearch({ view: undefined }); return; }
-        const last = Math.max(0, barCountRef.current - 1);
-        const isFull = range.from <= 0.75 && range.to >= last - 0.75;
-        setSearch({ view: isFull ? undefined : `${range.from.toFixed(2)}.${range.to.toFixed(2)}` });
-      }, 300);
-    },
-    [setSearch],
-  );
-
-  const handleRangeChange = useCallback(
-    (f: number, t: number) => {
-      setVisibleRange({ from: f, to: t });
-      if (!playingRef.current) writeViewParam({ from: f, to: t });
-    },
-    [writeViewParam],
-  );
-
-  // Reset visible range when switching tabs so chart re-fits (skip the mount
-  // run — that would clear a §12 URL view before the restore effect applies it).
-  const tabMountedRef = useRef(false);
-  useEffect(() => {
-    if (!tabMountedRef.current) { tabMountedRef.current = true; return; }
-    setVisibleRange(null);
-    writeViewParam(null);
-  }, [activeTab, writeViewParam]);
-
-  // §12 M3 restore: the URL view flows to the chart as initialRange — applied
-  // imperatively in the series-data effect INSTEAD of fitContent when a fresh
-  // dataset lands. Routing it through visibleRange state loses a race against
-  // the mount/StrictMode range events, which would overwrite the restored
-  // value before the chart ever applies it.
-  const initialView = parseView(search.view) ?? null;
+  // Reset visible range when switching tabs so chart re-fits
+  useEffect(() => { setVisibleRange(null); }, [activeTab]);
 
   // ── Render ────────────────────────────────────────────────────────────────────
-  // §4.2: the Data/Strategies/Results/Models tab block is a TerminalPanel with
-  // PanelTabs; the active tab is URL state (validateSearch), so a shared link
-  // lands on the right tab and switches replace history instead of pushing.
-  const panelTabs: PanelTab[] = [
-    { id: "data", label: "Data" },
-    { id: "strategies", label: "Strategies" },
-    { id: "results", label: "Results", count: runHistory.length || undefined },
-    { id: "models", label: "Models" },
-  ];
-
-  // Strategies tab pans are LOCAL only — §12 URL replay state is scoped to the
-  // Data-tab run (its restore path is the loaded=true flow; the restore key is
-  // the Data-tab symbol/range, so a strat-dataset range would never apply).
-  const handleStratRangeChange = useCallback(
-    (f: number, t: number) => setVisibleRange({ from: f, to: t }),
-    [],
-  );
-
   return (
-    <TerminalPanel
-      tabs={panelTabs}
-      activeTab={activeTab}
-      onTabChange={(id) => setActiveTab(id as Tab)}
-      className="h-full"
-      bodyClassName="gap-3 overflow-hidden p-3"
-    >
+    <div className="flex h-full flex-col gap-3 overflow-hidden p-3">
+
+      {/* ── Tab bar ──────────────────────────────────────────────────────────── */}
+      <div className="flex items-center gap-1 self-start rounded-md border border-border bg-card p-1">
+        {(["data", "strategies", "results", "models"] as Tab[]).map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={cn(
+              "rounded px-3 py-1 text-xs font-medium capitalize transition-colors",
+              activeTab === tab
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {tab}
+            {tab === "results" && runHistory.length > 0 && (
+              <span className="ml-1.5 rounded-full bg-primary/20 px-1.5 py-0.5 text-[10px] font-normal text-primary">
+                {runHistory.length}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
       {/* ══ DATA TAB ═══════════════════════════════════════════════════════════ */}
       {activeTab === "data" && (
         <>
@@ -647,22 +537,20 @@ function BacktestingPage() {
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs text-muted-foreground">Speed (bars/s)</label>
-              <SegmentedControl
-                ariaLabel="Replay speed"
-                options={SPEED_OPTIONS}
-                value={String(speed)}
-                onValueChange={(v) => setSearch({ speed: Number(v) as Speed })}
-              />
+              <Select value={String(speed)} onValueChange={v => setSearch({ speed: Number(v) as Speed })}>
+                <SelectTrigger className="h-8 w-24 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>{SPEEDS.map(s => <SelectItem key={s} value={String(s)} className="text-xs">{s}×</SelectItem>)}</SelectContent>
+              </Select>
             </div>
             <Button size="sm" onClick={handleLoad} className="h-8 self-end text-xs">Load</Button>
             {loaded && allBars.length > 0 && (
               <div className="ml-auto flex items-center gap-1">
-                <Button size="icon" variant="ghost" className="h-8 w-8" aria-label="Restart replay" onClick={restart}><RotateCcw className="h-4 w-4" /></Button>
-                <Button size="icon" variant="ghost" className="h-8 w-8" aria-label="Step back" onClick={stepBack}><ChevronLeft className="h-4 w-4" /></Button>
-                <Button size="icon" variant="default" className="h-8 w-8" aria-label={playing ? "Pause replay" : "Play replay"} onClick={togglePlay}>
+                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={restart}><RotateCcw className="h-4 w-4" /></Button>
+                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={stepBack}><ChevronLeft className="h-4 w-4" /></Button>
+                <Button size="icon" variant="default" className="h-8 w-8" onClick={togglePlay}>
                   {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                 </Button>
-                <Button size="icon" variant="ghost" className="h-8 w-8" aria-label="Step forward" onClick={stepForward}><ChevronRight className="h-4 w-4" /></Button>
+                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={stepForward}><ChevronRight className="h-4 w-4" /></Button>
               </div>
             )}
           </div>
@@ -671,11 +559,11 @@ function BacktestingPage() {
           {loaded && allBars.length > 0 && (
             <div className="flex flex-wrap items-center gap-4 px-1 text-xs text-muted-foreground">
               <span className="font-mono text-foreground">{currentTime ? formatTs(currentTime) : "—"}</span>
-              <span className="tabular-nums">Bar {fmtSize(resolvedIdx + 1)} / {fmtSize(allBars.length)}</span>
+              <span>Bar {resolvedIdx + 1} / {allBars.length}</span>
               {currentBar && (
                 <span className="font-mono">
-                  O {fmtPrice(currentBar.open)} H {fmtPrice(currentBar.high)}{" "}
-                  L {fmtPrice(currentBar.low)} C {fmtPrice(currentBar.close)}
+                  O {currentBar.open.toFixed(2)} H {currentBar.high.toFixed(2)}{" "}
+                  L {currentBar.low.toFixed(2)} C {currentBar.close.toFixed(2)}
                 </span>
               )}
               <div className="ml-auto flex items-center gap-2">
@@ -688,7 +576,7 @@ function BacktestingPage() {
           )}
 
           {/* Chart + trade log */}
-          <div className="grid min-h-0 flex-1 grid-cols-[1fr_280px] gap-3">
+          <div className="grid min-h-0 flex-1 grid-cols-[1fr_260px] gap-3">
             <div className="flex overflow-hidden rounded-md border border-border bg-card">
               {!loaded || allBars.length === 0 ? (
                 <div className="flex h-full flex-1 items-center justify-center text-sm text-muted-foreground">
@@ -698,15 +586,11 @@ function BacktestingPage() {
                 <>
                   <div className="min-w-0 flex-1">
                     <BacktestingChart bars={allBars} visibleCount={visibleCount} trades={visibleTrades}
-                      onRangeChange={handleRangeChange} visibleRange={visibleRange ?? undefined} initialRange={initialView} />
+                      onRangeChange={handleRangeChange} visibleRange={visibleRange ?? undefined} />
                   </div>
-                  {/* §12 M3: the scrollbar mounts WITH the chart (not gated on
-                      the first range event) so its width is already priced into
-                      the geometry when a URL view restores — a late mount would
-                      resize the pane and clobber the restored range. */}
-                  {visibleCount > 0 && (
-                    <ChartScrollbar totalBars={visibleCount} from={visibleRange?.from ?? 0} to={visibleRange?.to ?? visibleCount - 1}
-                      onRangeChange={(f, t) => { setVisibleRange({ from: f, to: t }); writeViewParam({ from: f, to: t }); }} />
+                  {visibleCount > 0 && visibleRange && (
+                    <ChartScrollbar totalBars={visibleCount} from={visibleRange.from} to={visibleRange.to}
+                      onRangeChange={(f, t) => setVisibleRange({ from: f, to: t })} />
                   )}
                 </>
               )}
@@ -771,30 +655,26 @@ function BacktestingPage() {
             {/* Speed (shared with Data tab) */}
             <div className="flex flex-col gap-1">
               <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Speed</label>
-              <SegmentedControl
-                ariaLabel="Replay speed"
-                options={SPEED_OPTIONS}
-                value={String(speed)}
-                onValueChange={(v) => setSearch({ speed: Number(v) as Speed })}
-              />
+              <Select value={String(speed)} onValueChange={v => setSearch({ speed: Number(v) as Speed })}>
+                <SelectTrigger className="h-8 w-20 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>{SPEEDS.map(s => <SelectItem key={s} value={String(s)} className="text-xs">{s}×</SelectItem>)}</SelectContent>
+              </Select>
             </div>
 
-            {/* Starting capital — W7 UnitInput + QuickFillRow presets (§9) */}
+            {/* Starting capital */}
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Starting Capital</label>
-              <UnitInput
-                ariaLabel="Starting capital"
-                prefix="$"
-                value={capitalRaw}
-                onChange={handleCapitalChange}
-                onBlur={handleCapitalBlur}
-                inputClassName="w-32"
-              />
-              <QuickFillRow
-                ariaLabel="Capital presets"
-                presets={CAPITAL_PRESETS}
-                onFill={(v) => setSearch({ startingCapital: v })}
-              />
+              <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Starting Capital ($)</label>
+              <div className="relative">
+                <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-xs text-muted-foreground">$</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={capitalRaw}
+                  onChange={handleCapitalChange}
+                  onBlur={handleCapitalBlur}
+                  className="h-8 w-32 rounded-md border border-border bg-background pl-5 pr-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+              </div>
             </div>
 
             {/* Run button */}
@@ -824,24 +704,24 @@ function BacktestingPage() {
           {stratBars.length > 0 && stratIdx !== -1 && (
             <div className="flex flex-wrap items-center gap-4 px-1 text-xs text-muted-foreground">
               <span className="font-mono text-foreground">{stratCurrentTime ? formatTs(stratCurrentTime) : "—"}</span>
-              <span className="tabular-nums">Bar {fmtSize(stratResolvedIdx + 1)} / {fmtSize(stratBars.length)}</span>
+              <span>Bar {stratResolvedIdx + 1} / {stratBars.length}</span>
               {stratBars[stratResolvedIdx] && (
                 <span className="font-mono">
-                  C {fmtPrice(stratBars[stratResolvedIdx].close)}
+                  C {stratBars[stratResolvedIdx].close.toFixed(2)}
                 </span>
               )}
               <span className={cn("font-mono font-semibold", stratRunningPnl >= 0 ? "text-bull" : "text-bear")}>
-                P&L {fmtPnl(stratRunningPnl)}
+                P&L {formatPnl(stratRunningPnl)}
               </span>
-              <span className="text-muted-foreground/60 tabular-nums">{fmtSize(stratVisibleTrades.length)} trades completed</span>
+              <span className="text-muted-foreground/60">{stratVisibleTrades.length} trades completed</span>
             </div>
           )}
 
           {/* Error banner */}
           {runError && (
-            <div className="rounded-md border border-bear/30 bg-bear/10 px-3 py-2 text-xs text-bear">
+            <div className="rounded-md border border-bear/30 bg-red-500/10 px-3 py-2 text-xs text-bear">
               {runError.includes("cannot be re-run") || runError.includes("type")
-                ? <>Strategy needs re-exporting. Open <code className="bg-bear/20 px-1 rounded">rsi_strategy.ipynb</code>, re-run all cells, then run the updated export cell with <code className="bg-bear/20 px-1 rounded">params=</code>.</>
+                ? <>Strategy needs re-exporting. Open <code className="bg-red-900/30 px-1 rounded">rsi_strategy.ipynb</code>, re-run all cells, then run the updated export cell with <code className="bg-red-900/30 px-1 rounded">params=</code>.</>
                 : runError}
             </div>
           )}
@@ -851,14 +731,14 @@ function BacktestingPage() {
             <div className="flex items-center gap-2 px-1">
               <span className={cn("rounded px-2 py-0.5 text-[10px] font-medium border",
                 runResults
-                  ? "bg-accent-blue/20 text-accent-blue border-accent-blue/30"
-                  : "bg-muted/50 text-muted-foreground border-border"
+                  ? "bg-blue-500/20 text-blue-400 border-blue-500/30"
+                  : "bg-zinc-500/20 text-zinc-400 border-zinc-500/30"
               )}>
                 {runResults ? `Live run · ${activeResults.symbol ?? stratSymbol}` : `Stored · ${activeResults.symbol ?? "original"}`}
               </span>
               {activeResults && (
-                <span className="text-[10px] text-muted-foreground tabular-nums">
-                  {fmtSize(activeResults.totalTrades)} trades · Win {fmtPct(Number(activeResults.winRate ?? 0), { plus: false })}
+                <span className="text-[10px] text-muted-foreground">
+                  {activeResults.totalTrades} trades · Win {Number(activeResults.winRate ?? 0).toFixed(1)}%
                 </span>
               )}
               {buyHold && (
@@ -867,13 +747,30 @@ function BacktestingPage() {
                   className={cn(
                     "rounded border px-2 py-0.5 text-[10px] font-medium transition-colors",
                     comparisonVisible
-                      ? "border-warning/40 bg-warning/10 text-warning"
+                      ? "border-yellow-500/40 bg-yellow-500/10 text-yellow-400"
                       : "border-border text-muted-foreground hover:text-foreground",
                   )}
                 >
                   {comparisonVisible ? "B&H ✓" : "vs B&H"}
                 </button>
               )}
+              {/* Trade filter pills */}
+              <div className="ml-auto flex items-center gap-1">
+                {(["all", "winning", "losing"] as TradeFilter[]).map(f => (
+                  <button key={f} onClick={() => setTradeFilter(f)}
+                    className={cn(
+                      "rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors",
+                      tradeFilter === f
+                        ? f === "winning" ? "bg-bull/20 text-bull"
+                          : f === "losing" ? "bg-bear/20 text-bear"
+                          : "bg-primary/20 text-primary"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {f === "all" ? "All" : f === "winning" ? "Winning ✓" : "Losing ✗"}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
@@ -882,25 +779,25 @@ function BacktestingPage() {
             <div className="flex items-center gap-4 rounded-md border border-border bg-card px-3 py-1.5 text-xs">
               <span className="text-muted-foreground">Win Rate</span>
               <span className={cn("font-mono font-medium", capitalStats.winRate >= 50 ? "text-bull" : "text-bear")}>
-                {fmtPct(capitalStats.winRate, { plus: false })}
+                {capitalStats.winRate.toFixed(1)}%
               </span>
               <span className="text-border">|</span>
               <span className="text-muted-foreground">Total PnL</span>
               <span className={cn("font-mono font-medium", capitalStats.totalPnl >= 0 ? "text-bull" : "text-bear")}>
-                {fmtPnl(capitalStats.totalPnl)}
+                {capitalStats.totalPnl >= 0 ? "+" : ""}${Math.abs(capitalStats.totalPnl).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
               <span className="text-border">|</span>
               <span className="text-muted-foreground">ROC</span>
               <span className={cn("font-mono font-medium", capitalStats.returnOnCapital >= 0 ? "text-bull" : "text-bear")}>
-                {fmtPct(capitalStats.returnOnCapital)}
+                {capitalStats.returnOnCapital >= 0 ? "+" : ""}{capitalStats.returnOnCapital.toFixed(2)}%
               </span>
               <span className="text-border">|</span>
               <span className="text-muted-foreground">Trades</span>
-              <span className="font-mono font-medium">{fmtSize(capitalStats.totalTrades)}</span>
+              <span className="font-mono font-medium">{capitalStats.totalTrades}</span>
               {capitalStats.insufficientCapitalCount > 0 && (
                 <>
                   <span className="text-border">|</span>
-                  <span className="text-warning">{capitalStats.insufficientCapitalCount} skipped (cap)</span>
+                  <span className="text-neutral">{capitalStats.insufficientCapitalCount} skipped (cap)</span>
                 </>
               )}
               <span className="ml-auto text-[10px] text-muted-foreground/60">
@@ -910,7 +807,7 @@ function BacktestingPage() {
           )}
 
           {/* Chart + trade log */}
-          <div className="grid min-h-0 flex-1 grid-cols-[1fr_280px] gap-3">
+          <div className="grid min-h-0 flex-1 grid-cols-[1fr_260px] gap-3">
             <div className="flex overflow-hidden rounded-md border border-border bg-card">
               {stratBars.length === 0 ? (
                 <div className="flex h-full flex-1 items-center justify-center text-sm text-muted-foreground">
@@ -925,27 +822,22 @@ function BacktestingPage() {
                       bars={stratBars}
                       visibleCount={stratVisibleCount}
                       trades={strategyChartTrades}
-                      onRangeChange={handleStratRangeChange}
+                      onRangeChange={handleRangeChange}
                       visibleRange={visibleRange ?? undefined}
                     />
                   </div>
-                  {stratVisibleCount > 0 && (
+                  {stratVisibleCount > 0 && visibleRange && (
                     <ChartScrollbar
                       totalBars={stratVisibleCount}
-                      from={visibleRange?.from ?? 0}
-                      to={visibleRange?.to ?? stratVisibleCount - 1}
+                      from={visibleRange.from}
+                      to={visibleRange.to}
                       onRangeChange={(f, t) => setVisibleRange({ from: f, to: t })}
                     />
                   )}
                 </>
               )}
             </div>
-            <StrategyTradeLog
-              trades={stratVisibleTrades}
-              filter={tradeFilter}
-              counts={tradeCounts}
-              onFilterChange={setTradeFilter}
-            />
+            <StrategyTradeLog trades={stratVisibleTrades} filter={tradeFilter} />
           </div>
 
           {!selectedStrategy && (
@@ -969,7 +861,7 @@ function BacktestingPage() {
 
       {/* ══ MODELS TAB ════════════════════════════════════════════════════════ */}
       {activeTab === "models" && <HermesModelPanel />}
-    </TerminalPanel>
+    </div>
   );
 }
 

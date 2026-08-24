@@ -2,42 +2,30 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { format, subDays } from "date-fns";
+import { Loader2 } from "lucide-react";
 
 import { SymbolPicker } from "@/components/SymbolPicker";
 import { PythonExport } from "@/components/PythonExport";
 import { BackfillPanel } from "@/components/BackfillPanel";
 import { CoverageTimeline } from "@/components/CoverageTimeline";
-import { TerminalPanel } from "@/components/terminal/TerminalPanel";
-import { PanelState } from "@/components/terminal/PanelState";
 import { pricesApi } from "@/lib/api/prices";
-import { symbolsApi, normalizeSymbols } from "@/lib/api/symbols";
 import { INTERVALS, type Interval, type PriceBar } from "@/lib/api/types";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { buildPythonSnippet } from "@/lib/python-export";
-import { etDateTimeInputToApiParam } from "@/lib/datetime";
-import { etDateTimeInputValue } from "@/lib/market-calendar";
+import { localDateTimeInputToApiParam } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 
-// Defaults resolve relative to *now* — never constants — so a clean URL opens
-// on the last 7 days and the SSR'd first paint already shows the real range
-// (no mount-time snap).
-//
-// They resolve in the LOADER, not in validateSearch, and that distinction is
-// the whole point. validateSearch runs twice for one page view — once on the
-// server, once again on the client during hydration — so a `new Date()` inside
-// it produces two different answers (different clock, and on a UTC server vs a
-// local browser, a different wall-clock string entirely). The generated Python
-// snippet embeds that range as text, which turned the drift into a real
-// hydration mismatch: React discarded and re-rendered the subtree on every
-// load of /data. Loader data is computed once on the server and dehydrated
-// into the page, so both renders read the same two strings (§1.3).
+// Defaults resolve relative to *now* at parse time — never constants — so a
+// clean URL opens on the last 7 days and the SSR'd first paint already shows
+// the real range (no mount-time snap).
 function defaultFrom(): string {
-  return etDateTimeInputValue(Date.now() - 7 * 86_400_000);
+  return format(subDays(new Date(), 7), "yyyy-MM-dd'T'HH:mm");
 }
 function defaultTo(): string {
-  return etDateTimeInputValue(Date.now());
+  return format(new Date(), "yyyy-MM-dd'T'HH:mm");
 }
 
 const VALID_INTERVALS = new Set<string>(INTERVALS.map((i) => i.value));
@@ -48,14 +36,12 @@ export const Route = createFileRoute("/data")({
   // (ephemeral in-memory state).
   validateSearch: (search: Record<string, unknown>) => ({
     symbol: typeof search.symbol === "string" ? search.symbol : "",
-    // Absent = "use the loader's default", not "resolve now" (see above).
-    from:   typeof search.from === "string" && search.from ? search.from : undefined,
-    to:     typeof search.to === "string" && search.to ? search.to : undefined,
+    from:   typeof search.from === "string" && search.from ? search.from : defaultFrom(),
+    to:     typeof search.to === "string" && search.to ? search.to : defaultTo(),
     interval: VALID_INTERVALS.has(String(search.interval))
       ? (search.interval as Interval)
       : ("1Hour" as Interval),
   }),
-  loader: () => ({ from: defaultFrom(), to: defaultTo() }),
   head: () => ({
     meta: [
       { title: "Data — Quant Trading Platform" },
@@ -66,7 +52,7 @@ export const Route = createFileRoute("/data")({
 });
 
 const ALL_COLUMNS: { key: keyof PriceBar; label: string; sql: string }[] = [
-  { key: "time", label: "time (ET)", sql: "time" },
+  { key: "time", label: "time", sql: "time" },
   { key: "symbol", label: "symbol", sql: "symbol" },
   { key: "open", label: "open", sql: "open" },
   { key: "high", label: "high", sql: "high" },
@@ -77,16 +63,11 @@ const ALL_COLUMNS: { key: keyof PriceBar; label: string; sql: string }[] = [
   { key: "tradeCount", label: "tradeCount", sql: "trade_count" },
 ];
 
-const DT_FMT_HINT = "YYYY-MM-DDTHH:MM (ET)";
+const DT_FMT_HINT = "YYYY-MM-DDTHH:MM";
 
 function DataPage() {
   // URL = where you are: symbol/from/to/interval come from validateSearch.
-  const { symbol, from: fromParam, to: toParam, interval: barInterval } = Route.useSearch();
-  // URL wins; the loader's server-resolved default fills the gap (§13
-  // precedence, and the reason both renders agree).
-  const defaults = Route.useLoaderData();
-  const from = fromParam ?? defaults.from;
-  const to = toParam ?? defaults.to;
+  const { symbol, from, to, interval: barInterval } = Route.useSearch();
   const navigate = Route.useNavigate();
   const setSearch = useCallback(
     (updates: Partial<{ symbol: string; from: string; to: string; interval: Interval }>) =>
@@ -99,21 +80,14 @@ function DataPage() {
   const [enabledCols, setEnabledCols] = useState<Set<string>>(
     () => new Set(ALL_COLUMNS.map((c) => c.key as string)),
   );
-  const fromApi = etDateTimeInputToApiParam(from);
-  const toApi = etDateTimeInputToApiParam(to);
+  const fromApi = localDateTimeInputToApiParam(from);
+  const toApi = localDateTimeInputToApiParam(to);
 
-  const { data: bars = [], isLoading, error, refetch } = useQuery({
+  const { data: bars = [], isLoading, error } = useQuery({
     enabled: !!symbol && !!fromApi && !!toApi,
     queryKey: ["prices", symbol, fromApi, toApi],
     queryFn: () => pricesApi.range(symbol, fromApi, toApi),
   });
-
-  // §6 coverage-empty/degraded: shares the ["symbols"] cache key with
-  // CoverageTimeline/SymbolPicker, so this adds no extra request. Only
-  // settled states (isSuccess/isError) swap the panel body, so the first
-  // client render always matches SSR (CoverageTimeline's own empty body).
-  const symbolsQ = useQuery({ queryKey: ["symbols"], queryFn: symbolsApi.list });
-  const coverageSymbols = normalizeSymbols(symbolsQ.data);
 
   const visibleCols = ALL_COLUMNS.filter((c) => enabledCols.has(c.key as string));
 
@@ -145,7 +119,7 @@ function DataPage() {
 
       <section className="flex flex-col gap-3 overflow-hidden">
         <div className="flex flex-wrap items-end gap-3 rounded-md border border-border bg-card p-3">
-          <Field label="From (ET)" hint={DT_FMT_HINT}>
+          <Field label="From" hint={DT_FMT_HINT}>
             <Input
               type="datetime-local"
               value={from}
@@ -156,7 +130,7 @@ function DataPage() {
             />
             {fromError && <p className="text-[10px] text-destructive">{fromError}</p>}
           </Field>
-          <Field label="To (ET)" hint={DT_FMT_HINT}>
+          <Field label="To" hint={DT_FMT_HINT}>
             <Input
               type="datetime-local"
               value={to}
@@ -200,31 +174,7 @@ function DataPage() {
           </div>
         </div>
 
-        {/* §4.2: coverage and backfill regions each mount in a TerminalPanel.
-            [&>*]:border-0 drops the wrapped component's own card border so
-            the panel chrome is the single frame (bg-card aliases surface-1). */}
-        <TerminalPanel
-          tabs={[{ id: "coverage", label: "Coverage" }]}
-          activeTab="coverage"
-          bodyClassName="[&>*]:rounded-none [&>*]:border-0"
-        >
-          {symbolsQ.isError ? (
-            <PanelState
-              kind="error"
-              art="plug"
-              message="Coverage unavailable — the symbols endpoint is not responding."
-              detail={["GET /api/symbols"]}
-            />
-          ) : symbolsQ.isSuccess && coverageSymbols.length === 0 ? (
-            <PanelState
-              kind="empty"
-              art="chart"
-              message="No symbols tracked yet — add one to see coverage."
-            />
-          ) : (
-            <CoverageTimeline from={fromApi} to={toApi} />
-          )}
-        </TerminalPanel>
+        <CoverageTimeline from={fromApi} to={toApi} />
 
         <div className="flex min-h-0 flex-1 flex-col rounded-md border border-border bg-card">
           <div className="flex items-center justify-between border-b border-border px-3 py-2 text-xs">
@@ -242,23 +192,10 @@ function DataPage() {
           </div>
 
           <div ref={parentRef} className="flex-1 overflow-auto">
-            {isLoading && (
-              <PanelState kind="loading" art="table" message={`Loading ${symbol}…`} />
-            )}
-            {error && (
-              <PanelState
-                kind="error"
-                art="plug"
-                message={(error as Error).message}
-                detail={[`GET /api/prices/${symbol}/range`]}
-                action={{ label: "Retry", onClick: () => refetch() }}
-              />
-            )}
-            {!isLoading && !error && !symbol && (
-              <PanelState kind="empty" art="search" message="Select a symbol to load data." />
-            )}
-            {!isLoading && !error && symbol && bars.length === 0 && (
-              <PanelState kind="empty" art="table" message="No data for this filter." />
+            {isLoading && <div className="p-6 text-center text-sm text-muted-foreground"><Loader2 className="mx-auto h-4 w-4 animate-spin" /></div>}
+            {error && <div className="p-6 text-center text-sm text-destructive">{(error as Error).message}</div>}
+            {!isLoading && !error && bars.length === 0 && symbol && (
+              <div className="p-6 text-center text-sm text-muted-foreground">No data for this filter.</div>
             )}
             <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }}>
               {rowVirtualizer.getVirtualItems().map((vi) => {
@@ -287,13 +224,7 @@ function DataPage() {
           </div>
         </div>
 
-        <TerminalPanel
-          tabs={[{ id: "backfill", label: "Backfill" }]}
-          activeTab="backfill"
-          bodyClassName="[&>*]:rounded-none [&>*]:border-0"
-        >
-          <BackfillPanel symbol={symbol} />
-        </TerminalPanel>
+        <BackfillPanel symbol={symbol} />
 
         <PythonExport code={pythonCode} filename={`${symbol || "query"}_data.py`} />
       </section>
@@ -303,10 +234,7 @@ function DataPage() {
 
 function formatCell(v: unknown, key: string): string {
   if (v == null) return "—";
-  // ET, like the range inputs above it and every other timestamp in the app.
-  // Showing bar times in the viewer's local zone next to ET range inputs was
-  // two clocks in one panel.
-  if (key === "time") return etDateTimeInputValue(new Date(String(v)).getTime()).replace("T", " ");
+  if (key === "time") return format(new Date(String(v)), "yyyy-MM-dd HH:mm");
   if (typeof v === "number") {
     if (key === "volume" || key === "tradeCount") return v.toLocaleString();
     return v.toFixed(4);

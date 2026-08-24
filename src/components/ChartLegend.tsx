@@ -1,7 +1,6 @@
 import { forwardRef, useImperativeHandle, useRef } from "react";
 import type { PriceBar } from "@/lib/api/types";
-import { resolveChartTheme } from "@/lib/chart-theme";
-import { fmtPct, fmtPrice, fmtSize } from "@/lib/format";
+import { CHART_COLORS } from "@/lib/chart-colors";
 
 export interface LegendIndicatorRow {
   title: string;
@@ -18,15 +17,20 @@ export interface ChartLegendHandle {
   write: (bar: PriceBar | null, indicators: LegendIndicatorRow[]) => void;
 }
 
+const fmt = (v: number) =>
+  v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const fmtVol = (v: number) =>
+  v >= 1e9 ? (v / 1e9).toFixed(2) + "B"
+  : v >= 1e6 ? (v / 1e6).toFixed(2) + "M"
+  : v >= 1e3 ? (v / 1e3).toFixed(1) + "K"
+  : String(v);
+
 /**
- * Crosshair OHLC legend (build doc §8 / §11 M2): two-line DOM overlay. React
- * renders the frame once; values are written imperatively via the ref handle,
- * routed through the §7 rAF coalescer by the caller.
- *
- * Line 1: `O 25.34  H 25.65  L 25.33  C 25.57  +0.23 (+0.91%)  Vol 1.3M` —
- * each value colored by the bar's direction (close ≥ open → dir-up), the
- * change (absolute + % vs the bar's open) likewise. Line 2: one inline entry
- * per active indicator overlay, name + value in the overlay's color.
+ * Crosshair OHLC legend (build doc §8): React renders the frame once; values
+ * are written imperatively via the ref handle, routed through the §7 rAF
+ * coalescer by the caller. Rows: O H L C · Δ% · Vol, plus one row per active
+ * indicator overlay, colored to its series.
  */
 export const ChartLegend = forwardRef<ChartLegendHandle>(function ChartLegend(_props, ref) {
   const openRef  = useRef<HTMLSpanElement>(null);
@@ -40,45 +44,48 @@ export const ChartLegend = forwardRef<ChartLegendHandle>(function ChartLegend(_p
   useImperativeHandle(ref, () => ({
     write(bar, indicators) {
       if (!bar) return; // keep last values — never blank
-      const theme = resolveChartTheme();
-      const dir = bar.close >= bar.open ? theme.up : theme.down;
-      if (openRef.current)  { openRef.current.textContent  = fmtPrice(bar.open);  openRef.current.style.color  = dir; }
-      if (highRef.current)  { highRef.current.textContent  = fmtPrice(bar.high);  highRef.current.style.color  = dir; }
-      if (lowRef.current)   { lowRef.current.textContent   = fmtPrice(bar.low);   lowRef.current.style.color   = dir; }
-      if (closeRef.current) { closeRef.current.textContent = fmtPrice(bar.close); closeRef.current.style.color = dir; }
-      if (volRef.current)   { volRef.current.textContent   = fmtSize(bar.volume); }
+      if (openRef.current)  openRef.current.textContent  = fmt(bar.open);
+      if (highRef.current)  highRef.current.textContent  = fmt(bar.high);
+      if (lowRef.current)   lowRef.current.textContent   = fmt(bar.low);
+      if (closeRef.current) closeRef.current.textContent = fmt(bar.close);
+      if (volRef.current)   volRef.current.textContent   = fmtVol(bar.volume);
       if (deltaRef.current) {
-        const delta = bar.close - bar.open;
-        const pct = bar.open !== 0 ? (delta / bar.open) * 100 : 0;
-        deltaRef.current.textContent = `${delta >= 0 ? "+" : "-"}${fmtPrice(Math.abs(delta))} (${fmtPct(pct)})`;
-        deltaRef.current.style.color = dir;
+        const pct = bar.open !== 0 ? ((bar.close - bar.open) / bar.open) * 100 : 0;
+        deltaRef.current.textContent = `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
+        deltaRef.current.style.color = bar.close >= bar.open ? CHART_COLORS.bull : CHART_COLORS.bear;
       }
       const rows = rowsRef.current;
       if (rows) {
-        // Entry pool: grow/shrink to the indicator count, then mutate in place.
+        // Row pool: grow/shrink to the indicator count, then mutate in place.
         while (rows.children.length < indicators.length) {
-          rows.appendChild(document.createElement("span"));
+          const div = document.createElement("div");
+          const t = document.createElement("span");
+          const v = document.createElement("span");
+          v.className = "ml-1.5";
+          div.append(t, v);
+          rows.appendChild(div);
         }
         while (rows.children.length > indicators.length) rows.lastElementChild?.remove();
         indicators.forEach((ind, i) => {
-          const el = rows.children[i] as HTMLSpanElement;
-          el.textContent = `${ind.title} ${fmtPrice(ind.value)}`;
-          el.style.color = ind.color;
+          const div = rows.children[i] as HTMLElement;
+          const t = div.children[0] as HTMLSpanElement;
+          const v = div.children[1] as HTMLSpanElement;
+          t.textContent = ind.title;
+          t.style.color = ind.color;
+          v.textContent = fmt(ind.value);
+          v.style.color = ind.color;
         });
       }
     },
   }), []);
 
   return (
-    <div
-      data-testid="chart-legend"
-      className="pointer-events-none absolute left-2 top-2 z-10 font-mono text-[11px] leading-tight"
-    >
+    <div className="pointer-events-none absolute left-2 top-2 z-10 font-mono text-[11px] leading-tight">
       <div className="text-muted-foreground">
-        O <span ref={openRef} />  H <span ref={highRef} />  L <span ref={lowRef} />  C <span ref={closeRef} />{"  "}
-        <span ref={deltaRef} />  Vol <span ref={volRef} className="text-foreground" />
+        O <span ref={openRef} className="text-foreground" /> H <span ref={highRef} className="text-foreground" /> L <span ref={lowRef} className="text-foreground" /> C <span ref={closeRef} className="text-foreground" />{" "}
+        <span ref={deltaRef} /> · Vol <span ref={volRef} className="text-foreground" />
       </div>
-      <div ref={rowsRef} className="flex flex-wrap gap-x-3" />
+      <div ref={rowsRef} />
     </div>
   );
 });

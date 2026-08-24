@@ -15,11 +15,11 @@ const DT_FMT_HINT = "YYYY-MM-DDTHH:MM";
 const ACTIVE_STATUSES: BackfillStatus[] = ["PENDING", "RUNNING"];
 
 const STATUS_STYLE: Record<BackfillStatus, string> = {
-  PENDING:   "text-warning bg-warning/10",
-  RUNNING:   "text-accent-blue bg-accent-blue/10",
-  COMPLETED: "text-dir-up bg-dir-up/10",
+  PENDING:   "text-neutral bg-amber-400/10",
+  RUNNING:   "text-blue-400 bg-blue-400/10",
+  COMPLETED: "text-emerald-400 bg-emerald-400/10",
   FAILED:    "text-bear bg-bear/10",
-  CANCELLED: "text-muted-foreground bg-muted/50",
+  CANCELLED: "text-zinc-400 bg-zinc-400/10",
 };
 
 interface Props {
@@ -81,7 +81,7 @@ export function BackfillPanel({ symbol }: Props) {
         {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
         <span className="uppercase tracking-wider">Async Backfill</span>
         {jobs.some((j) => ACTIVE_STATUSES.includes(j.status)) && (
-          <Loader2 className="ml-1 h-3 w-3 animate-spin text-accent-blue" />
+          <Loader2 className="ml-1 h-3 w-3 animate-spin text-blue-400" />
         )}
         {symbol && (
           <span className="ml-1 font-mono text-foreground/60">{symbol}</span>
@@ -223,7 +223,7 @@ function JobRow({
             onClick={onRetry}
             disabled={retrying}
             title="Retry from failed chunk"
-            className="text-muted-foreground hover:text-foreground disabled:opacity-40"
+            className="text-muted-foreground hover:text-neutral disabled:opacity-40"
           >
             {retrying ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
           </button>
@@ -237,9 +237,9 @@ function JobRow({
             <div
               className={cn(
                 "absolute inset-y-0 left-0 rounded-full transition-all duration-500",
-                job.status === "COMPLETED" ? "bg-dir-up" :
-                job.status === "FAILED"    ? "bg-dir-down" :
-                                             "bg-accent-blue",
+                job.status === "COMPLETED" ? "bg-emerald-500" :
+                job.status === "FAILED"    ? "bg-red-500" :
+                                             "bg-blue-500",
               )}
               style={{ width: `${pct}%` }}
             />

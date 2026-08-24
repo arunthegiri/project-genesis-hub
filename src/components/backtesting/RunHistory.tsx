@@ -1,7 +1,6 @@
 import { Trash2 } from "lucide-react";
 import { BacktestStatsPanel } from "@/components/BacktestStatsPanel";
 import { EquityChart } from "@/components/EquityChart";
-import { PanelState } from "@/components/terminal/PanelState";
 import { cn } from "@/lib/utils";
 import type { CapitalStats, BuyHoldStats } from "@/lib/backtest-capital";
 import type { BacktestResults } from "@/lib/api/strategies";
@@ -39,8 +38,9 @@ export function RunHistory({ runHistory, selectedRecordId, onSelectRecord, onCle
     <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
       <div className="flex items-center justify-between px-1">
         <span className="text-xs text-muted-foreground">
-          {runHistory.length > 0 &&
-            `${runHistory.length} run${runHistory.length > 1 ? "s" : ""} this session · click a row to inspect`}
+          {runHistory.length === 0
+            ? "No runs yet — run a strategy to see results here."
+            : `${runHistory.length} run${runHistory.length > 1 ? "s" : ""} this session · click a row to inspect`}
         </span>
         {runHistory.length > 0 && (
           <button
@@ -51,16 +51,6 @@ export function RunHistory({ runHistory, selectedRecordId, onSelectRecord, onCle
           </button>
         )}
       </div>
-
-      {runHistory.length === 0 && (
-        <div className="min-h-0 flex-1 rounded-md border border-border bg-card">
-          <PanelState
-            kind="empty"
-            art="table"
-            message="No runs yet — run a strategy to see results here."
-          />
-        </div>
-      )}
 
       {runHistory.length > 0 && (
         <div className={cn("overflow-auto rounded-md border border-border", selectedRecord ? "max-h-48 shrink-0" : "min-h-0 flex-1")}>
@@ -117,8 +107,8 @@ export function RunHistory({ runHistory, selectedRecordId, onSelectRecord, onCle
                     <td className={cn("px-3 py-2 text-right font-mono", cs.profitFactor >= 1 ? "text-bull" : "text-bear")}>
                       {cs.profitFactor >= 99 ? "∞" : cs.profitFactor.toFixed(2)}
                     </td>
-                    <td className="px-3 py-2 text-right font-mono text-warning">{cs.maxDrawdown.toFixed(1)}%</td>
-                    <td className={cn("px-3 py-2 text-right font-mono", cs.sharpeRatio >= 1 ? "text-bull" : cs.sharpeRatio >= 0 ? "text-dir-flat" : "text-bear")}>
+                    <td className="px-3 py-2 text-right font-mono text-neutral">{cs.maxDrawdown.toFixed(1)}%</td>
+                    <td className={cn("px-3 py-2 text-right font-mono", cs.sharpeRatio >= 1 ? "text-bull" : cs.sharpeRatio >= 0 ? "text-neutral" : "text-bear")}>
                       {cs.sharpeRatio.toFixed(2)}
                     </td>
                     <td className={cn("px-3 py-2 text-right font-mono", bh == null ? "text-muted-foreground" : stratBeatsBH ? "text-bull" : "text-bear")}>

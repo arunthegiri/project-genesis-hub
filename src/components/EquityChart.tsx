@@ -1,14 +1,12 @@
 import { useEffect, useRef } from "react";
 import {
-  LineSeries,
   LineStyle,
   type ISeriesApi,
   type Time,
 } from "lightweight-charts";
 import type { EquityPoint } from "@/lib/api/strategies";
 import { useChartBase, toTs } from "@/hooks/useChartBase";
-import { useChartTheme } from "@/hooks/useChartTheme";
-import { resolveChartTheme, withAlpha } from "@/lib/chart-theme";
+import { CHART_COLORS } from "@/lib/chart-colors";
 
 interface Props {
   equityCurve: EquityPoint[];
@@ -22,32 +20,27 @@ export function EquityChart({ equityCurve, buyHoldCurve, height = 200 }: Props) 
   const seriesRef    = useRef<ISeriesApi<"Line"> | null>(null);
   const zeroRef      = useRef<ISeriesApi<"Line"> | null>(null);
   const bahRef       = useRef<ISeriesApi<"Line"> | null>(null);
-  // §13.4 reactive chart theme — drives the in-place re-theme effect below.
-  const theme = useChartTheme();
 
-  // Create series once on mount (chart created by useChartBase). The zero and
-  // buy-&-hold lines derive from theme.text (alpha-stepped) — the old
-  // white-ish rgba literals were invisible on the light themes.
+  // Create series once on mount (chart created by useChartBase)
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
-    const initialTheme = resolveChartTheme();
 
-    seriesRef.current = chart.addSeries(LineSeries, {
-      color: initialTheme.accent,
+    seriesRef.current = chart.addLineSeries({
+      color: CHART_COLORS.accent,
       lineWidth: 2,
       priceLineVisible: false,
       title: "Strategy",
     });
-    zeroRef.current = chart.addSeries(LineSeries, {
-      color: withAlpha(initialTheme.text, 0.2),
+    zeroRef.current = chart.addLineSeries({
+      color: "rgba(255,255,255,0.15)",
       lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: false,
       crosshairMarkerVisible: false,
     });
-    bahRef.current = chart.addSeries(LineSeries, {
-      color: withAlpha(initialTheme.text, 0.65),
+    bahRef.current = chart.addLineSeries({
+      color: "rgba(156,163,175,0.65)",
       lineWidth: 1,
       lineStyle: LineStyle.Dashed,
       priceLineVisible: false,
@@ -62,15 +55,6 @@ export function EquityChart({ equityCurve, buyHoldCurve, height = 200 }: Props) 
       bahRef.current = null;
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // §13.4: re-theme the live series in place — no recreation, so the equity
-  // data effects and the user's range are untouched.
-  useEffect(() => {
-    if (!theme) return;
-    seriesRef.current?.applyOptions({ color: theme.accent });
-    zeroRef.current?.applyOptions({ color: withAlpha(theme.text, 0.2) });
-    bahRef.current?.applyOptions({ color: withAlpha(theme.text, 0.65) });
-  }, [theme]);
 
   // Strategy equity curve
   useEffect(() => {
@@ -121,12 +105,12 @@ export function EquityChart({ equityCurve, buyHoldCurve, height = 200 }: Props) 
         <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
           Equity Curve — Cumulative PnL
         </span>
-        <span className="flex items-center gap-1 text-[10px] text-accent-blue">
-          <span className="inline-block h-0.5 w-4 bg-accent-blue" /> Strategy
+        <span className="flex items-center gap-1 text-[10px] text-blue-400">
+          <span className="inline-block h-0.5 w-4 bg-blue-400" /> Strategy
         </span>
         {(buyHoldCurve?.length ?? 0) > 0 && (
-          <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-            <span className="inline-block h-0.5 w-4 border-t border-dashed border-muted-foreground" /> Buy &amp; Hold
+          <span className="flex items-center gap-1 text-[10px] text-zinc-400">
+            <span className="inline-block h-0.5 w-4 border-t border-dashed border-zinc-400" /> Buy &amp; Hold
           </span>
         )}
       </div>

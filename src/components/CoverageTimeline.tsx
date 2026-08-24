@@ -28,8 +28,8 @@ const ACTIVE_STATUSES = new Set(["PENDING", "RUNNING"]);
 const SEGMENT_STYLE: Record<CoverageBlockState, string> = {
   covered:             "bg-bull/60",
   gap:                 "bg-transparent",
-  backfilling:         "animate-pulse bg-accent-blue/50",
-  "covered-but-empty": "border border-dashed border-warning/60 bg-transparent",
+  backfilling:         "animate-pulse bg-blue-400/50",
+  "covered-but-empty": "border border-dashed border-amber-400/60 bg-transparent",
 };
 
 export function CoverageTimeline({ from, to }: Props) {
@@ -101,7 +101,7 @@ export function CoverageTimeline({ from, to }: Props) {
       <div className="flex items-baseline gap-2">
         <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Coverage</span>
         <span className="text-[10px] text-muted-foreground/60">click a gap to backfill</span>
-        {filling.size > 0 && <Loader2 className="h-3 w-3 animate-spin self-center text-accent-blue" />}
+        {filling.size > 0 && <Loader2 className="h-3 w-3 animate-spin self-center text-blue-400" />}
       </div>
 
       <div className="mt-2 flex flex-col gap-1.5">

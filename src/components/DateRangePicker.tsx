@@ -134,7 +134,7 @@ export function DateRangePicker({ startDate, endDate, onChange, minDate, maxDate
           disabled={disabled}
           aria-invalid={!!startError}
           className={cn(
-            'h-8 w-[116px] px-2 font-mono tabular text-xs',
+            'h-8 w-[100px] font-mono tabular text-xs',
             startError && 'border-destructive focus-visible:ring-destructive',
           )}
         />
@@ -149,7 +149,7 @@ export function DateRangePicker({ startDate, endDate, onChange, minDate, maxDate
           disabled={disabled}
           aria-invalid={!!endError}
           className={cn(
-            'h-8 w-[116px] px-2 font-mono tabular text-xs',
+            'h-8 w-[100px] font-mono tabular text-xs',
             endError && 'border-destructive focus-visible:ring-destructive',
           )}
         />

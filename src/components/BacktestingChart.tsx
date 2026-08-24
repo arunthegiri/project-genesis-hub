@@ -1,21 +1,8 @@
 import { useEffect, useMemo, useRef } from "react";
-import {
-  CandlestickSeries,
-  createSeriesMarkers,
-  LineStyle,
-  type IPriceLine,
-  type ISeriesApi,
-  type ISeriesMarkersPluginApi,
-  type Time,
-  type UTCTimestamp,
-} from "lightweight-charts";
+import { type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
 import type { PriceBar, Trade } from "@/lib/api/types";
 import { useChartBase, toTs } from "@/hooks/useChartBase";
-import { useChartTheme } from "@/hooks/useChartTheme";
-import { resolveChartTheme } from "@/lib/chart-theme";
-import { PricePillPrimitive, pricePillColors } from "@/lib/chart-primitives/price-pill";
-import { etDayKey, prevSessionClose } from "@/lib/chart-primitives/session-shading";
-import { fmtPrice } from "@/lib/format";
+import { CHART_COLORS } from "@/lib/chart-colors";
 
 interface Props {
   bars: PriceBar[];
@@ -30,14 +17,6 @@ interface Props {
   height?: number | string;
   onRangeChange?: (from: number, to: number) => void;
   visibleRange?: { from: number; to: number };
-  /**
-   * §12 M3: range to apply INSTEAD of fitContent when a fresh dataset lands
-   * (URL-restored view). Applied imperatively inside the series-data effect so
-   * mount-time range events can't race it (they converge ON the restored
-   * range), and re-applied on a StrictMode remount for the same reason.
-   * Consumed only on the new-dataset path — later pans never retrigger it.
-   */
-  initialRange?: { from: number; to: number } | null;
 }
 
 function toBar(b: PriceBar) {
@@ -85,16 +64,13 @@ function buildMarkers(trades: Trade[], sortedBarMs: number[], lastVisibleMs: num
     text: string;
   }> = [];
 
-  // Called from effects only (client-side) — safe to resolve the theme here.
-  const theme = resolveChartTheme();
-
   for (const trade of trades) {
     const entryTs = snap(trade.entryTime);
     if (entryTs !== null) {
       markers.push({
         time: entryTs,
         position: "belowBar",
-        color: trade.side === "LONG" ? theme.up : theme.down,
+        color: trade.side === "LONG" ? CHART_COLORS.bull : CHART_COLORS.bear,
         shape: trade.side === "LONG" ? "arrowUp" : "arrowDown",
         text: trade.side === "LONG" ? "L" : "S",
       });
@@ -105,7 +81,7 @@ function buildMarkers(trades: Trade[], sortedBarMs: number[], lastVisibleMs: num
       markers.push({
         time: exitTs,
         position: "aboveBar",
-        color: trade.pnl >= 0 ? theme.up : theme.down,
+        color: trade.pnl >= 0 ? CHART_COLORS.bull : CHART_COLORS.bear,
         shape: "circle",
         text: trade.pnl >= 0 ? "+" : "−",
       });
@@ -116,37 +92,19 @@ function buildMarkers(trades: Trade[], sortedBarMs: number[], lastVisibleMs: num
   return markers.sort((a, b) => (a.time as number) - (b.time as number));
 }
 
-export function BacktestingChart({ bars, visibleCount, trades, height = "100%", onRangeChange, visibleRange, initialRange }: Props) {
+export function BacktestingChart({ bars, visibleCount, trades, height = "100%", onRangeChange, visibleRange }: Props) {
   const containerRef    = useRef<HTMLDivElement>(null);
   const { chartRef }    = useChartBase(containerRef);
   const seriesRef       = useRef<ISeriesApi<"Candlestick"> | null>(null);
-  const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
-  // §11 M2 price pill: direction-colored last-price gutter label + the replay
-  // position pill (`Bar 14,832 / 21,000`) pinned 24px below it.
-  const pillRef         = useRef<PricePillPrimitive | null>(null);
-  // Explicit dotted last-price line (axis label off — the pill owns the
-  // gutter; v5 has no separate price-line-label switch) + its last direction
-  // for theme-change recolors.
-  const priceLineRef    = useRef<IPriceLine | null>(null);
-  const lastDirUpRef    = useRef(true);
   const prevLenRef      = useRef(0);
   const prevFirstTime   = useRef("");
   const onRangeChangeRef = useRef(onRangeChange);
-  // initialRange is consumed only on the new-dataset path, so it must NOT be an
-  // effect dep (a pan updates it via the URL and would retrigger the effect).
-  const initialRangeRef = useRef(initialRange);
-  useEffect(() => { initialRangeRef.current = initialRange; }, [initialRange]);
-  // §13.4 reactive chart theme — drives the in-place re-theme effect below.
-  const theme = useChartTheme();
   useEffect(() => { onRangeChangeRef.current = onRangeChange; }, [onRangeChange]);
 
   // Ascending bar times (ms) for the FULL stable array — memo keys on the
   // array reference, so replay ticks never rebuild it. Marker snapping
   // binary-searches this; targets past the visible window are dropped.
   const barTimesMs = useMemo(() => bars.map(b => new Date(b.time).getTime()), [bars]);
-  // ET day key per bar — the pill's previous-session close scans these
-  // (string compares, cheap enough at replay tick rate).
-  const dayKeys = useMemo(() => barTimesMs.map(etDayKey), [barTimesMs]);
   const lastVisibleMs = visibleCount > 0 && visibleCount <= barTimesMs.length
     ? barTimesMs[visibleCount - 1]
     : -Infinity;
@@ -155,56 +113,20 @@ export function BacktestingChart({ bars, visibleCount, trades, height = "100%", 
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
-    const initialTheme = resolveChartTheme();
-    const series = chart.addSeries(CandlestickSeries, {
-      upColor: initialTheme.up,
-      downColor: initialTheme.down,
+    const series = chart.addCandlestickSeries({
+      upColor: CHART_COLORS.bull,
+      downColor: CHART_COLORS.bear,
       borderVisible: false,
-      wickUpColor: initialTheme.up,
-      wickDownColor: initialTheme.down,
-      // §11 M2: the PricePillPrimitive owns the gutter label (native label
-      // off) — and the built-in price line stays off too: its axis label has
-      // no separate visibility switch in v5 and would duplicate the pill in
-      // the gutter. The dotted line is re-added per tick as an explicit
-      // createPriceLine with axisLabelVisible:false.
-      lastValueVisible: false,
-      priceLineVisible: false,
+      wickUpColor: CHART_COLORS.bull,
+      wickDownColor: CHART_COLORS.bear,
     });
-    const pill = new PricePillPrimitive(pricePillColors(initialTheme));
-    series.attachPrimitive(pill);
-    pillRef.current = pill;
     seriesRef.current = series;
     return () => {
-      try {
-        markersRef.current?.detach();
-      } catch {
-        /* plugin already gone */
-      }
-      markersRef.current = null;
-      pillRef.current = null;
-      priceLineRef.current = null;
       seriesRef.current = null;
       prevLenRef.current = 0;
       prevFirstTime.current = "";
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // §13.4: re-theme the live series in place — recreating it here would
-  // reset the replay cursor bookkeeping (prevLenRef) and the user's range.
-  // The markers effect below re-resolves marker colors via its theme dep.
-  useEffect(() => {
-    if (!theme) return;
-    seriesRef.current?.applyOptions({
-      upColor: theme.up,
-      downColor: theme.down,
-      wickUpColor: theme.up,
-      wickDownColor: theme.down,
-    });
-    pillRef.current?.setColors(pricePillColors(theme));
-    priceLineRef.current?.applyOptions({
-      color: lastDirUpRef.current ? theme.upDim : theme.downDim,
-    });
-  }, [theme]);
 
   // Emit logical range for scrollbar
   useEffect(() => {
@@ -238,15 +160,6 @@ export function BacktestingChart({ bars, visibleCount, trades, height = "100%", 
 
     if (visibleLen === 0) {
       series.setData([]);
-      pillRef.current?.update({ price: null, replayText: null });
-      if (priceLineRef.current) {
-        try {
-          series.removePriceLine(priceLineRef.current);
-        } catch {
-          /* series already gone */
-        }
-        priceLineRef.current = null;
-      }
       prevLenRef.current = 0;
       prevFirstTime.current = "";
       return;
@@ -261,17 +174,8 @@ export function BacktestingChart({ bars, visibleCount, trades, height = "100%", 
       // seek frequency; it's the per-tick allocation that was the defect).
       series.setData(bars.slice(0, visibleLen).map(toBar));
       if (isNewDataset || prevLenRef.current === 0) {
-        // §12 M3: a URL-restored view replaces fitContent on a fresh dataset
-        // (clamped to the loaded window; negative `from` is legit whitespace).
-        if (initialRangeRef.current) {
-          const to = Math.min(initialRangeRef.current.to, bars.length - 1);
-          const from = Math.min(initialRangeRef.current.from, to);
-          if (from < to) chart.timeScale().setVisibleLogicalRange({ from, to });
-          else chart.timeScale().fitContent();
-        } else {
-          // Fresh dataset — fit all bars so user sees the full range
-          chart.timeScale().fitContent();
-        }
+        // Fresh dataset — fit all bars so user sees the full range
+        chart.timeScale().fitContent();
       } else {
         // Replay restarted — show a window with room for bars to grow into
         // rather than fitContent on 1-2 bars which zooms in microscopically
@@ -287,60 +191,12 @@ export function BacktestingChart({ bars, visibleCount, trades, height = "100%", 
 
     prevLenRef.current = visibleLen;
     prevFirstTime.current = firstTime;
+  }, [bars, visibleCount]);
 
-    // §11 M2 pill — tracks the replay cursor: last VISIBLE close (direction
-    // vs the previous session's close) + the absolute replay position. Field
-    // writes + the library's own requestUpdate; no React involvement per tick.
-    const last = bars[visibleLen - 1];
-    const prevClose = prevSessionClose(bars, dayKeys, visibleLen - 1);
-    const up = prevClose !== null ? last.close >= prevClose : true;
-    pillRef.current?.update({
-      price: last.close,
-      up,
-      text: fmtPrice(last.close),
-      replayText: `Bar ${visibleLen.toLocaleString("en-US")} / ${bars.length.toLocaleString("en-US")}`,
-    });
-
-    // Dotted last-price line at the cursor's close — explicit createPriceLine
-    // with axisLabelVisible:false (the pill owns the gutter label).
-    lastDirUpRef.current = up;
-    const lineColor = up ? resolveChartTheme().upDim : resolveChartTheme().downDim;
-    if (priceLineRef.current) {
-      priceLineRef.current.applyOptions({ price: last.close, color: lineColor });
-    } else {
-      priceLineRef.current = series.createPriceLine({
-        price: last.close,
-        color: lineColor,
-        lineWidth: 1,
-        lineStyle: LineStyle.Dotted,
-        axisLabelVisible: false,
-        title: "",
-      });
-    }
-  }, [bars, visibleCount, dayKeys]);
-
-  // Update trade markers whenever visible trades or bars change. The v5
-  // markers plugin attaches LAZILY, only while there are markers to show:
-  // in v5.2.0 its pane view calls series.data() on every update cycle (an
-  // O(bars) copy per pan/zoom/replay frame even with zero markers), so an
-  // idle plugin is a perf tax at replay bar counts. `theme` dep: a §13.4
-  // retheme rebuilds marker colors (buildMarkers re-resolves post-invalidate).
+  // Update trade markers whenever visible trades or bars change
   useEffect(() => {
-    const series = seriesRef.current;
-    if (!series) return;
-    const markers = buildMarkers(trades, barTimesMs, lastVisibleMs);
-    if (!markers.length) {
-      try {
-        markersRef.current?.detach();
-      } catch {
-        /* plugin already gone */
-      }
-      markersRef.current = null;
-      return;
-    }
-    if (!markersRef.current) markersRef.current = createSeriesMarkers(series, []);
-    markersRef.current.setMarkers(markers);
-  }, [trades, barTimesMs, lastVisibleMs, theme]);
+    seriesRef.current?.setMarkers(buildMarkers(trades, barTimesMs, lastVisibleMs));
+  }, [trades, barTimesMs, lastVisibleMs]);
 
   return <div ref={containerRef} style={{ height }} className="w-full" />;
 }

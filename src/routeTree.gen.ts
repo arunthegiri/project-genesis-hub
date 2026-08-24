@@ -16,7 +16,6 @@ import { Route as DataRouteImport } from './routes/data'
 import { Route as BacktestingRouteImport } from './routes/backtesting'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as JupyterApiSplatRouteImport } from './routes/jupyter-api.$'
-import { Route as DevControlsRouteImport } from './routes/dev/controls'
 
 const ModelsRoute = ModelsRouteImport.update({
   id: '/models',
@@ -53,11 +52,6 @@ const JupyterApiSplatRoute = JupyterApiSplatRouteImport.update({
   path: '/jupyter-api/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DevControlsRoute = DevControlsRouteImport.update({
-  id: '/dev/controls',
-  path: '/dev/controls',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -66,7 +60,6 @@ export interface FileRoutesByFullPath {
   '/live': typeof LiveRoute
   '/metrics': typeof MetricsRoute
   '/models': typeof ModelsRoute
-  '/dev/controls': typeof DevControlsRoute
   '/jupyter-api/$': typeof JupyterApiSplatRoute
 }
 export interface FileRoutesByTo {
@@ -76,7 +69,6 @@ export interface FileRoutesByTo {
   '/live': typeof LiveRoute
   '/metrics': typeof MetricsRoute
   '/models': typeof ModelsRoute
-  '/dev/controls': typeof DevControlsRoute
   '/jupyter-api/$': typeof JupyterApiSplatRoute
 }
 export interface FileRoutesById {
@@ -87,7 +79,6 @@ export interface FileRoutesById {
   '/live': typeof LiveRoute
   '/metrics': typeof MetricsRoute
   '/models': typeof ModelsRoute
-  '/dev/controls': typeof DevControlsRoute
   '/jupyter-api/$': typeof JupyterApiSplatRoute
 }
 export interface FileRouteTypes {
@@ -99,7 +90,6 @@ export interface FileRouteTypes {
     | '/live'
     | '/metrics'
     | '/models'
-    | '/dev/controls'
     | '/jupyter-api/$'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -109,7 +99,6 @@ export interface FileRouteTypes {
     | '/live'
     | '/metrics'
     | '/models'
-    | '/dev/controls'
     | '/jupyter-api/$'
   id:
     | '__root__'
@@ -119,7 +108,6 @@ export interface FileRouteTypes {
     | '/live'
     | '/metrics'
     | '/models'
-    | '/dev/controls'
     | '/jupyter-api/$'
   fileRoutesById: FileRoutesById
 }
@@ -130,7 +118,6 @@ export interface RootRouteChildren {
   LiveRoute: typeof LiveRoute
   MetricsRoute: typeof MetricsRoute
   ModelsRoute: typeof ModelsRoute
-  DevControlsRoute: typeof DevControlsRoute
   JupyterApiSplatRoute: typeof JupyterApiSplatRoute
 }
 
@@ -185,13 +172,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof JupyterApiSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/dev/controls': {
-      id: '/dev/controls'
-      path: '/dev/controls'
-      fullPath: '/dev/controls'
-      preLoaderRoute: typeof DevControlsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
@@ -202,7 +182,6 @@ const rootRouteChildren: RootRouteChildren = {
   LiveRoute: LiveRoute,
   MetricsRoute: MetricsRoute,
   ModelsRoute: ModelsRoute,
-  DevControlsRoute: DevControlsRoute,
   JupyterApiSplatRoute: JupyterApiSplatRoute,
 }
 export const routeTree = rootRouteImport
