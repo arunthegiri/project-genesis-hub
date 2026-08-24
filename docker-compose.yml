@@ -59,9 +59,13 @@ services:
     ports:
       # Host port 8890 — a host-local jupyter-lab already squats on 8888.
       - "8890:8888"
+      # Copilot code executor (build doc M0). Published so the acceptance
+      # curl works from the host; the Java container reaches it as jupyter:5000.
+      - "5000:5000"
     volumes:
       - ./Test Trading Strategies:/home/jovyan/strategies
       - ./ananke-sdk:/home/jovyan/ananke-sdk
+      - ./executor:/home/jovyan/executor
     environment:
       JUPYTER_ENABLE_LAB: "yes"
       ANANKE_API_URL: "http://stock-tracker:8080"
@@ -73,6 +77,7 @@ services:
       bash -c "pip install -e /home/jovyan/ananke-sdk &&
                mkdir -p /opt/conda/share/jupyter/lab/settings &&
                printf '%s' '{\"@jupyterlab/apputils-extension:themes\":{\"theme\":\"JupyterLab Dark\"}}' > /opt/conda/share/jupyter/lab/settings/overrides.json &&
+               (python /home/jovyan/executor/executor.py &) &&
                start-notebook.sh --IdentityProvider.token='' --ServerApp.password='' --ServerApp.allow_origin_regex='^http://localhost:[0-9]+$$' --ServerApp.allow_credentials=True"
 
 volumes:

@@ -1,5 +1,6 @@
-import { Trash2 } from "lucide-react";
+import { Sparkles, Trash2 } from "lucide-react";
 import { BacktestStatsPanel } from "@/components/BacktestStatsPanel";
+import { CopilotMarkdown } from "@/components/copilot/CopilotMarkdown";
 import { EquityChart } from "@/components/EquityChart";
 import { PanelState } from "@/components/terminal/PanelState";
 import { cn } from "@/lib/utils";
@@ -156,6 +157,21 @@ export function RunHistory({ runHistory, selectedRecordId, onSelectRecord, onCle
               buyHoldCurve={selectedRecord.buyHold?.equityCurve}
               height={180}
             />
+          )}
+          {/* Copilot analysis (build doc M6). Persisted on the run itself, so it
+              survives a reload; absent on every run the copilot did not create. */}
+          {selectedRecord.runResults.copilotExplanation && (
+            <div className="border-t border-border px-3 py-3">
+              <div className="mb-2 flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5 text-primary" />
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-primary">
+                  Copilot analysis
+                </span>
+              </div>
+              <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2">
+                <CopilotMarkdown>{selectedRecord.runResults.copilotExplanation}</CopilotMarkdown>
+              </div>
+            </div>
           )}
         </div>
       )}

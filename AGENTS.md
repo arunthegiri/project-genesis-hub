@@ -161,6 +161,61 @@ Feature-flagged and backend-gated: with `VITE_WS_ENABLED` unset, `startRealtime(
 - **B7 latency / B9 distributions** — token-native DOM, no chart library. B7's endpoint does not exist, so `pending` with the exact contract is its normal state today.
 - Pure halves are unit-tested in plain node (`npm run test:unit`): calendar windows, correlation math, distribution bucketing (all ET-anchored).
 
+### Copilot (copilot build doc M0–M8)
+
+`/copilot` turns one prompt into a saved, backtested strategy. The copilot **orchestrates**
+Ananke — it never reimplements it. Pipeline, all of it streamed to the browser as SSE:
+
+```
+prompt → Kimi tool loop (list_symbols / search_symbols / add_symbol / get_price_data)
+       → generated Python  → executor/executor.py in the JUPYTER container
+       → k.export() POSTs back to /api/strategies  → BacktestEngineService re-run
+       → Kimi explanation  → stored on backest_results.copilot_explanation
+```
+
+Why the pieces sit where they do:
+
+- **Code runs in Jupyter, not Java.** The SDK is installed there. `executor/executor.py` is a
+  stdlib-only HTTP server (no Flask) on port 5000 alongside JupyterLab, mounted from `./executor`.
+  It speaks `POST /execute {code}` → `{stdout, stderr, returncode}`, 504s past 120s, and cleans up
+  its temp file even on timeout. It reads **chunked** request bodies — Spring's `RestClient` sends
+  `Transfer-Encoding: chunked`, and a Content-Length-only reader sees an empty body.
+- **The strategy name comes from stdout.** `k.export()` prints `Kairos '<name>' exported
+  successfully`; `CopilotService` parses that rather than guessing, falling back to the `name=`
+  literal in the source.
+- **The system prompt pins the real SDK contract.** `get_data(symbol, start, end, interval)` is
+  positional (`from` is a reserved Python keyword), `k.run()` must precede `k.export()`, and the
+  `symbol` column is opt-in via `columns=`. A generic LLM gets all three wrong.
+- **Strategy types are constrained to `rsi_crossover` / `ema_crossover`.** Those are the only two
+  `BacktestEngineService` can re-run; anything else throws `UnsupportedOperationException`. The
+  prompt requires `params={'type': …}` so the strategy is also re-runnable from the Backtesting
+  page. If the engine still refuses, the flow **falls back** to the run `k.export()` already
+  persisted rather than failing work that already succeeded (`usedExportedResult` in the `done`
+  event; the UI badges it "SDK run").
+- **The engine never persists.** `BacktestEngineService.run()` returns a DTO and saves nothing, so
+  `StrategyService.persistRun()` writes the copilot's run and `attachExplanation()` stores the
+  analysis against it.
+- **Results are DB-backed.** `runHistory` in `backtesting.tsx` is in-memory and dies on reload;
+  `/backtesting?tab=results&strategy=<name>` hydrates from `GET /api/strategies/{name}/results` and
+  merges those rows behind the session's own, which is what makes a copilot run survive a refresh.
+
+Gotchas found while building it, all fixed but easy to reintroduce:
+
+- `CopilotService` must inject **Spring's** `ObjectMapper`. A bare `new ObjectMapper()` has no
+  JSR-310 module and every `Instant` in the backtest payload fails to serialise — silently, as an
+  `{"error":"serialisation failed"}` frame.
+- Return `SseEmitter` **directly** from the controller. Wrapping it in `ResponseEntity` produces
+  `No converter for SseEmitter`; the 503 for a missing key is thrown as
+  `KimiClient.KimiUnavailableException` and mapped in `GlobalExceptionHandler`.
+- Do not send `temperature` to Kimi — model `k3` rejects anything but `1`.
+- The Python SDK posts **snake_case** `from_ts`/`to_ts`; `ApiDto.StrategyRequest` needs
+  `@JsonAlias`, and the values are `str(pd.Timestamp)` ("2024-06-03 08:00:00+00:00"), which
+  `Instant.parse` rejects — hence `StrategyService.parseFlexible`.
+- **There are two `docker-compose.yml` files** (repo root and `Java backend/`). Always build with
+  `docker compose -f ./docker-compose.yml --project-directory . build stock-tracker`; a bare
+  `docker compose` from the wrong cwd builds `javabackend-stock-tracker` and leaves the running
+  `anake-stock-tracker` untouched, so fixes appear to have no effect.
+
 ### Chart architecture
 
 `PriceChart` manages ONE `lightweight-charts` v5 instance via `useChartBase` with **native panes** (build doc §10):
@@ -183,6 +238,8 @@ Backend endpoints currently implemented:
 - `DELETE /api/symbols/{symbol}`
 - `GET /api/prices/{symbol}/range?from=&to=`
 - `GET /api/strategies`, `GET /api/strategies/{name}`, `POST /api/strategies/{name}/run`
+- `GET /api/strategies/{name}/results` (every persisted run — what the Results tab hydrates from)
+- `POST /api/copilot/research`, `POST /api/copilot/chat` (SSE; 503 when `KIMI_API_KEY` is unset)
 - `GET /api/strategies/active`, `GET /api/account`, `GET /api/positions`, `GET /api/models`
 
 Waiting on the backend (each renders a §6 `PanelState kind="pending"` naming the exact endpoint, never a blank panel — decision D5):
@@ -203,6 +260,15 @@ Two of these (`/api/trades/range`, `/api/metrics/engine`) are stubbed as deliber
 | `VITE_WS_URL` | derived from base URL | Realtime price socket (§14; only dialled when the flag below is on) |
 | `VITE_WS_ENABLED` | unset (off) | `1` turns on the §14 hot path. Off = polling exactly as before; the socket is an addition, never a replacement |
 | `VITE_JUPYTER_URL` | `http://localhost:8890` | JupyterLab URL for "Open in JupyterLab" (see below) |
+
+Backend-side (`.env`, passed to `stock-tracker` by compose):
+
+| Var | Default | Purpose |
+|---|---|---|
+| `KIMI_API_KEY` | unset | Copilot LLM. Unset = `/api/copilot/*` answers 503 and the tab shows a config notice |
+| `KIMI_BASE_URL` | `https://api.moonshot.ai/v1` | OpenAI-compatible base URL |
+| `KIMI_MODEL` | `kimi-k2-0905-preview` | Model id |
+| `JUPYTER_EXECUTOR_URL` | `http://jupyter:5000` | Where the Java container reaches `executor.py` |
 
 ### Open in JupyterLab
 

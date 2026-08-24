@@ -43,6 +43,8 @@ export interface BacktestResults {
   sharpeRatio: number;
   trades: BacktestTrade[];
   equityCurve: EquityPoint[];
+  /** AI analysis written by the copilot; absent on runs it did not create. */
+  copilotExplanation?: string | null;
   createdAt: string;
 }
 
@@ -75,4 +77,11 @@ export const strategiesApi = {
       method: "POST",
       body: { symbol, fromTs, toTs },
     }),
+
+  /**
+   * Every persisted run for a strategy, newest first. These are the runs that
+   * survive a reload — the ones `k.export()` and the copilot wrote (build doc M6).
+   */
+  results: (name: string): Promise<BacktestResults[]> =>
+    apiFetch(`/api/strategies/${encodeURIComponent(name)}/results`),
 };

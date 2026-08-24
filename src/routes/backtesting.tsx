@@ -106,6 +106,9 @@ export const Route = createFileRoute("/backtesting")({
     // §12 M3 replay state — additive, all optional, all omitted when default.
     cursor:            parseCursor(search.cursor),
     view:              typeof search.view === "string" && parseView(search.view) ? search.view : undefined,
+    // Copilot deep-link (build doc M6): /backtesting?tab=results&strategy=<name>
+    // lands on the Results tab with that strategy's persisted runs hydrated.
+    strategy:          typeof search.strategy === "string" && search.strategy ? search.strategy : undefined,
   }),
   head: () => ({ meta: [{ title: "Backtesting — Quant Trading Platform" }] }),
   component: BacktestingPage,
@@ -357,6 +360,50 @@ function BacktestingPage() {
   }, [capitalStats]);
 
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
+
+  // ── Persisted runs (build doc M6) ────────────────────────────────────────
+  // runHistory above is in-memory and dies on reload. These are the rows the
+  // backend actually stored — what k.export() and the copilot wrote — so a
+  // copilot run (and its analysis) is visible here after a refresh.
+  const historyStrategy = search.strategy ?? selectedStrategy ?? null;
+  const { data: persistedRuns = [] } = useQuery({
+    enabled: !!historyStrategy,
+    queryKey: ["strategy-results", historyStrategy],
+    queryFn: () => strategiesApi.results(historyStrategy!),
+    staleTime: 30_000,
+  });
+
+  const storedRecords = useMemo<RunRecord[]>(
+    () =>
+      persistedRuns.map((r) => ({
+        id: `db-${r.id}`,
+        strategyName: historyStrategy ?? "",
+        symbol: r.symbol ?? "",
+        from: r.fromTs ?? "",
+        to: r.toTs ?? "",
+        startingCapital,
+        capitalStats: applyCapitalConstraints(r, startingCapital),
+        buyHold: null,
+        runResults: r,
+        timestamp: new Date(r.createdAt),
+      })),
+    [persistedRuns, historyStrategy, startingCapital],
+  );
+
+  // Local runs first (this session's, newest); stored runs fill in behind them.
+  const mergedHistory = useMemo(
+    () => [...runHistory, ...storedRecords],
+    [runHistory, storedRecords],
+  );
+
+  // Following a copilot deep-link, open its newest stored run automatically.
+  const deepLinkedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!search.strategy || storedRecords.length === 0) return;
+    if (deepLinkedRef.current === search.strategy) return;
+    deepLinkedRef.current = search.strategy;
+    setSelectedRecordId(storedRecords[0].id);
+  }, [search.strategy, storedRecords]);
 
   const loadRecord = useCallback((record: RunRecord) => {
     pendingLoadRef.current = {
@@ -959,7 +1006,7 @@ function BacktestingPage() {
       {/* ══ RESULTS TAB ═══════════════════════════════════════════════════════ */}
       {activeTab === "results" && (
         <RunHistory
-          runHistory={runHistory}
+          runHistory={mergedHistory}
           selectedRecordId={selectedRecordId}
           onSelectRecord={setSelectedRecordId}
           onClearHistory={() => { setRunHistory([]); setSelectedRecordId(null); }}

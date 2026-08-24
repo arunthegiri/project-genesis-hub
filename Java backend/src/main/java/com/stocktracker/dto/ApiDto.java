@@ -1,5 +1,6 @@
 package com.stocktracker.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -67,7 +68,12 @@ public class ApiDto {
         @NotNull(message = "results must not be null")
         private Map<String, Object> results;
         private String symbol;
+        // The Python SDK posts snake_case (kairos.py export()); without these
+        // aliases the range never binds and every exported run stored a null
+        // from/to, which in turn blocked dashboard re-runs.
+        @JsonAlias("from_ts")
         private String fromTs;
+        @JsonAlias("to_ts")
         private String toTs;
         private String interval;
     }
@@ -149,6 +155,7 @@ public class ApiDto {
         private BigDecimal                 sharpeRatio;
         private List<Map<String, Object>>  trades;
         private List<Map<String, Object>>  equityCurve;
+        private String                     copilotExplanation;
         private Instant                    createdAt;
     }
 

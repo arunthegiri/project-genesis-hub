@@ -62,6 +62,11 @@ public class BacktestResult {
     @JdbcTypeCode(SqlTypes.JSON)
     private List<Map<String, Object>> equityCurve;
 
+    /** AI analysis of this run, written by the copilot (build doc M1). Null for
+     *  every run not created through the copilot. */
+    @Column(name = "copilot_explanation", columnDefinition = "TEXT")
+    private String copilotExplanation;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     @Builder.Default
     private Instant createdAt = Instant.now();

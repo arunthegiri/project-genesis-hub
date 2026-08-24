@@ -23,6 +23,16 @@ npm run test:unit          # plain-node unit tests (chart theme, calendar, corre
 
 To run against the Spring Boot backend: `VITE_API_BASE_URL=http://localhost:8080 npm run dev`.
 
+**Building the Java backend:** there is no local Maven — it builds in Docker. There are also *two*
+`docker-compose.yml` files (repo root and `Java backend/`), so always be explicit or a bare
+`docker compose` from the wrong cwd silently builds a different project's image and your fix
+appears to do nothing:
+
+```bash
+docker compose -f ./docker-compose.yml --project-directory . build stock-tracker
+docker compose -f ./docker-compose.yml --project-directory . up -d stock-tracker
+```
+
 ## Architecture
 
 A **desktop-first dark trading terminal** — a TanStack Start SSR app (NOT a plain SPA) that
@@ -54,9 +64,12 @@ src/
   lib/realtime/     ← §14 WebSocket hot path: socket / per-symbol stores / rAF coalescer
   lib/chart-theme.ts, chart-primitives/ ← canvas-facing token resolution + v5 pane/series primitives
   lib/event-calendar.ts, correlation.ts, pnl-distribution.ts ← pure feeds behind the §15 panels
+  lib/api/copilot.ts, lib/api/sse.ts ← copilot SSE client + reusable frame parser
   components/terminal/ ← the design system: TerminalPanel, tabs, PanelState, controls/, table/
+  components/copilot/  ← copilot surfaces: CodeBlock, BacktestCard, CopilotMarkdown
   components/metrics/  ← §15 analysis panels (strategy table, universe ranking, correlation, …)
-  routes/           ← /, /data, /backtesting, /live, /metrics, /models (+ dev/controls, DEV-only)
+  routes/           ← /, /data, /backtesting, /live, /metrics, /models, /copilot (+ dev/controls, DEV-only)
+executor/           ← stdlib Python code executor mounted into the Jupyter container (copilot M0)
   routeTree.gen.ts  ← AUTO-GENERATED — never edit
 ```
 
@@ -92,6 +105,24 @@ custom pane/series primitives. See AGENTS.md for the v5.2.0 gotchas (pane 0's st
 Client-side interval aggregation (`aggregatePriceBars`) buckets the API's raw 1-minute bars; the
 backend always returns 1-minute data.
 
+### Copilot
+
+`/copilot` turns one prompt into a saved, backtested strategy, streamed as SSE. It **orchestrates**
+Ananke rather than reimplementing it: generated Python executes in the **Jupyter** container (where
+the SDK lives) via `executor/executor.py`, `k.export()` saves through the normal strategy endpoint,
+the backtest runs through `BacktestEngineService`, and the AI analysis is stored on
+`backtest_results.copilot_explanation` so it survives a reload.
+
+Two constraints shape it, and both are load-bearing:
+- The engine only re-runs `rsi_crossover` / `ema_crossover`, so the system prompt requires
+  `params={'type': …}`. If the engine still refuses, the flow falls back to the run `k.export()`
+  already persisted instead of discarding work that succeeded.
+- The system prompt pins the real SDK contract — `get_data()` is positional (`from` is a Python
+  keyword) and `k.run()` must precede `k.export()`. A generic LLM gets both wrong.
+
+See AGENTS.md for the executor's chunked-body requirement, the Kimi `temperature` restriction, and
+the `ObjectMapper`/`SseEmitter` traps.
+
 ### Timezones
 
 Eastern, everywhere, derived from `Intl` — never a hardcoded −4/−5. Session state, the economic
@@ -115,6 +146,14 @@ endpoint it is waiting on. Nothing blocks on backend work; nothing renders a bla
 | `VITE_WS_ENABLED` | unset (off) | `1` enables the hot path; off = polling, unchanged |
 | `VITE_JUPYTER_URL` | `http://localhost:8890` | JupyterLab URL for "Open in JupyterLab" |
 | `VITE_FRED_API_KEY` | unset | Optional: live FRED release dates supersede the maintained calendar |
+
+Backend-side (root `.env`, passed to `stock-tracker` by compose):
+
+| Var | Default | Purpose |
+|---|---|---|
+| `KIMI_API_KEY` | unset | Copilot LLM. Unset = `/api/copilot/*` returns 503 and the tab explains why |
+| `KIMI_BASE_URL` / `KIMI_MODEL` | Moonshot defaults | OpenAI-compatible endpoint + model id |
+| `JUPYTER_EXECUTOR_URL` | `http://jupyter:5000` | Where Java reaches the Python executor |
 
 ### Adding a new route
 

@@ -13,6 +13,7 @@ import { Route as ModelsRouteImport } from './routes/models'
 import { Route as MetricsRouteImport } from './routes/metrics'
 import { Route as LiveRouteImport } from './routes/live'
 import { Route as DataRouteImport } from './routes/data'
+import { Route as CopilotRouteImport } from './routes/copilot'
 import { Route as BacktestingRouteImport } from './routes/backtesting'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as JupyterApiSplatRouteImport } from './routes/jupyter-api.$'
@@ -36,6 +37,11 @@ const LiveRoute = LiveRouteImport.update({
 const DataRoute = DataRouteImport.update({
   id: '/data',
   path: '/data',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CopilotRoute = CopilotRouteImport.update({
+  id: '/copilot',
+  path: '/copilot',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BacktestingRoute = BacktestingRouteImport.update({
@@ -62,6 +68,7 @@ const DevControlsRoute = DevControlsRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/backtesting': typeof BacktestingRoute
+  '/copilot': typeof CopilotRoute
   '/data': typeof DataRoute
   '/live': typeof LiveRoute
   '/metrics': typeof MetricsRoute
@@ -72,6 +79,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/backtesting': typeof BacktestingRoute
+  '/copilot': typeof CopilotRoute
   '/data': typeof DataRoute
   '/live': typeof LiveRoute
   '/metrics': typeof MetricsRoute
@@ -83,6 +91,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/backtesting': typeof BacktestingRoute
+  '/copilot': typeof CopilotRoute
   '/data': typeof DataRoute
   '/live': typeof LiveRoute
   '/metrics': typeof MetricsRoute
@@ -95,6 +104,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/backtesting'
+    | '/copilot'
     | '/data'
     | '/live'
     | '/metrics'
@@ -105,6 +115,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/backtesting'
+    | '/copilot'
     | '/data'
     | '/live'
     | '/metrics'
@@ -115,6 +126,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/backtesting'
+    | '/copilot'
     | '/data'
     | '/live'
     | '/metrics'
@@ -126,6 +138,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   BacktestingRoute: typeof BacktestingRoute
+  CopilotRoute: typeof CopilotRoute
   DataRoute: typeof DataRoute
   LiveRoute: typeof LiveRoute
   MetricsRoute: typeof MetricsRoute
@@ -164,6 +177,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DataRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/copilot': {
+      id: '/copilot'
+      path: '/copilot'
+      fullPath: '/copilot'
+      preLoaderRoute: typeof CopilotRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/backtesting': {
       id: '/backtesting'
       path: '/backtesting'
@@ -198,6 +218,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   BacktestingRoute: BacktestingRoute,
+  CopilotRoute: CopilotRoute,
   DataRoute: DataRoute,
   LiveRoute: LiveRoute,
   MetricsRoute: MetricsRoute,

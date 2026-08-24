@@ -13,6 +13,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -167,14 +171,74 @@ public class StrategyService {
                 .toList();
     }
 
+    // ── Copilot support (build doc M4) ───────────────────────────────────────
+
+    /**
+     * Persist a run produced by {@link BacktestEngineService}, which never saves
+     * anything itself. The copilot needs a real row so the explanation has
+     * somewhere to live and the run shows up in the Results tab.
+     */
+    @Transactional
+    public Long persistRun(String strategyName, ApiDto.BacktestResultResponse r, String interval) {
+        Strategy strategy = strategyRepo.findByName(strategyName)
+                .orElseThrow(() -> new NoSuchElementException("Strategy not found: " + strategyName));
+
+        BacktestResult saved = resultRepo.save(BacktestResult.builder()
+                .strategy(strategy)
+                .symbol(r.getSymbol())
+                .fromTs(r.getFromTs())
+                .toTs(r.getToTs())
+                .interval(interval != null ? interval : "1Min")
+                .totalTrades(r.getTotalTrades())
+                .winningTrades(r.getWinningTrades())
+                .losingTrades(r.getLosingTrades())
+                .winRate(r.getWinRate())
+                .totalPnl(r.getTotalPnl())
+                .totalPnlPct(r.getTotalPnlPct())
+                .avgWin(r.getAvgWin())
+                .avgLoss(r.getAvgLoss())
+                .largestWin(r.getLargestWin())
+                .largestLoss(r.getLargestLoss())
+                .profitFactor(r.getProfitFactor())
+                .maxDrawdown(r.getMaxDrawdown())
+                .sharpeRatio(r.getSharpeRatio())
+                .trades(r.getTrades())
+                .equityCurve(r.getEquityCurve())
+                .build());
+
+        return saved.getId();
+    }
+
+    /** Attach the copilot's analysis to an existing run. */
+    @Transactional
+    public void attachExplanation(Long resultId, String explanation) {
+        resultRepo.findById(resultId).ifPresent(r -> {
+            r.setCopilotExplanation(explanation);
+            resultRepo.save(r);
+        });
+    }
+
+    /** The row {@code k.export()} just wrote — the fallback when the engine can't re-run. */
+    @Transactional(readOnly = true)
+    public java.util.Optional<ApiDto.BacktestResultResponse> latestResult(String strategyName) {
+        return strategyRepo.findByName(strategyName)
+                .flatMap(resultRepo::findTopByStrategyOrderByCreatedAtDesc)
+                .map(this::toBacktestResultResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean strategyExists(String name) {
+        return strategyRepo.findByName(name).isPresent();
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     @SuppressWarnings("unchecked")
     private BacktestResult buildBacktestResult(Strategy strategy, ApiDto.StrategyRequest req) {
         Map<String, Object> r = req.getResults();
 
-        Instant fromTs = req.getFromTs() != null ? Instant.parse(req.getFromTs()) : null;
-        Instant toTs   = req.getToTs()   != null ? Instant.parse(req.getToTs())   : null;
+        Instant fromTs = parseFlexible(req.getFromTs());
+        Instant toTs   = parseFlexible(req.getToTs());
 
         List<Map<String, Object>> trades      = (List<Map<String, Object>>) r.get("trades");
         List<Map<String, Object>> equityCurve = (List<Map<String, Object>>) r.get("equity_curve");
@@ -235,8 +299,37 @@ public class StrategyService {
         resp.setSharpeRatio(r.getSharpeRatio());
         resp.setTrades(r.getTrades());
         resp.setEquityCurve(r.getEquityCurve());
+        resp.setCopilotExplanation(r.getCopilotExplanation());
         resp.setCreatedAt(r.getCreatedAt());
         return resp;
+    }
+
+    /**
+     * Parse a timestamp from the Python SDK, which sends {@code str(Timestamp)} —
+     * e.g. "2024-06-03 08:00:00+00:00": a space instead of 'T' and an offset
+     * instead of 'Z', neither of which {@link Instant#parse} accepts. Returns
+     * null rather than throwing so one odd value cannot fail a whole export.
+     */
+    static Instant parseFlexible(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        String s = raw.trim();
+        try {
+            return Instant.parse(s);
+        } catch (DateTimeParseException ignored) {
+            // Not ISO-instant; fall through to the pandas shapes.
+        }
+        String iso = s.contains("T") ? s : s.replaceFirst(" ", "T");
+        try {
+            return OffsetDateTime.parse(iso).toInstant();
+        } catch (DateTimeParseException ignored) {
+            // No offset present.
+        }
+        try {
+            return LocalDateTime.parse(iso).toInstant(ZoneOffset.UTC);
+        } catch (DateTimeParseException e) {
+            log.warn("Could not parse timestamp '{}' from export payload", raw);
+            return null;
+        }
     }
 
     private static BigDecimal getBD(Map<String, Object> m, String key) {
