@@ -9,6 +9,8 @@ import {
   type ModelSummary,
 } from "@/lib/api/models";
 import { registerCommands } from "@/lib/command-registry";
+import { fmtPct, fmtPrice } from "@/lib/format";
+import { PanelState } from "@/components/terminal/PanelState";
 import {
   Sheet,
   SheetContent,
@@ -35,23 +37,6 @@ export const Route = createFileRoute("/models")({
 
 // ── Formatting helpers ────────────────────────────────────────────────────────
 
-function fmtNum(value: string | number | null | undefined, decimals = 2): string {
-  if (value === null || value === undefined) return "—";
-  const n = typeof value === "string" ? parseFloat(value) : value;
-  if (isNaN(n)) return "—";
-  return n.toLocaleString("en-US", {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  });
-}
-
-function fmtPct(value: string | number | null | undefined): string {
-  if (value === null || value === undefined) return "—";
-  const n = typeof value === "string" ? parseFloat(value) : value;
-  if (isNaN(n)) return "—";
-  return (n >= 0 ? "+" : "") + n.toFixed(2) + "%";
-}
-
 function fmtDate(value: string | null | undefined): string {
   if (!value) return "—";
   const d = new Date(value);
@@ -71,12 +56,12 @@ function pnlColor(value: string | number | null | undefined): string {
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
     ACTIVE:   "bg-bull/20 text-bull border-bull/30",
-    STANDBY:  "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
-    STOPPED:  "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
-    EXPORTED: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-    ARCHIVED: "bg-zinc-500/20 text-zinc-500 border-zinc-500/30",
+    STANDBY:  "bg-warning/20 text-warning border-warning/30",
+    STOPPED:  "bg-muted/50 text-muted-foreground border-border",
+    EXPORTED: "bg-accent-blue/20 text-accent-blue border-accent-blue/30",
+    ARCHIVED: "bg-muted/50 text-text-muted border-border",
   };
-  const cls = map[status] ?? "bg-zinc-500/20 text-zinc-400 border-zinc-500/30";
+  const cls = map[status] ?? "bg-muted/50 text-muted-foreground border-border";
   return (
     <span className={cn("inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium", cls)}>
       {status}
@@ -95,13 +80,12 @@ function ModelsTable({
 }) {
   if (models.length === 0) {
     return (
-      <div className="rounded-lg border border-border bg-card/50 p-6 text-center space-y-1">
-        <p className="text-sm text-muted-foreground">No registered models</p>
-        <p className="text-xs text-muted-foreground">
-          Export a model from Jupyter with{" "}
-          <code className="bg-muted px-1 rounded">k.export(...)</code>; deployed versions
-          appear here and on the Live page.
-        </p>
+      <div className="rounded-lg border border-border bg-card/50">
+        <PanelState
+          kind="empty"
+          art="table"
+          message="No registered models — export one from Jupyter with k.export(...); deployed versions appear here and on the Live page."
+        />
       </div>
     );
   }
@@ -135,7 +119,7 @@ function ModelsTable({
               <td className="px-3 py-2"><StatusBadge status={m.status} /></td>
               <td className="px-3 py-2 text-muted-foreground text-xs">{m.deployMode ?? "—"}</td>
               <td className="px-3 py-2 text-right tabular-nums">{m.featureCount ?? "—"}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{fmtNum(m.sharpeRatio)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmtPrice(m.sharpeRatio)}</td>
               <td className="px-3 py-2 text-right tabular-nums">
                 {m.winRate != null ? fmtPct(parseFloat(m.winRate) * 100) : "—"}
               </td>
@@ -285,7 +269,7 @@ function ModelDetailDrawer({
                   </h3>
                   {perf ? (
                     <div className="grid grid-cols-3 gap-2">
-                      <Metric label="Sharpe" value={fmtNum(perf.sharpeRatio)} />
+                      <Metric label="Sharpe" value={fmtPrice(perf.sharpeRatio)} />
                       <Metric
                         label="Win Rate"
                         value={perf.winRate != null ? fmtPct(parseFloat(perf.winRate) * 100) : "—"}
@@ -295,7 +279,7 @@ function ModelDetailDrawer({
                         value={fmtPct(perf.totalPnlPct)}
                         valueClass={pnlColor(perf.totalPnlPct)}
                       />
-                      <Metric label="Profit Factor" value={fmtNum(perf.profitFactor)} />
+                      <Metric label="Profit Factor" value={fmtPrice(perf.profitFactor)} />
                       <Metric
                         label="Max Drawdown"
                         value={perf.maxDrawdown != null ? fmtPct(parseFloat(perf.maxDrawdown) * 100) : "—"}
@@ -305,7 +289,7 @@ function ModelDetailDrawer({
                       <Metric label="Losing" value={perf.losingTrades ?? "—"} />
                       <Metric
                         label="Total P&L"
-                        value={perf.totalPnl != null ? `$${fmtNum(perf.totalPnl)}` : "—"}
+                        value={perf.totalPnl != null ? `$${fmtPrice(perf.totalPnl)}` : "—"}
                         valueClass={pnlColor(perf.totalPnl)}
                       />
                     </div>
@@ -321,8 +305,8 @@ function ModelDetailDrawer({
                   </h3>
                   <div className="grid grid-cols-3 gap-2">
                     <Metric label="Features" value={detail?.featureCount ?? "—"} />
-                    <Metric label="Buy Thr." value={fmtNum(contract?.buyThreshold ?? null)} />
-                    <Metric label="Sell Thr." value={fmtNum(contract?.sellThreshold ?? null)} />
+                    <Metric label="Buy Thr." value={fmtPrice(contract?.buyThreshold ?? null)} />
+                    <Metric label="Sell Thr." value={fmtPrice(contract?.sellThreshold ?? null)} />
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div className="rounded-md border border-border bg-card p-3 space-y-0.5">
@@ -487,10 +471,18 @@ function ModelsPage() {
 
       <div className="flex-1 p-6 space-y-4">
         {modelsQ.isLoading ? (
-          <div className="text-sm text-muted-foreground">Loading models…</div>
+          <div className="rounded-lg border border-border bg-card/50">
+            <PanelState kind="loading" art="table" message="Loading models…" />
+          </div>
         ) : modelsQ.isError ? (
-          <div className="rounded-lg border border-border bg-card/50 p-6 text-sm text-bear">
-            {(modelsQ.error as Error)?.message ?? "Failed to load models."}
+          <div className="rounded-lg border border-border bg-card/50">
+            <PanelState
+              kind="error"
+              art="plug"
+              message={(modelsQ.error as Error)?.message ?? "Failed to load models."}
+              detail={["GET /api/models"]}
+              action={{ label: "Retry", onClick: () => modelsQ.refetch() }}
+            />
           </div>
         ) : (
           <ModelsTable models={modelsQ.data ?? []} onSelect={openDetail} />

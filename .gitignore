@@ -49,6 +49,10 @@ ananke_master_vision.md
 # Maven build output
 Java backend/target/
 
+# Playwright visual-test artifacts (baselines under tests/visual/ ARE committed)
+test-results/
+playwright-report/
+
 # Python bytecode
 __pycache__/
 *.pyc
