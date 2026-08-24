@@ -1,0 +1,15 @@
+{
+  "id": "9f4e2a71-3c56-4b1d-9e8a-2f6d1c5b7a90",
+  "accountNumber": "PA3W0VISUAL",
+  "status": "ACTIVE",
+  "currency": "USD",
+  "buyingPower": "412350.75",
+  "cash": "103087.69",
+  "portfolioValue": "254812.44",
+  "equity": "254812.44",
+  "lastEquity": "251940.10",
+  "longMarketValue": "151724.75",
+  "shortMarketValue": "0",
+  "daytradingBuyingPower": "824701.50",
+  "regtBuyingPower": "412350.75"
+}

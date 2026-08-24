@@ -1,5 +1,7 @@
 import { Trophy } from "lucide-react";
 import type { CapitalStats, BuyHoldStats } from "@/lib/backtest-capital";
+import { fmtPct, fmtPnl, fmtPrice, fmtSize } from "@/lib/format";
+import { MetaGrid, type MetaGridItem } from "@/components/terminal/MetaGrid";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -9,75 +11,70 @@ interface Props {
 }
 
 export function BacktestStatsPanel({ capitalStats: cs, strategyName, buyHold }: Props) {
-  const fmt = (n: number | null | undefined, decimals = 2) =>
-    n == null ? "—" : n.toFixed(decimals);
-  const fmtDollar = (n: number | null | undefined) =>
-    n == null ? "—" : `${n >= 0 ? "+" : ""}$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-  const mainStats: { label: string; value: string; color?: string }[] = [
+  const mainStats: MetaGridItem[] = [
     {
       label: "Win Rate",
-      value: `${fmt(cs.winRate)}%`,
+      value: fmtPct(cs.winRate, { plus: false }),
       color: (cs.winRate ?? 0) >= 50 ? "text-bull" : "text-bear",
     },
     {
       label: "Total PnL",
-      value: fmtDollar(cs.totalPnl),
+      value: fmtPnl(cs.totalPnl),
       color: (cs.totalPnl ?? 0) >= 0 ? "text-bull" : "text-bear",
     },
     {
       label: "Total Return",
-      value: `${(cs.totalPnlPct ?? 0) >= 0 ? "+" : ""}${fmt(cs.totalPnlPct)}%`,
+      value: fmtPct(cs.totalPnlPct),
       color: (cs.totalPnlPct ?? 0) >= 0 ? "text-bull" : "text-bear",
     },
     {
       label: "Profit Factor",
-      value: cs.profitFactor >= 99 ? "∞" : fmt(cs.profitFactor),
+      value: cs.profitFactor >= 99 ? "∞" : fmtPrice(cs.profitFactor),
       color: (cs.profitFactor ?? 0) >= 1 ? "text-bull" : "text-bear",
     },
     {
       label: "Max Drawdown",
-      value: `${fmt(cs.maxDrawdown)}%`,
-      color: "text-neutral",
+      value: fmtPct(cs.maxDrawdown, { plus: false }),
+      color: "text-warning",
     },
     {
       label: "Sharpe Ratio",
-      value: fmt(cs.sharpeRatio),
+      value: fmtPrice(cs.sharpeRatio),
       color:
         (cs.sharpeRatio ?? 0) >= 1
           ? "text-bull"
           : (cs.sharpeRatio ?? 0) >= 0
-          ? "text-neutral"
-          : "text-bear",
+            ? "text-dir-flat"
+            : "text-bear",
     },
     {
       label: "Total Trades",
-      value: String(cs.totalTrades ?? 0),
+      value: fmtSize(cs.totalTrades ?? 0),
     },
     {
       label: "Avg Win / Loss",
-      value: `$${fmt(cs.avgWin)} / -$${fmt(Math.abs(cs.avgLoss ?? 0))}`,
+      value: `$${fmtPrice(cs.avgWin)} / -$${fmtPrice(Math.abs(cs.avgLoss ?? 0))}`,
     },
   ];
 
-  const capitalStats: { label: string; value: string; color?: string }[] = [
+  const capitalStats: MetaGridItem[] = [
     {
       label: "Starting Capital",
       value: `$${cs.startingCapital.toLocaleString("en-US")}`,
     },
     {
       label: "Ending Capital",
-      value: `$${cs.endingCapital.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      value: `$${fmtPrice(cs.endingCapital)}`,
       color: cs.endingCapital >= cs.startingCapital ? "text-bull" : "text-bear",
     },
     {
       label: "Return on Capital",
-      value: `${cs.returnOnCapital >= 0 ? "+" : ""}${fmt(cs.returnOnCapital)}%`,
+      value: fmtPct(cs.returnOnCapital),
       color: cs.returnOnCapital >= 0 ? "text-bull" : "text-bear",
     },
     {
       label: "Annualized Ret",
-      value: `${cs.annualizedReturn >= 0 ? "+" : ""}${fmt(cs.annualizedReturn)}%`,
+      value: fmtPct(cs.annualizedReturn),
       color: cs.annualizedReturn >= 0 ? "text-bull" : "text-bear",
     },
   ];
@@ -97,23 +94,23 @@ export function BacktestStatsPanel({ capitalStats: cs, strategyName, buyHold }: 
           strat: cs.totalPnl,
           bah: buyHold.totalPnl,
           higherIsBetter: true,
-          stratFmt: fmtDollar(cs.totalPnl),
-          bahFmt: fmtDollar(buyHold.totalPnl),
+          stratFmt: fmtPnl(cs.totalPnl),
+          bahFmt: fmtPnl(buyHold.totalPnl),
         },
         {
           label: "Return %",
           strat: cs.totalPnlPct,
           bah: buyHold.totalPnlPct,
           higherIsBetter: true,
-          stratFmt: `${cs.totalPnlPct >= 0 ? "+" : ""}${fmt(cs.totalPnlPct)}%`,
-          bahFmt: `${buyHold.totalPnlPct >= 0 ? "+" : ""}${fmt(buyHold.totalPnlPct)}%`,
+          stratFmt: fmtPct(cs.totalPnlPct),
+          bahFmt: fmtPct(buyHold.totalPnlPct),
         },
         {
           label: "Win Rate",
           strat: cs.winRate,
           bah: null,
           higherIsBetter: true,
-          stratFmt: `${fmt(cs.winRate)}%`,
+          stratFmt: fmtPct(cs.winRate, { plus: false }),
           bahFmt: "N/A",
         },
         {
@@ -121,24 +118,24 @@ export function BacktestStatsPanel({ capitalStats: cs, strategyName, buyHold }: 
           strat: cs.maxDrawdown,
           bah: buyHold.maxDrawdown,
           higherIsBetter: false,
-          stratFmt: `${fmt(cs.maxDrawdown)}%`,
-          bahFmt: `${fmt(buyHold.maxDrawdown)}%`,
+          stratFmt: fmtPct(cs.maxDrawdown, { plus: false }),
+          bahFmt: fmtPct(buyHold.maxDrawdown, { plus: false }),
         },
         {
           label: "Sharpe Ratio",
           strat: cs.sharpeRatio,
           bah: buyHold.sharpeRatio,
           higherIsBetter: true,
-          stratFmt: fmt(cs.sharpeRatio),
-          bahFmt: fmt(buyHold.sharpeRatio),
+          stratFmt: fmtPrice(cs.sharpeRatio),
+          bahFmt: fmtPrice(buyHold.sharpeRatio),
         },
         {
           label: "Annualized Ret",
           strat: cs.annualizedReturn,
           bah: buyHold.annualizedReturn,
           higherIsBetter: true,
-          stratFmt: `${cs.annualizedReturn >= 0 ? "+" : ""}${fmt(cs.annualizedReturn)}%`,
-          bahFmt: `${buyHold.annualizedReturn >= 0 ? "+" : ""}${fmt(buyHold.annualizedReturn)}%`,
+          stratFmt: fmtPct(cs.annualizedReturn),
+          bahFmt: fmtPct(buyHold.annualizedReturn),
         },
       ]
     : [];
@@ -172,25 +169,17 @@ export function BacktestStatsPanel({ capitalStats: cs, strategyName, buyHold }: 
           {cs.totalTrades} trades · {cs.symbol ?? "—"}
         </span>
         {cs.insufficientCapitalCount > 0 && (
-          <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-neutral">
+          <span className="rounded border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] text-warning">
             {cs.insufficientCapitalCount} trade{cs.insufficientCapitalCount > 1 ? "s" : ""} skipped — insufficient capital
           </span>
         )}
       </div>
 
       {/* Main stats grid */}
-      <div className="grid grid-cols-4 gap-2 lg:grid-cols-8">
-        {mainStats.map(s => (
-          <StatCell key={s.label} label={s.label} value={s.value} color={s.color} />
-        ))}
-      </div>
+      <MetaGrid items={mainStats} className="grid-cols-2 lg:grid-cols-4" />
 
       {/* Capital stats strip */}
-      <div className="grid grid-cols-4 gap-2">
-        {capitalStats.map(s => (
-          <StatCell key={s.label} label={s.label} value={s.value} color={s.color} />
-        ))}
-      </div>
+      <MetaGrid items={capitalStats} className="grid-cols-2 lg:grid-cols-4" />
 
       {/* Buy & hold comparison */}
       {buyHold && comparisonRows.length > 0 && (
@@ -204,13 +193,13 @@ export function BacktestStatsPanel({ capitalStats: cs, strategyName, buyHold }: 
                 <th className="pb-1 text-left font-normal">Metric</th>
                 <th className="pb-1 text-right font-normal">
                   <span className="flex items-center justify-end gap-1">
-                    {stratTrophy && <Trophy className="h-3 w-3 text-yellow-400" />}
+                    {stratTrophy && <Trophy className="h-3 w-3 text-warning" />}
                     Strategy
                   </span>
                 </th>
                 <th className="pb-1 text-right font-normal">
                   <span className="flex items-center justify-end gap-1">
-                    {bahTrophy && <Trophy className="h-3 w-3 text-yellow-400" />}
+                    {bahTrophy && <Trophy className="h-3 w-3 text-warning" />}
                     Buy &amp; Hold
                   </span>
                 </th>
@@ -222,21 +211,21 @@ export function BacktestStatsPanel({ capitalStats: cs, strategyName, buyHold }: 
                   row.bah == null
                     ? true
                     : row.higherIsBetter
-                    ? (row.strat ?? -Infinity) > (row.bah ?? -Infinity)
-                    : (row.strat ?? Infinity) < (row.bah ?? Infinity);
+                      ? (row.strat ?? -Infinity) > (row.bah ?? -Infinity)
+                      : (row.strat ?? Infinity) < (row.bah ?? Infinity);
                 const bahBetter =
                   row.bah == null
                     ? false
                     : row.higherIsBetter
-                    ? (row.bah ?? -Infinity) > (row.strat ?? -Infinity)
-                    : (row.bah ?? Infinity) < (row.strat ?? Infinity);
+                      ? (row.bah ?? -Infinity) > (row.strat ?? -Infinity)
+                      : (row.bah ?? Infinity) < (row.strat ?? Infinity);
 
                 return (
                   <tr key={row.label}>
                     <td className="py-0.5 text-[10px] text-muted-foreground">{row.label}</td>
                     <td
                       className={cn(
-                        "py-0.5 text-right font-mono",
+                        "py-0.5 text-right tabular-nums",
                         stratBetter ? "text-bull" : "text-foreground",
                       )}
                     >
@@ -244,7 +233,7 @@ export function BacktestStatsPanel({ capitalStats: cs, strategyName, buyHold }: 
                     </td>
                     <td
                       className={cn(
-                        "py-0.5 text-right font-mono",
+                        "py-0.5 text-right tabular-nums",
                         bahBetter ? "text-bull" : "text-muted-foreground",
                       )}
                     >
@@ -257,17 +246,6 @@ export function BacktestStatsPanel({ capitalStats: cs, strategyName, buyHold }: 
           </table>
         </div>
       )}
-    </div>
-  );
-}
-
-function StatCell({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <div className="flex flex-col gap-0.5 rounded-md bg-muted/30 px-2 py-1.5">
-      <span className="text-[9px] uppercase tracking-wide text-muted-foreground">{label}</span>
-      <span className={cn("font-mono text-xs font-medium", color ?? "text-foreground")}>
-        {value}
-      </span>
     </div>
   );
 }

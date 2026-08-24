@@ -1,3 +1,5 @@
+/* W5 §7.1 — Inter Variable (self-hosted, latin subset). Must precede Tailwind. */
+@import "@fontsource-variable/inter/wght.css";
 @import "tailwindcss" source(none);
 @source "../src";
 @import "tw-animate-css";
@@ -5,8 +7,9 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Quant Trading Terminal — dark, Webull-inspired design system.
- * All colors in oklch. Use semantic tokens; never hardcode hex/rgb in components.
+ * Quant Trading Terminal — Webull-inspired design system, four themes
+ * (build doc §13; terminal-dark is the default). All colors in oklch/hex
+ * tokens. Use semantic tokens; never hardcode hex/rgb in components.
  */
 
 @theme inline {
@@ -50,62 +53,281 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
+  /* ── W1 terminal tokens (build doc §3.1) ────────────────────────────── */
+  --color-surface-0: var(--surface-0);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border-subtle: var(--border-subtle);
+
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+
+  --color-dir-up: var(--dir-up);
+  --color-dir-down: var(--dir-down);
+  --color-dir-flat: var(--dir-flat);
+  --color-warning: var(--warning);
+  --color-dir-up-cb: var(--dir-up-cb);
+  --color-dir-down-cb: var(--dir-down-cb);
+
+  --color-accent-blue: var(--accent-blue);
+  --color-overlay-primary: var(--overlay-primary);
+  --color-overlay-secondary: var(--overlay-secondary);
+  --color-grid-line: var(--grid-line);
+
+  /* Control geometry → h-control-h-md / h-row-h-default etc. */
+  --spacing-control-h-sm: var(--control-h-sm);
+  --spacing-control-h-md: var(--control-h-md);
+  --spacing-control-h-lg: var(--control-h-lg);
+  --spacing-row-h-compact: var(--row-h-compact);
+  --spacing-row-h-default: var(--row-h-default);
+
+  /* W5 §7.1 — Inter for UI/numerics; mono stays for axes/logs/code (§5.5) */
+  --font-sans: "Inter Variable", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-/* Force dark-only terminal aesthetic */
+/* ════════════════════════════════════════════════════════════════════════
+   Theme system (build doc §13 / plan §5.4) — four themes selected by
+   data-theme on <html>. Per-theme blocks hold the primitive tokens; the
+   theme-agnostic :root block further down keeps control geometry and the
+   §3.2 legacy alias layer. Values are WCAG-verified in the plan — do not
+   retune without re-running the contrast check.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* Theme 1 — terminal-dark (default; the Webull-style reference). Bare
+   `:root` in the selector list is the no-attribute fallback (dark on tie) —
+   every [data-theme] block outranks it on specificity. */
+:root,
+:root[data-theme="terminal-dark"] {
+  /* ── Terminal surface ladder (build doc §3.1; WCAG-verified values) ── */
+  --surface-0: #0C0F16;   /* app shell / gutters (darkest)    */
+  --surface-1: #12161F;   /* panel body                       */
+  --surface-2: #1A2029;   /* panel header + active tab        */
+  --surface-3: #242C38;   /* row hover / selected (lightest)  */
+  --border-subtle: #2B3342;
+
+  /* ── Text ────────────────────────────────────────────────── */
+  --text-primary:   #E9ECF2;  /* 11.9:1 min on any layer */
+  --text-secondary: #A6AEBD;  /*  6.3:1 min             */
+  --text-muted:     #8F98AA;  /*  4.85:1 min (AA floor) */
+
+  /* ── Direction / financial semantics (raw pairs — the §13.3 axis
+        blocks below compose these into --dir-up/--dir-down; the
+        underscore privates exist because a swapped --dir-up: var(--dir-down)
+        self-mapping would be a var() cycle) ─────────────────────────── */
+  --_dir-up:    #35C77A;   /* western up: teal-leaning green, 6.4:1 min */
+  --_dir-down:  #F86177;   /* western down: pink-leaning red, 4.67:1 min */
+  --_dir-up-cb:   #3FBF97; /* colorblind pair (Okabe-Ito–derived)        */
+  --_dir-down-cb: #F07B4D;
+  --dir-flat:  #8F98AA;   /* unchanged = de-emphasized gray */
+  --warning:   #E3B341;   /* caution / session PRE-POST     */
+
+  /* ── Accent & overlays ───────────────────────────────────── */
+  --accent-blue: #4C9AFF;
+  --overlay-primary:   #F472B6;  /* MA lines (magenta)  */
+  --overlay-secondary: #A78BFA;  /* secondary overlays  */
+
+  /* Canvas grid (fed to charts via lib/chart-theme.ts) */
+  --grid-line: rgba(255,255,255,0.04);
+
+  /* Theme-dependent legacy aliases (§3.2) */
+  --secondary: oklch(0.24 0.01 240); /* not remapped in §3.2 — unchanged */
+  --primary-foreground: oklch(0.12 0.01 240); /* dark text on accent buttons */
+}
+
+/* Theme 2 — paper-light (plan §5.4; surfaces L0→L3 light-to-white; all
+   text/semantic tokens ≥4.5:1 on L1/L2, ≥4.4 on L3) */
+:root[data-theme="paper-light"] {
+  --surface-0: #E8EBF0;
+  --surface-1: #F5F7FA;
+  --surface-2: #FFFFFF;
+  --surface-3: #DCE3EC;
+  --border-subtle: #C7D0DC;
+
+  --text-primary:   #1A2330;
+  --text-secondary: #4A5568;
+  --text-muted:     #5B6675;
+
+  --_dir-up:    #0B6E4F;
+  --_dir-down:  #B42318;
+  /* Plan gap (no cb pair listed): Okabe-Ito bluish-green/vermillion darkened
+     to AA — the cb pair replaces dir-up/down EVERYWHERE incl. text when
+     data-cb="on", so it needs the same 4.5:1 floor as the main pair
+     (#00755A: 5.3:1 on L1, 4.4:1 on L3; #A84400: 5.6:1 on L1, 4.7:1 on L3). */
+  --_dir-up-cb:   #00755A;
+  --_dir-down-cb: #A84400;
+  --dir-flat:  #5B6675;
+  --warning:   #B54708;
+
+  --accent-blue: #175CD3;
+  --overlay-primary:   #DB2777;
+  --overlay-secondary: #7C3AED;
+  /* Plan gap: dark grid line at the dark theme's alpha. */
+  --grid-line: rgba(26,35,48,0.06);
+
+  --secondary: var(--surface-3);
+  --primary-foreground: #FFFFFF; /* white on #175CD3 ≈ 6:1 */
+}
+
+/* Theme 3 — high-contrast (plan §5.4; true black base, AAA-grade text) */
+:root[data-theme="high-contrast"] {
+  --surface-0: #000000;
+  --surface-1: #0A0A0A;
+  --surface-2: #161616;
+  --surface-3: #242424;
+  --border-subtle: #5A5A5A; /* raised for visibility */
+
+  --text-primary:   #FFFFFF;
+  --text-secondary: #D9D9D9;
+  --text-muted:     #B8B8B8; /* plan gap — AAA floor on black (≈9:1) */
+
+  --_dir-up:    #00E08A;
+  --_dir-down:  #FF5C7A;
+  /* Plan gap: inherit the Okabe-Ito pair (8.6:1 / 7:1 on black). */
+  --_dir-up-cb:   #3FBF97;
+  --_dir-down-cb: #F07B4D;
+  --dir-flat:  #B8B8B8;
+  --warning:   #E3B341; /* plan gap — dark value already ≈10:1 on black */
+
+  --accent-blue: #66B3FF;
+  --overlay-primary:   #FF7AC8;
+  --overlay-secondary: #B9A0FF;
+  /* Plan gap: alpha raised one step so the grid survives on pure black. */
+  --grid-line: rgba(255,255,255,0.06);
+
+  --secondary: var(--surface-3);
+  --primary-foreground: #000000; /* black on #66B3FF ≈ 9.4:1 */
+}
+
+/* Theme 4 — graphite-neutral (plan §5.4: identical lightness ladder with
+   chroma ≈ 0 — the control group for A/B-ing the §3.1 blue-shift). The plan
+   lists only surfaces/border/text/dir pair; the remaining tokens inherit
+   terminal-dark values (each gap noted inline). */
+:root[data-theme="graphite-neutral"] {
+  --surface-0: #101113;
+  --surface-1: #161719;
+  --surface-2: #1D1F22;
+  --surface-3: #26292D;
+  --border-subtle: #31353B;
+
+  --text-primary:   #ECEDEF;
+  --text-secondary: #ACB0B6;
+  --text-muted:     #9298A0;
+
+  --_dir-up:    #35C77A;  /* plan: identical to terminal-dark */
+  --_dir-down:  #F86177;
+  --_dir-up-cb:   #3FBF97; /* gap — inherit terminal-dark cb pair */
+  --_dir-down-cb: #F07B4D;
+  --dir-flat:  #9298A0;   /* gap — = text-muted, mirroring dark's flat==muted */
+  --warning:   #E3B341;   /* gap — inherit terminal-dark */
+
+  /* gap — keep the functional accent/overlays; the A/B is the surface
+     blue-shift, not the CTA or indicator hues. */
+  --accent-blue: #4C9AFF;
+  --overlay-primary:   #F472B6;
+  --overlay-secondary: #A78BFA;
+  --grid-line: rgba(255,255,255,0.04);
+
+  --secondary: var(--surface-3);
+  --primary-foreground: oklch(0.12 0.01 240);
+}
+
+/* ── §13.3 direction axes — small composing blocks keyed off the extra
+   <html> attributes, so 4 themes × 2 conventions × cb on/off compose
+   instead of multiplying token blocks. Cascade precedence is by
+   SPECIFICITY, not source order:
+     base :root (0,1,0)
+       < [data-convention] (0,2,0) = [data-cb] (0,2,0)
+       < [data-cb][data-convention] (0,3,0)
+   → the colorblind pair ALWAYS wins over the market convention. */
+:root {
+  --dir-up:   var(--_dir-up);    /* western default: green up / red down */
+  --dir-down: var(--_dir-down);
+  --dir-up-cb:   var(--_dir-up-cb);
+  --dir-down-cb: var(--_dir-down-cb);
+}
+:root[data-convention="east-asian"] {
+  --dir-up:   var(--_dir-down);  /* red up / green down */
+  --dir-down: var(--_dir-up);
+}
+:root[data-cb="on"] {
+  --dir-up:   var(--_dir-up-cb);
+  --dir-down: var(--_dir-down-cb);
+}
+:root[data-cb="on"][data-convention="east-asian"] {
+  --dir-up:   var(--_dir-down-cb);
+  --dir-down: var(--_dir-up-cb);
+}
+
+/* ── Theme-agnostic tokens + the §3.2 legacy alias layer ─────────────────
+   Aliases resolve through the per-theme primitives above, so they follow
+   the active theme; only --secondary and --primary-foreground were
+   theme-dependent literals and moved into the theme blocks. */
 :root {
   --radius: 0.375rem;
 
-  /* Deep terminal background */
-  --background: oklch(0.16 0.01 240);
-  --foreground: oklch(0.92 0.01 240);
+  /* ── Control geometry ────────────────────────────────────── */
+  --control-h-sm: 24px; --control-h-md: 32px; --control-h-lg: 40px;
+  --row-h-compact: 32px; --row-h-default: 42px;
 
-  --card: oklch(0.19 0.01 240);
-  --card-foreground: oklch(0.92 0.01 240);
+  /* ── Legacy aliases (build doc §3.2) ─────────────────────────────
+     Every pre-W1 token now points at the new set so existing call sites
+     keep rendering while the literal sweep proceeds. New code must use
+     the tokens above, not these aliases. */
+  --background: var(--surface-0);
+  --foreground: var(--text-primary);
 
-  --popover: oklch(0.21 0.01 240);
-  --popover-foreground: oklch(0.92 0.01 240);
+  --card: var(--surface-1);
+  --card-foreground: var(--text-primary);
 
-  --primary: oklch(0.72 0.16 230);
-  --primary-foreground: oklch(0.12 0.01 240);
+  --popover: var(--surface-2);
+  --popover-foreground: var(--text-primary);
 
-  --secondary: oklch(0.24 0.01 240);
-  --secondary-foreground: oklch(0.88 0.01 240);
+  --primary: var(--accent-blue);
+  /* --primary-foreground lives in the theme blocks (dark text on the dark
+     themes' accent, white on paper-light's, black on high-contrast's). */
 
-  --muted: oklch(0.22 0.01 240);
-  --muted-foreground: oklch(0.62 0.01 240);
+  /* --secondary lives in the theme blocks (dark gray vs light surface-3). */
+  --secondary-foreground: var(--text-primary);
 
-  --accent: oklch(0.27 0.02 230);
-  --accent-foreground: oklch(0.92 0.01 240);
+  --muted: var(--surface-2);
+  /* Deliberate AA upgrade (§3.2): was oklch 0.62, fails AA on L3 */
+  --muted-foreground: var(--text-secondary);
+
+  --accent: var(--surface-3); /* old accent was a hover surface, not a blue */
+  --accent-foreground: var(--text-primary);
 
   --destructive: oklch(0.62 0.22 25);
   --destructive-foreground: oklch(0.98 0 0);
 
-  --border: oklch(0.26 0.01 240);
-  --input: oklch(0.24 0.01 240);
-  --ring: oklch(0.72 0.16 230);
+  --border: var(--border-subtle);
+  --input: var(--border-subtle);
+  --ring: var(--accent-blue);
 
   /* Trading semantic */
-  --bull: oklch(0.72 0.18 150);    /* green */
-  --bear: oklch(0.65 0.22 25);     /* red */
-  --neutral: oklch(0.78 0.13 85);  /* amber */
-  --grid: oklch(0.24 0.01 240);
-  --panel: oklch(0.18 0.01 240);
-  --panel-header: oklch(0.21 0.01 240);
+  --bull: var(--dir-up);
+  --bear: var(--dir-down);
+  /* §3.2 semantic fork: compat alias only — call sites split between
+     text-warning (caution/session) and text-dir-flat (unchanged numbers) */
+  --neutral: var(--warning);
+  --grid: var(--grid-line);
+  --panel: var(--surface-1);
+  --panel-header: var(--surface-2);
 
-  --chart-1: oklch(0.72 0.16 230);
-  --chart-2: oklch(0.72 0.18 150);
-  --chart-3: oklch(0.78 0.13 85);
-  --chart-4: oklch(0.65 0.22 25);
-  --chart-5: oklch(0.7 0.2 305);
+  --chart-1: var(--accent-blue);
+  --chart-2: var(--overlay-primary);
+  --chart-3: var(--overlay-secondary);
+  --chart-4: #34d399; /* extended overlay palette (chart-theme.ts overlays) */
+  --chart-5: #fb923c;
 
-  --sidebar: oklch(0.14 0.01 240);
-  --sidebar-foreground: oklch(0.78 0.01 240);
-  --sidebar-accent: oklch(0.22 0.02 230);
-  --sidebar-accent-foreground: oklch(0.95 0.01 240);
-  --sidebar-border: oklch(0.22 0.01 240);
-  --sidebar-ring: oklch(0.72 0.16 230);
+  --sidebar: var(--surface-0); /* sidebar is L0 chrome */
+  --sidebar-foreground: var(--text-secondary);
+  --sidebar-accent: var(--surface-2);
+  --sidebar-accent-foreground: var(--text-primary);
+  --sidebar-border: var(--border-subtle);
+  --sidebar-ring: var(--accent-blue);
 
   /* sonner toast tokens → mapped onto the panel palette */
   --normal-bg: var(--panel);
@@ -141,6 +363,39 @@
     font-family: var(--font-mono);
   }
 
+  /* W5 §7.2 — numeric discipline. Prefer Tailwind's tabular-nums utility where
+     the extra feature settings aren't needed. */
+  .num {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1, "zero" 1;
+  }
+  /* Hot cells (§14): floor the width so — → number and sign flips don't shift
+     neighbors. */
+  .num-fixed {
+    min-width: 12ch;
+    text-align: right;
+  }
+
+  /* §8.1 TerminalRow drag handle. Drawn as two columns of dots in a gradient
+     rather than an icon component: at ~22 virtualized rows on screen, one SVG
+     component per row was measurable mount cost in the §8.3 scroll budget, for
+     a decoration that is transparent until the row is hovered. Colour comes
+     from the token layer, so it themes like everything else. */
+  .terminal-grip {
+    align-self: stretch;
+    background-image: radial-gradient(
+      circle at center,
+      var(--text-muted) 0.8px,
+      transparent 0.9px
+    );
+    background-size: 3px 4px;
+    background-repeat: repeat-y;
+    background-position: center;
+    /* Two dot columns, 6px of texture, centred in the 18px gutter. */
+    background-clip: content-box;
+    padding: 12px 6px;
+  }
+
   ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
@@ -155,4 +410,62 @@
   ::-webkit-scrollbar-thumb:hover {
     background: var(--muted-foreground);
   }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   §14 M5 — ticker tape + flash-on-change.
+
+   Both effects are deliberately CSS-only: the tape animates one compositor
+   property on a wrapper (no JS per frame, no layout reads), and the flash is
+   a keyframe on the leaf cell that already re-rendered for the new value, so
+   a row/list never re-renders to show one.
+   ════════════════════════════════════════════════════════════════════════ */
+
+@keyframes ticker-scroll {
+  from { transform: translateX(0); }
+  /* -50% lands copy 2 exactly where copy 1 started — a seamless loop. */
+  to   { transform: translateX(-50%); }
+}
+
+.ticker-track {
+  /* Duration is written once from the measured track width (TickerTape.tsx),
+     so speed is content-independent at ~60px/s. */
+  animation: ticker-scroll var(--ticker-duration, 40s) linear infinite;
+  will-change: transform;
+}
+
+.ticker:hover .ticker-track {
+  animation-play-state: paused;
+}
+
+/* Flash-on-change. The `-a`/`-b` pairs are byte-identical but bound to
+   DIFFERENT keyframe names: an element whose computed animation-name does not
+   change continues its running animation rather than restarting it, so a
+   single class flashes once and then goes quiet under a fast feed. Alternating
+   restarts it without the remove/read-offsetWidth/re-add reflow trick. */
+@keyframes flash-up-a {
+  from { background-color: color-mix(in srgb, var(--dir-up) 12%, transparent); }
+  to   { background-color: transparent; }
+}
+@keyframes flash-up-b {
+  from { background-color: color-mix(in srgb, var(--dir-up) 12%, transparent); }
+  to   { background-color: transparent; }
+}
+@keyframes flash-down-a {
+  from { background-color: color-mix(in srgb, var(--dir-down) 12%, transparent); }
+  to   { background-color: transparent; }
+}
+@keyframes flash-down-b {
+  from { background-color: color-mix(in srgb, var(--dir-down) 12%, transparent); }
+  to   { background-color: transparent; }
+}
+
+.flash-up-a   { animation: flash-up-a   450ms ease-out; }
+.flash-up-b   { animation: flash-up-b   450ms ease-out; }
+.flash-down-a { animation: flash-down-a 450ms ease-out; }
+.flash-down-b { animation: flash-down-b 450ms ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ticker-track { animation: none; }
+  .flash-up-a, .flash-up-b, .flash-down-a, .flash-down-b { animation: none; }
 }

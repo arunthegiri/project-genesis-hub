@@ -14,6 +14,10 @@ const MAX_AGE = 60 * 60 * 24 * 365; // 1 year
 // Cookie names — kept here so writers and the server-side reader can't drift.
 export const CHARTS_UI_COOKIE = "ui.charts";
 export const BACKTESTING_UI_COOKIE = "ui.backtesting";
+// §13 M4: theme preferences (theme/convention/colorblind) — see lib/theme.ts.
+// The `theme` key is omitted from the JSON until explicitly chosen; an unset
+// key is what keeps the prefers-color-scheme default alive.
+export const THEME_UI_COOKIE = "ui.theme";
 export const panelUiCookie = (persistKey: string) => `ui.panel.${persistKey}`;
 
 export function readUiCookie(name: string): string | null {

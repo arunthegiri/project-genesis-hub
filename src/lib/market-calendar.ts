@@ -110,6 +110,20 @@ function etDateString(p: { y: number; mo: number; d: number }): string {
   return `${p.y}-${pad2(p.mo)}-${pad2(p.d)}`;
 }
 
+/**
+ * ET wall clock for an instant, in `<input type="datetime-local">` format
+ * ("2026-08-13T09:30").
+ *
+ * Exported so range inputs can be ET everywhere: the pair
+ * (etDateTimeInputValue, etWallToUtcMs) round-trips without ever consulting
+ * the runtime's own timezone, which is what makes the value identical in an
+ * SSR render and the hydration render that follows it (§1.3).
+ */
+export function etDateTimeInputValue(ms: number): string {
+  const p = etParts(ms);
+  return `${etDateString(p)}T${pad2(p.hh)}:${pad2(p.mm)}`;
+}
+
 /** ET offset (ms) in force at instant `ms`, derived from Intl parts. */
 function etOffsetMs(ms: number): number {
   const p = etParts(ms);
@@ -121,7 +135,17 @@ function etOffsetMs(ms: number): number {
  * then corrects with the Intl-derived offset; converges in ≤2 iterations
  * (the offset only changes across a DST boundary).
  */
-function etWallToUtcMs(date: string, hh: number, mm: number): number {
+/**
+ * Instant (epoch ms) of an ET wall time on an ET calendar date.
+ *
+ * Exported for §15.3: the economic calendar's release times are published as
+ * ET wall clocks ("08:30 ET"), and turning those into blackout windows needs
+ * exactly this conversion — with the same DST-safe derivation, not a hardcoded
+ * -4/-5. (`chart-primitives/session-shading.ts` still carries its own copy;
+ * its header notes the plan to collapse onto this one, which is a chart-side
+ * refactor and not this item's business.)
+ */
+export function etWallToUtcMs(date: string, hh: number, mm: number): number {
   const naive = Date.parse(`${date}T${pad2(hh)}:${pad2(mm)}:00Z`);
   let guess = naive;
   for (let i = 0; i < 3; i++) {

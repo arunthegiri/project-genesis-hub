@@ -17,6 +17,10 @@ export interface RailBarInfo {
   interval: Interval;
   /** Bar bucket start, epoch SECONDS (same unit as the §7 Bar). */
   timeSec: number;
+  /** Last close (§14.1 — the ticker tape prints this). */
+  close: number;
+  /** Previous-session close, the change reference. null when unknowable. */
+  prevClose: number | null;
 }
 
 const byPanel = new Map<string, RailBarInfo>();
@@ -44,7 +48,9 @@ export function setPanelLastBar(panelId: string, info: RailBarInfo | null): void
       prev &&
       prev.symbol === info.symbol &&
       prev.interval === info.interval &&
-      prev.timeSec === info.timeSec
+      prev.timeSec === info.timeSec &&
+      prev.close === info.close &&
+      prev.prevClose === info.prevClose
     )
       return;
     byPanel.set(panelId, info);

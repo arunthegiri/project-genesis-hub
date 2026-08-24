@@ -36,6 +36,9 @@ function isEnabled(): boolean {
 
 function mountHud(): () => void {
   const hud = document.createElement("div");
+  // EXEMPT from the §3.3 literal-color sweep (build doc W1): this HUD is a
+  // dev-only (?perf=1) perf overlay, not product UI — its raw hex literals
+  // are intentional and it is the one allowed grep hit under src/.
   hud.style.cssText = [
     "position:fixed",
     "bottom:8px",

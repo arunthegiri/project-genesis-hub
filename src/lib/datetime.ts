@@ -1,10 +1,24 @@
+import { etWallToUtcMs } from "@/lib/market-calendar";
+
 /**
- * Convert a <input type="datetime-local"> value (e.g. "2026-04-21T09:30")
- * — which represents the user's LOCAL wall-clock time — into a UTC ISO
- * string with `Z` suffix that the Spring backend's /range endpoint accepts
- * (per README example: `from=2024-01-15T09:30:00Z`).
+ * Convert a `<input type="datetime-local">` value ("2026-04-21T09:30") into the
+ * UTC ISO string the Spring `/range` endpoint accepts
+ * (`from=2024-01-15T09:30:00Z`).
+ *
+ * The input is interpreted in EASTERN time, not the runtime's local zone, and
+ * both halves of that sentence matter:
+ *
+ *  · Product: this is a US-equities terminal. Every other timestamp in the app
+ *    — session clock, calendar, chart axis, trade log — is ET, so "09:30"
+ *    means the opening bell here, not 09:30 wherever the laptop happens to be.
+ *
+ *  · Correctness: `new Date(y, m, d, h, min)` reads the RUNTIME's timezone, so
+ *    the same string produced one ISO instant during SSR (node's zone) and a
+ *    different one during hydration (the browser's zone). That drift reached
+ *    the rendered Python snippet and made /data mismatch on every load. ET is
+ *    a fixed reference both sides agree on.
  */
-export function localDateTimeInputToApiParam(value: string): string {
+export function etDateTimeInputToApiParam(value: string): string {
   if (!value) return "";
 
   const [datePart, timePart = "00:00"] = value.split("T");
@@ -15,7 +29,5 @@ export function localDateTimeInputToApiParam(value: string): string {
     return "";
   }
 
-  // Interpret the input as local time, then serialize as UTC ISO with Z.
-  const localDate = new Date(year, month - 1, day, hour, minute, 0, 0);
-  return localDate.toISOString().replace(/\.\d{3}Z$/, "Z");
+  return new Date(etWallToUtcMs(datePart, hour, minute)).toISOString().replace(/\.\d{3}Z$/, "Z");
 }
